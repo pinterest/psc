@@ -19,13 +19,13 @@ package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.flink.streaming.connectors.psc.internals.KeyedSerializationSchemaWrapper;
 import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
+import org.apache.flink.FlinkVersion;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.serialization.TypeInformationSerializationSchema;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.OperatorSnapshotUtil;
-import org.apache.flink.testutils.migration.MigrationVersion;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -34,8 +34,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
@@ -52,7 +55,7 @@ public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub 
     protected static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
             "flink-psc-producer-migration-test";
 
-    protected final MigrationVersion testMigrateVersion;
+    protected final FlinkVersion testMigrateVersion;
     protected final TypeInformationSerializationSchema<Integer> integerSerializationSchema =
             new TypeInformationSerializationSchema<>(BasicTypeInfo.INT_TYPE_INFO, new ExecutionConfig());
     protected final KeyedSerializationSchema<Integer> integerKeyedSerializationSchema =
@@ -63,9 +66,9 @@ public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub 
      * and remove all @Ignore annotations on writeSnapshot() methods to generate savepoints
      * Note: You should generate the savepoint based on the release branch instead of the master.
      */
-    protected final Optional<MigrationVersion> flinkGenerateSavepointVersion = Optional.empty();
+    protected final Optional<FlinkVersion> flinkGenerateSavepointVersion = Optional.empty();
 
-    public PscMigrationTestBase(MigrationVersion testMigrateVersion) {
+    public PscMigrationTestBase(FlinkVersion testMigrateVersion) {
         this.testMigrateVersion = checkNotNull(testMigrateVersion);
     }
 
@@ -73,7 +76,7 @@ public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub 
         return getOperatorSnapshotPath(testMigrateVersion);
     }
 
-    public String getOperatorSnapshotPath(MigrationVersion version) {
+    public String getOperatorSnapshotPath(FlinkVersion version) {
         return "src/test/resources/psc-migration-psc-producer-flink-" + version + "-snapshot";
     }
 
@@ -133,7 +136,16 @@ public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub 
     public void testRestoreProducer() throws Exception {
         try {
             startClusters();
-
+            // The below two lines are commented out to keep test in sync with open source Flink test code
+            // However, we found that these tests pass despite running into
+            // org.apache.kafka.common.errors.InvalidPidMappingException upon commitTransaction.
+            // The hypothesis is because the test is set up in such a way where the snapshot files are pre-generated
+            // and used to restore state in initializeState(). However, on the server side, the transaction metadata
+            // (specifically the producer ID and transaction ID combo) are going to be different than the combo
+            // present in the snapshot file due to the fact that in initializeTestState(), transactional records are written
+            // to test server but those transactions are not the same as the pre-generated snapshot files
+//            OperatorSubtaskState snapshot = initializeTestState();
+//            OperatorSnapshotUtil.writeStateHandle(snapshot, getOperatorSnapshotPath());
             initializeTestState();
 
             try (OneInputStreamOperatorTestHarness testHarness = createTestHarness()) {

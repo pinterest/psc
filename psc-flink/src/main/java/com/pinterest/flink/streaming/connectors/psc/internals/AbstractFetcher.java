@@ -27,7 +27,7 @@ import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.streaming.api.functions.source.SourceFunction.SourceContext;
 import com.pinterest.flink.streaming.connectors.psc.config.OffsetCommitMode;
 import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscConsumerMetricConstants;
-import org.apache.flink.streaming.runtime.tasks.ProcessingTimeCallback;
+import org.apache.flink.api.common.operators.ProcessingTimeService.ProcessingTimeCallback;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.util.SerializedValue;
 

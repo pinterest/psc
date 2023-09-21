@@ -358,16 +358,4 @@ public class FlinkPscConsumer<T> extends FlinkPscConsumerBase<T> {
         props.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, deSerName);
         props.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, deSerName);
     }
-
-    @Override
-    protected void initializePscMetrics() {
-        super.initializePscMetrics();
-
-        if (pscMetricsInitialized == null)
-            pscMetricsInitialized = new AtomicBoolean(false);
-
-        if (pscMetricsInitialized.compareAndSet(false, true)) {
-            PscMetricRegistryManager.getInstance().initialize(pscConfigurationInternal);
-        }
-    }
 }

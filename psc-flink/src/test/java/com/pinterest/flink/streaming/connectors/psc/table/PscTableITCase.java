@@ -18,18 +18,20 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.table.descriptors.psc.PscValidator;
+
 /**
  * IT cases for PSC for Table API & SQL.
  */
-//public class PscTableITCase extends PscTableTestBase {
-//
-//	@Override
-//	public String factoryIdentifier() {
-//		return PscDynamicTableFactory.IDENTIFIER;
-//	}
-//
-//	@Override
-//	public String pscVersion() {
-//		return PscValidator.CONNECTOR_VERSION_VALUE_UNIVERSAL;
-//	}
-//}
+public class PscTableITCase extends PscTableTestBase {
+
+	@Override
+	public String factoryIdentifier() {
+		return PscDynamicTableFactory.IDENTIFIER;
+	}
+
+	@Override
+	public String pscVersion() {
+		return PscValidator.CONNECTOR_VERSION_VALUE_UNIVERSAL;
+	}
+}

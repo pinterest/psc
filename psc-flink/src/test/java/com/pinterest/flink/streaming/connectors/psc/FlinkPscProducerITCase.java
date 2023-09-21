@@ -403,7 +403,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
 
         OperatorSubtaskState operatorSubtaskState = repartitionAndExecute(
                 topicUri,
-                new OperatorSubtaskState(),
+                OperatorSubtaskState.builder().build(),
                 parallelism1,
                 parallelism1,
                 maxParallelism,

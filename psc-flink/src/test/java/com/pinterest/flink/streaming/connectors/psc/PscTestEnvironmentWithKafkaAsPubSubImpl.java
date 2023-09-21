@@ -487,7 +487,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         final int numTries = 5;
 
         for (int i = 1; i <= numTries; i++) {
-            int kafkaPort = NetUtils.getAvailablePort();
+            int kafkaPort = NetUtils.getAvailablePort().getPort();
             kafkaProperties.put("port", Integer.toString(kafkaPort));
 
             if (config.isHideKafkaBehindProxy()) {
@@ -508,8 +508,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
 
             try {
                 scala.Option<String> stringNone = scala.Option.apply(null);
-                KafkaServer server = new KafkaServer(kafkaConfig, Time.SYSTEM, stringNone,
-                        new ArraySeq<KafkaMetricsReporter>(0));
+                KafkaServer server = new KafkaServer(kafkaConfig, Time.SYSTEM, stringNone, false);
                 server.startup();
                 return server;
             } catch (KafkaException e) {

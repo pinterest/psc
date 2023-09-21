@@ -19,11 +19,12 @@
 package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.flink.streaming.connectors.psc.internals.FlinkPscInternalProducer;
+import org.apache.flink.FlinkVersion;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.common.typeutils.TypeSerializerMatchers;
 import org.apache.flink.api.common.typeutils.TypeSerializerSchemaCompatibility;
 import org.apache.flink.api.common.typeutils.TypeSerializerUpgradeTestBase;
-import org.apache.flink.testutils.migration.MigrationVersion;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
 import org.hamcrest.Matcher;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -110,7 +111,7 @@ public class PscSerializerUpgradeTest extends TypeSerializerUpgradeTestBase<Obje
         }
 
         @Override
-        public Matcher<TypeSerializerSchemaCompatibility<FlinkPscProducer.PscTransactionState>> schemaCompatibilityMatcher(MigrationVersion version) {
+        public Matcher<TypeSerializerSchemaCompatibility<FlinkPscProducer.PscTransactionState>> schemaCompatibilityMatcher(FlinkVersion version) {
             return TypeSerializerMatchers.isCompatibleAsIs();
         }
     }
@@ -157,7 +158,10 @@ public class PscSerializerUpgradeTest extends TypeSerializerUpgradeTestBase<Obje
         }
 
         @Override
-        public Matcher<TypeSerializerSchemaCompatibility<FlinkPscProducer.PscTransactionContext>> schemaCompatibilityMatcher(MigrationVersion version) {
+        public Matcher<
+                TypeSerializerSchemaCompatibility<
+                        FlinkPscProducer.PscTransactionContext>>
+        schemaCompatibilityMatcher(FlinkVersion version) {
             return TypeSerializerMatchers.isCompatibleAsIs();
         }
     }
