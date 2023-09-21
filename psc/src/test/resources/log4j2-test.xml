@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration>
+    <Properties>
+        <Property name="textPattern"
+                  value="%highlight{[%d] %-5p %m (%c.%M:%L) %notEmpty{[%pid-%tid]}%n}{FATAL=purple, ERROR=red, WARN=yellow, INFO=white}"/>
+    </Properties>
+
+    <Appenders>
+        <Console name="console" target="SYSTEM_OUT">
+            <PatternLayout pattern="${textPattern}"/>
+        </Console>
+    </Appenders>
+
+    <Loggers>
+        <AsyncRoot level="info" includeLocation="true">
+            <AppenderRef ref="console"/>
+        </AsyncRoot>
+    </Loggers>
+</Configuration>

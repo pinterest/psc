@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE log4j:configuration SYSTEM "log4j.dtd">
+<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+
+    <appender name="pscJsonAppender" class="org.apache.log4j.rolling.RollingFileAppender">
+        <rollingPolicy class="org.apache.log4j.rolling.FixedWindowRollingPolicy">
+            <param name="ActiveFileName" value="/tmp/psc-internal.json" />
+            <param name="FileNamePattern" value="/tmp/psc-internal.json.%i.gz" />
+            <param name="MaxIndex" value="10"/>
+        </rollingPolicy>
+        <triggeringPolicy class="org.apache.log4j.rolling.SizeBasedTriggeringPolicy">
+            <param name="MaxFileSize" value="26214400" />
+        </triggeringPolicy>
+        <layout class="net.logstash.log4j.JSONEventLayoutV1"/>
+    </appender>
+
+    <appender name="pscTextAppender" class="org.apache.log4j.rolling.RollingFileAppender">
+        <rollingPolicy class="org.apache.log4j.rolling.FixedWindowRollingPolicy">
+            <param name="ActiveFileName" value="/tmp/psc-internal.log" />
+            <param name="FileNamePattern" value="/tmp/psc-internal.log.%i.gz" />
+            <param name="MaxIndex" value="10"/>
+        </rollingPolicy>
+        <triggeringPolicy class="org.apache.log4j.rolling.SizeBasedTriggeringPolicy">
+            <param name="MaxFileSize" value="26214400" />
+        </triggeringPolicy>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[%d] %-5p %m (%c.%M:%L) [%X{pscPid}-%X{pscTid}]%n"/>
+        </layout>
+    </appender>
+
+    <appender name="stdout" class="org.apache.log4j.ConsoleAppender">
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[%d] %-5p %m (%c.%M:%L) [%X{pscPid}-%X{pscTid}]%n"/>
+        </layout>
+    </appender>
+
+    <logger name="com.pinterest.psc">
+        <level value="INFO"/>
+        <appender-ref ref="pscTextAppender"/>
+        <appender-ref ref="pscJsonAppender"/>
+    </logger>
+
+    <root>
+        <level value="INFO"/>
+        <appender-ref ref="stdout"/>
+    </root>
+
+</log4j:configuration>
