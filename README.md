@@ -19,7 +19,7 @@ Some highlights of PSC include:
 
 ***PSC is currently under active development.***
 
-PSC currently supports [Apache Kafka](https://github.com/apache/kafka) and [MemQ](https://github.com/pinterest/memq) PubSub systems in Java, with support for more languages and PubSub systems coming soon.
+PSC currently supports [Apache Kafka](https://github.com/apache/kafka) and [MemQ](https://github.com/pinterest/memq) PubSub systems in Java, with support for more languages coming soon. Contributions to adding support for other PubSub systems is welcome!
 
 ## Compatibility Matrix
 
