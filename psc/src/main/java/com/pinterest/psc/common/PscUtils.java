@@ -1,16 +1,13 @@
 package com.pinterest.psc.common;
 
 import com.pinterest.psc.exception.startup.ConfigurationException;
-import com.pinterest.psc.exception.startup.ServiceDiscoveryException;
 import com.pinterest.psc.logging.PscLogger;
-import software.amazon.awssdk.core.SdkSystemSetting;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.net.ConnectException;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
@@ -35,35 +32,36 @@ public class PscUtils {
     }
 
     public static boolean isEc2Host() {
+        return doesEc2MetadataExist() || isSysVendorAws() || IsAwsOsDetected();
+    }
+
+    protected static boolean doesEc2MetadataExist() {
         try {
-            String hostAddressForEC2MetadataService = SdkSystemSetting.AWS_EC2_METADATA_SERVICE_ENDPOINT.getStringValueOrThrow();
-            if (hostAddressForEC2MetadataService == null)
-                return false;
-            URL url = new URL(hostAddressForEC2MetadataService + "/latest/dynamic/instance-identity/document");
-            HttpURLConnection con = (HttpURLConnection) url.openConnection();
-            con.setRequestMethod("GET");
-            con.setConnectTimeout(1000);
-            con.setReadTimeout(1000);
-            con.connect();
-            con.disconnect();
-            return con.getResponseCode() == 200;
-        } catch (ConnectException connectException) {
-            return isEc2HostAlternate();
-        } catch (Exception exception) {
-            logger.warn("Error occurred when determining the host type.", new ServiceDiscoveryException(exception));
+            ProcessBuilder processBuilder = new ProcessBuilder("ec2metadata");
+            processBuilder.redirectErrorStream(true);
+            Process process = processBuilder.start();
+            return process.waitFor() == 0;
+        } catch (Exception e) {
+            logger.info("Could not detect if host is EC2 from ec2metadata.", e);
             return false;
         }
     }
 
-    protected static boolean isEc2HostAlternate() {
-        ProcessBuilder processBuilder = new ProcessBuilder("ec2metadata");
-        processBuilder.redirectErrorStream(true);
+    protected static boolean isSysVendorAws() {
         try {
-            Process process = processBuilder.start();
-            return process.waitFor() == 0;
-        } catch (IOException | InterruptedException e) {
-            logger.info("Error occurred when running the `ec2metadata` command. Will check OS version as last resort.");
+            return getFileContent("/sys/devices/virtual/dmi/id/sys_vendor").trim().equals("Amazon EC2");
+        } catch (Exception e) {
+            logger.info("Could not detect if host is EC2 from sys vendor.", e);
+            return false;
+        }
+    }
+
+    protected static boolean IsAwsOsDetected() {
+        try {
             return System.getProperty("os.version").contains("aws");
+        } catch (Exception e) {
+            logger.info("Could not detect if host is EC2 from os version.", e);
+            return false;
         }
     }
 
@@ -88,5 +86,15 @@ public class PscUtils {
         PrintWriter printWriter = new PrintWriter(stringWriter);
         exception.printStackTrace(printWriter);
         return stringWriter.toString();
+    }
+
+    public static String getFileContent(String path) throws IOException {
+        StringBuilder content = new StringBuilder();
+        BufferedReader reader = new BufferedReader(new FileReader(path));
+        String line;
+        while ((line = reader.readLine()) != null) {
+            content.append(line).append(System.lineSeparator());
+        }
+        return content.toString();
     }
 }
