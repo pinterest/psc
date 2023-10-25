@@ -32,7 +32,7 @@ public class PscUtils {
     }
 
     public static boolean isEc2Host() {
-        return doesEc2MetadataExist() || isSysVendorAws() || IsAwsOsDetected();
+        return doesEc2MetadataExist() || isSysVendorAws() || isAwsOsDetected();
     }
 
     protected static boolean doesEc2MetadataExist() {
@@ -56,7 +56,7 @@ public class PscUtils {
         }
     }
 
-    protected static boolean IsAwsOsDetected() {
+    protected static boolean isAwsOsDetected() {
         try {
             return System.getProperty("os.version").contains("aws");
         } catch (Exception e) {
