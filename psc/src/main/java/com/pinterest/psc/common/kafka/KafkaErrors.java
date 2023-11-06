@@ -24,6 +24,7 @@ import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.errors.WakeupException;
 
+import java.util.ConcurrentModificationException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -162,6 +163,17 @@ public class KafkaErrors {
                             RetriableCommitFailedException.class,
                             new LinkedHashMap<String, PscErrorHandler.ConsumerAction>(1) {{
                                 put("", new PscErrorHandler.ConsumerAction(PscErrorHandler.ActionType.RETRY_RESET_THEN_THROW, ConsumerException.class));
+                            }}
+                    )
+
+                    // ConcurrentModificationException
+                    .put(
+                            ConcurrentModificationException.class,
+                            new LinkedHashMap<String, PscErrorHandler.ConsumerAction>(1) {{
+                                put(
+                                        "org.apache.kafka.common.metrics.JmxReporter.getMBeanName", // known case of CME - we will swallow it
+                                        new PscErrorHandler.ConsumerAction(PscErrorHandler.ActionType.NONE, ConsumerException.class)
+                                );
                             }}
                     )
 
