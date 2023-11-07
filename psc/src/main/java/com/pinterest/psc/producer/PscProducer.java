@@ -316,13 +316,6 @@ public class PscProducer<K, V> implements AutoCloseable {
 
         Future<MessageId> future = backendProducer.send(pscProducerMessage, callback);
 
-        PscMetricRegistryManager.getInstance().incrementCounterMetric(
-                pscProducerMessage.getTopicUriPartition().getTopicUri(),
-                pscProducerMessage.getPartition(),
-                PscMetrics.PSC_PRODUCER_PRODUCE_MESSAGES_METRIC,
-                pscConfigurationInternal
-        );
-
         return future;
     }
 
