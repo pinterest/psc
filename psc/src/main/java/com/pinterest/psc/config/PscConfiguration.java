@@ -89,6 +89,11 @@ public class PscConfiguration extends PropertiesConfiguration {
      */
     public final static String PCS_AUTO_RESOLUTION_RETRY_COUNT = "psc.auto.resolution.retry.count";
 
+    /**
+     * Whether to proactively reset consumer or producer based on approaching SSL certificate expiry
+     */
+    public final static String PSC_PROACTIVE_SSL_RESET_ENABLED = "psc.proactive.ssl.reset.enabled";
+
     private final static String PSC_CLIENT_TYPE = "psc.client.type";
     public final static String PSC_CLIENT_TYPE_CONSUMER = "consumer";
     public final static String PSC_CLIENT_TYPE_PRODUCER = "producer";

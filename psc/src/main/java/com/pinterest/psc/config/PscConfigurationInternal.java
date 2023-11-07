@@ -53,6 +53,7 @@ public class PscConfigurationInternal {
     private boolean autoResolutionEnabled;
     private int autoResolutionRetryCount;
     private MetricsReporterConfiguration metricsReporterConfiguration;
+    private boolean proactiveSslResetEnabled;
 
     public PscConfigurationInternal() {
     }
@@ -206,6 +207,10 @@ public class PscConfigurationInternal {
             Integer autoResolutionRetryCount = verifyConfigHasValue(pscConfiguration, PscConfiguration.PCS_AUTO_RESOLUTION_RETRY_COUNT, Integer.class, invalidConfigs);
             this.autoResolutionRetryCount = autoResolutionRetryCount != null ? autoResolutionRetryCount : 5;
         }
+
+        // SSL reset
+        Boolean proactiveSslResetEnabled = verifyConfigHasValue(pscConfiguration, PscConfiguration.PSC_PROACTIVE_SSL_RESET_ENABLED, Boolean.class, invalidConfigs);
+        this.proactiveSslResetEnabled = proactiveSslResetEnabled != null ? proactiveSslResetEnabled : false;    // false by default
     }
 
     public void logConfiguration() {
@@ -731,6 +736,10 @@ public class PscConfigurationInternal {
 
     public boolean isAutoResolutionEnabled() {
         return autoResolutionEnabled;
+    }
+
+    public boolean isProactiveSslResetEnabled() {
+        return proactiveSslResetEnabled;
     }
 
     public int getAutoResolutionRetryCount() {
