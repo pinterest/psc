@@ -39,7 +39,6 @@ import com.pinterest.psc.producer.Callback;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
-import com.pinterest.psc.producer.kafka.KafkaProducerTransactionalProperties;
 import com.pinterest.psc.serde.ByteArraySerializer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.annotation.Internal;
