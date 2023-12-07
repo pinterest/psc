@@ -722,24 +722,13 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
             );
         }
 
-        resumeTransaction(new KafkaProducerTransactionalProperties(producerId, epoch));
+        resumeTransaction(new PscProducerTransactionalProperties(producerId, epoch));
     }
 
     @Override
     public void resumeTransaction(PscProducerTransactionalProperties pscProducerTransactionalProperties) throws ProducerException {
         if (kafkaProducer == null)
             handleUninitializedKafkaProducer("resumeTransaction()");
-
-        if (!(pscProducerTransactionalProperties instanceof KafkaProducerTransactionalProperties)) {
-            handleException(
-                    new BackendProducerException(
-                            "[Kafka] Unexpected producer transaction state type: " + pscProducerTransactionalProperties.getClass().getCanonicalName(),
-                            PscUtils.BACKEND_TYPE_KAFKA
-                    ), true
-            );
-        }
-
-        KafkaProducerTransactionalProperties kafkaProducerTransactionalProperties = (KafkaProducerTransactionalProperties) pscProducerTransactionalProperties;
 
         try {
             Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
@@ -758,8 +747,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
                 PscCommon.invoke(topicPartitionBookkeeper, "reset");
 
                 Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-                PscCommon.setField(producerIdAndEpoch, "producerId", kafkaProducerTransactionalProperties.getProducerId());
-                PscCommon.setField(producerIdAndEpoch, "epoch", kafkaProducerTransactionalProperties.getEpoch());
+                PscCommon.setField(producerIdAndEpoch, "producerId", pscProducerTransactionalProperties.getProducerId());
+                PscCommon.setField(producerIdAndEpoch, "epoch", pscProducerTransactionalProperties.getEpoch());
 
                 PscCommon.invoke(
                         transactionManager,
@@ -791,7 +780,7 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
 
         Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
         Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-        return new KafkaProducerTransactionalProperties(
+        return new PscProducerTransactionalProperties(
                 (long) PscCommon.getField(producerIdAndEpoch, "producerId"),
                 (short) PscCommon.getField(producerIdAndEpoch, "epoch")
         );

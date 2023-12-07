@@ -21,9 +21,9 @@ import com.pinterest.psc.producer.Callback;
 import com.pinterest.psc.producer.PscBackendProducer;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
+import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 import com.pinterest.psc.producer.PscProducerUtils;
 import com.pinterest.psc.producer.creation.PscKafkaProducerCreator;
-import com.pinterest.psc.producer.kafka.KafkaProducerTransactionalProperties;
 import com.pinterest.psc.serde.ByteArraySerializer;
 import com.pinterest.psc.serde.IntegerDeserializer;
 import com.pinterest.psc.serde.IntegerSerializer;
@@ -434,7 +434,7 @@ public class TestOneKafkaBackend {
         Collection<PscBackendProducer> backendProducers = PscProducerUtils.getBackendProducersOf(pscProducer);
         assertEquals(1, backendProducers.size());
         PscBackendProducer backendProducer = backendProducers.iterator().next();
-        KafkaProducerTransactionalProperties transactionalProperties = (KafkaProducerTransactionalProperties) backendProducer.getTransactionalProperties();
+        PscProducerTransactionalProperties transactionalProperties = backendProducer.getTransactionalProperties();
         long producerId = transactionalProperties.getProducerId();
         assertEquals(0, transactionalProperties.getEpoch());
 
@@ -450,7 +450,7 @@ public class TestOneKafkaBackend {
         backendProducers = PscProducerUtils.getBackendProducersOf(pscProducer2);
         assertEquals(1, backendProducers.size());
         backendProducer = backendProducers.iterator().next();
-        transactionalProperties = (KafkaProducerTransactionalProperties) backendProducer.getTransactionalProperties();
+        transactionalProperties = backendProducer.getTransactionalProperties();
         // it should bump the epoch each time for the same producer id
         assertEquals(producerId, transactionalProperties.getProducerId());
         assertEquals(1, transactionalProperties.getEpoch());
@@ -463,7 +463,7 @@ public class TestOneKafkaBackend {
         backendProducers = PscProducerUtils.getBackendProducersOf(pscProducer3);
         assertEquals(1, backendProducers.size());
         backendProducer = backendProducers.iterator().next();
-        transactionalProperties = (KafkaProducerTransactionalProperties) backendProducer.getTransactionalProperties();
+        transactionalProperties = backendProducer.getTransactionalProperties();
         assertEquals(producerId, transactionalProperties.getProducerId());
         assertEquals(2, transactionalProperties.getEpoch());
         pscProducer3.abortTransaction();
