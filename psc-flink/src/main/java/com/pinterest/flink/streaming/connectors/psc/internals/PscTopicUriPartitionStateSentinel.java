@@ -58,6 +58,6 @@ public class PscTopicUriPartitionStateSentinel {
     public static final long GROUP_OFFSET = -915623761773L;
 
     public static boolean isSentinel(long offset) {
-        return offset < 0;
+        return offset <= -915623761773L && offset >= -915623761776L;
     }
 }

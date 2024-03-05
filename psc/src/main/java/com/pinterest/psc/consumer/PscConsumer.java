@@ -8,6 +8,7 @@ import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.consumer.creation.PscBackendConsumerCreator;
@@ -1909,6 +1910,14 @@ public class PscConsumer<K, V> implements AutoCloseable {
             throw new ConsumerException(
                     ExceptionMessage.DUPLICATE_PARTITIONS_IN_MESSAGE_IDS(duplicateTopicUriPartitions)
             );
+        }
+    }
+
+    public void onEvent(PscEvent event) {
+        if (subscribed.get() && event.getTopicUri() != null) {
+            subscriptionMap.get(event.getTopicUri()).onEvent(event);
+        } else if (assigned.get() && event.getTopicUriPartition() != null) {
+            assignmentMap.get(event.getTopicUriPartition()).onEvent(event);
         }
     }
 

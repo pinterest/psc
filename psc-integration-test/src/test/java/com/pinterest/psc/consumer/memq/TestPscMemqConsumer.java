@@ -304,7 +304,7 @@ public class TestPscMemqConsumer {
         // topic not in subscription
         MemqTopicUri memqUri = MemqTopicUri.validate(TopicUri.validate(testMemqTopic1));
         Set<MessageId> memqMessageIds = Collections
-                .singleton(new MemqMessageId(new TopicUriPartition(testKafkaTopic, 0), 0));
+                .singleton(new MemqMessageId(new TopicUriPartition(testKafkaTopic, 0), 0, false));
         assertThrows(ConsumerException.class, () -> pscMemqConsumer.commitSync(memqMessageIds));
 
         // invalid message id
@@ -320,9 +320,9 @@ public class TestPscMemqConsumer {
                 "test_" + System.currentTimeMillis());
         MemqTopicUri memqUri = MemqTopicUri.validate(TopicUri.validate(testMemqTopic1));
         MessageId memqMessageId1 = new MemqMessageId(
-                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), 0);
+                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), 0, false);
         MessageId memqMessageId2 = new MemqMessageId(
-                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), 10);
+                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), 10, false);
         pscMemqConsumer.subscribe(Sets.newHashSet(memqUri));
 
         MemqConsumer<byte[], byte[]> memqConsumer = Mockito.mock(MemqConsumer.class);

@@ -84,15 +84,12 @@ public class AbstractFetcherWatermarksTest {
         @Test
         public void testPeriodicWatermarks() throws Exception {
             Map<PscTopicUriPartition, Long> originalPartitions = new HashMap<>();
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 7),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 13),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 21),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup7 = new PscTopicUriPartition(TOPIC_URI, 7);
+            originalPartitions.put(ptup7, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup13 = new PscTopicUriPartition(TOPIC_URI, 13);
+            originalPartitions.put(ptup13, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup21 = new PscTopicUriPartition(TOPIC_URI, 21);
+            originalPartitions.put(ptup21, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
 
             TestSourceContext<Long> sourceContext = new TestSourceContext<>();
 
@@ -106,11 +103,14 @@ public class AbstractFetcherWatermarksTest {
                     10);
 
             final PscTopicUriPartitionState<Long, Object> part1 =
-                    fetcher.subscribedPartitionStates().get(0);
+                fetcher.subscribedPartitionStates().get(0);
+            fetcher.subscribedPartitionStates().get(ptup7);
             final PscTopicUriPartitionState<Long, Object> part2 =
-                    fetcher.subscribedPartitionStates().get(1);
+                fetcher.subscribedPartitionStates().get(1);
+            fetcher.subscribedPartitionStates().get(ptup13);
             final PscTopicUriPartitionState<Long, Object> part3 =
-                    fetcher.subscribedPartitionStates().get(2);
+                fetcher.subscribedPartitionStates().get(2);
+            fetcher.subscribedPartitionStates().get(ptup21);
 
             // elements generate a watermark if the timestamp is a multiple of three
 
@@ -169,9 +169,8 @@ public class AbstractFetcherWatermarksTest {
         @Test
         public void testSkipCorruptedRecordWithPeriodicWatermarks() throws Exception {
             Map<PscTopicUriPartition, Long> originalPartitions = new HashMap<>();
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 1),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup = new PscTopicUriPartition(TOPIC_URI, 1);
+            originalPartitions.put(ptup, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
 
             TestSourceContext<Long> sourceContext = new TestSourceContext<>();
 
@@ -185,7 +184,7 @@ public class AbstractFetcherWatermarksTest {
                     10);
 
             final PscTopicUriPartitionState<Long, Object> partitionStateHolder =
-                    fetcher.subscribedPartitionStates().get(0);
+                    fetcher.subscribedPartitionStates().get(ptup);
 
             // elements generate a watermark if the timestamp is a multiple of three
             emitRecord(fetcher, 1L, partitionStateHolder, 1L);
@@ -239,9 +238,9 @@ public class AbstractFetcherWatermarksTest {
 
             // counter-test that when the fetcher does actually have partitions,
             // when the periodic watermark emitter fires again, a watermark really is emitted
-            fetcher.addDiscoveredPartitions(Collections.singletonList(
-                    new PscTopicUriPartition(TOPIC_URI, 0)));
-            emitRecord(fetcher, 100L, fetcher.subscribedPartitionStates().get(0), 3L);
+            PscTopicUriPartition ptup = new PscTopicUriPartition(TOPIC_URI, 0);
+            fetcher.addDiscoveredPartitions(Collections.singletonList(ptup));
+            emitRecord(fetcher, 100L, fetcher.subscribedPartitionStates().get(ptup), 3L);
             processingTimeProvider.setCurrentTime(20);
             assertEquals(100, sourceContext.getLatestWatermark().getTimestamp());
         }
@@ -255,9 +254,8 @@ public class AbstractFetcherWatermarksTest {
         @Test
         public void testSkipCorruptedRecordWithPunctuatedWatermarks() throws Exception {
             Map<PscTopicUriPartition, Long> originalPartitions = new HashMap<>();
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 1),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup = new PscTopicUriPartition(TOPIC_URI, 1);
+            originalPartitions.put(ptup, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
 
             TestSourceContext<Long> sourceContext = new TestSourceContext<>();
 
@@ -274,7 +272,7 @@ public class AbstractFetcherWatermarksTest {
                     0);
 
             final PscTopicUriPartitionState<Long, Object> partitionStateHolder =
-                    fetcher.subscribedPartitionStates().get(0);
+                    fetcher.subscribedPartitionStates().get(ptup);
 
             // elements generate a watermark if the timestamp is a multiple of three
             emitRecord(fetcher, 1L, partitionStateHolder, 1L);
@@ -300,15 +298,12 @@ public class AbstractFetcherWatermarksTest {
         @Test
         public void testPunctuatedWatermarks() throws Exception {
             Map<PscTopicUriPartition, Long> originalPartitions = new HashMap<>();
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 7),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 13),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
-            originalPartitions.put(
-                    new PscTopicUriPartition(TOPIC_URI, 21),
-                    PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup7 = new PscTopicUriPartition(TOPIC_URI, 7);
+            originalPartitions.put(ptup7, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup13 = new PscTopicUriPartition(TOPIC_URI, 13);
+            originalPartitions.put(ptup13, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+            PscTopicUriPartition ptup21 = new PscTopicUriPartition(TOPIC_URI, 21);
+            originalPartitions.put(ptup21, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
 
             TestSourceContext<Long> sourceContext = new TestSourceContext<>();
 
@@ -325,11 +320,14 @@ public class AbstractFetcherWatermarksTest {
                     0);
 
             final PscTopicUriPartitionState<Long, Object> part1 =
-                    fetcher.subscribedPartitionStates().get(0);
+                fetcher.subscribedPartitionStates().get(0);
+            fetcher.subscribedPartitionStates().get(ptup7);
             final PscTopicUriPartitionState<Long, Object> part2 =
-                    fetcher.subscribedPartitionStates().get(1);
+                fetcher.subscribedPartitionStates().get(1);
+            fetcher.subscribedPartitionStates().get(ptup13);
             final PscTopicUriPartitionState<Long, Object> part3 =
-                    fetcher.subscribedPartitionStates().get(2);
+                fetcher.subscribedPartitionStates().get(2);
+            fetcher.subscribedPartitionStates().get(ptup21);
 
             // elements generate a watermark if the timestamp is a multiple of three
 

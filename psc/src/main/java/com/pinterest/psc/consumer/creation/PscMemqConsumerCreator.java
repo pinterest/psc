@@ -106,7 +106,7 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
         }
 
         for (Map.Entry<String, Set<TopicUriPartition>> entry : clusterPartitions.entrySet()) {
-            PscMemqConsumer<K, V> pscMemqConsumer = (PscMemqConsumer) clusterConsumerCache.get(entry.getKey());
+            PscMemqConsumer<K, V> pscMemqConsumer = (PscMemqConsumer<K, V>) clusterConsumerCache.get(entry.getKey());
             TopicUri sampleMemqTopicUri = entry.getValue().iterator().next().getTopicUri();
             if (pscMemqConsumer == null) {
                 ServiceDiscoveryConfig discoveryConfig;

@@ -20,6 +20,7 @@ package com.pinterest.flink.streaming.connectors.psc.internals;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
+import java.util.Collection;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.metrics.MetricGroup;
@@ -133,18 +134,31 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             consumerThread.start();
 
             while (running) {
-                // this blocks until we get the next records
-                // it automatically re-throws exceptions encountered in the consumer thread
-                final PscConsumerPollMessageIterator<byte[], byte[]> records = handover.pollNext();
-
-                // get the records for each topic partition
-                for (PscTopicUriPartitionState<T, TopicUriPartition> partition : subscribedPartitionStates()) {
-
-                    Iterator<PscConsumerMessage<byte[], byte[]>> partitionRecords =
-                            records.iteratorFor(partition.getPscTopicUriPartitionHandle());
-
-                    topicUriPartitionConsumerRecordsHandler(partitionRecords, partition);
+                try (PscConsumerPollMessageIterator<byte[], byte[]> records = handover.pollNext()) {
+                    while (records.hasNext()) {
+                        PscConsumerMessage<byte[], byte[]> record = records.next();
+                        PscTopicUriPartition
+                            key =
+                            new PscTopicUriPartition(
+                                record.getMessageId().getTopicUriPartition().getTopicUri(),
+                                record.getMessageId().getTopicUriPartition().getPartition());
+                        PscTopicUriPartitionState<T, TopicUriPartition>
+                            partitionState =
+                            subscribedPartitionStates().get(key);
+                        if (partitionState != null) {
+                            topicUriPartitionConsumerRecordsHandler(record, partitionState);
+                        }
+                    }
                 }
+                // retired code; doesn't work for memq due to no support of `iteratorFor` method
+                // get the records for each topic partition
+//                for (PscTopicUriPartitionState<T, TopicUriPartition> partition : subscribedPartitionStates()) {
+//
+//                    Iterator<PscConsumerMessage<byte[], byte[]>> partitionRecords =
+//                            records.iteratorFor(partition.getPscTopicUriPartitionHandle());
+//
+//                    topicUriPartitionConsumerRecordsHandler(partitionRecords, partition);
+//                }
             }
         } finally {
             // this signals the consumer thread that no more work is to be done
@@ -177,11 +191,11 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
     }
 
     protected void topicUriPartitionConsumerRecordsHandler(
-            Iterator<PscConsumerMessage<byte[], byte[]>> topicUriPartitionMessages,
+            PscConsumerMessage<byte[], byte[]> record,
             PscTopicUriPartitionState<T, TopicUriPartition> pscTopicUriPartitionState) throws Exception {
 
-        while (topicUriPartitionMessages.hasNext()) {
-            PscConsumerMessage<byte[], byte[]> record = topicUriPartitionMessages.next();
+//        while (topicUriPartitionMessages.hasNext()) {
+//            PscConsumerMessage<byte[], byte[]> record = topicUriPartitionMessages.next();
             deserializer.deserialize(record, pscCollector);
 
             // emit the actual records. this also updates offset state atomically and emits
@@ -195,9 +209,9 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             if (pscCollector.isEndOfStreamSignalled()) {
                 // end of stream signaled
                 running = false;
-                break;
+//                break;
             }
-        }
+//        }
     }
 
     // ------------------------------------------------------------------------
@@ -214,14 +228,15 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             Map<PscTopicUriPartition, Long> topicUriPartitionOffsets,
             @Nonnull PscCommitCallback commitCallback) throws Exception {
 
-        List<PscTopicUriPartitionState<T, TopicUriPartition>> pscTopicUriPartitionStates = subscribedPartitionStates();
+        Collection<PscTopicUriPartitionState<T, TopicUriPartition>> pscTopicUriPartitionStates = subscribedPartitionStates().values();
 
         Map<TopicUriPartition, Long> offsetsToCommit = new HashMap<>(pscTopicUriPartitionStates.size());
 
         for (PscTopicUriPartitionState<T, TopicUriPartition> pscTopicUriPartitionState : pscTopicUriPartitionStates) {
             Long lastProcessedOffset = topicUriPartitionOffsets.get(pscTopicUriPartitionState.getPscTopicUriPartition());
             if (lastProcessedOffset != null) {
-                checkState(lastProcessedOffset >= 0, "Illegal offset value to commit");
+                // Don't commit offset only if the value is one of the magic numbers; memq offsets can be negative
+                checkState(!PscTopicUriPartitionStateSentinel.isSentinel(lastProcessedOffset), "Illegal offset value to commit");
 
                 // committed offsets through the PscConsumer need to be the last processed offset.
                 // PSC will translate that to the proper offset to commit per backend.

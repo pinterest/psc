@@ -106,11 +106,11 @@ public class PscShuffleFetcher<T> extends PscFetcher<T> {
 
     @Override
     protected void topicUriPartitionConsumerRecordsHandler(
-            Iterator<PscConsumerMessage<byte[], byte[]>> topicUriPartitionMessages,
+            PscConsumerMessage<byte[], byte[]> record,
             PscTopicUriPartitionState<T, TopicUriPartition> pscTopicUriPartitionState) throws Exception {
 
-        while (topicUriPartitionMessages.hasNext()) {
-            PscConsumerMessage<byte[], byte[]> record = topicUriPartitionMessages.next();
+//        while (topicUriPartitionMessages.hasNext()) {
+//            PscConsumerMessage<byte[], byte[]> record = topicUriPartitionMessages.next();
             final PscShuffleElement element = pscShuffleElementDeserializer.deserialize(record);
 
             // TODO: Do we need to check the end of stream if reaching the end watermark
@@ -137,7 +137,7 @@ public class PscShuffleFetcher<T> extends PscFetcher<T> {
                 Optional<Watermark> newWatermark = watermarkHandler.checkAndGetNewWatermark(watermark);
                 newWatermark.ifPresent(sourceContext::emitWatermark);
             }
-        }
+//        }
     }
 
     /**
