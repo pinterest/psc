@@ -8,6 +8,7 @@ import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.consumer.creation.PscBackendConsumerCreator;
@@ -829,7 +830,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
             validateMessageIds(messageIds);
 
             Map<PscBackendConsumer<K, V>, Set<MessageId>> backendConsumers =
-                    getNoAssignmentBackendConsumers(messageIds, false);
+                    getCommitBackendConsumers(messageIds, false);
             for (Map.Entry<PscBackendConsumer<K, V>, Set<MessageId>> entry : backendConsumers.entrySet()) {
                 entry.getKey().commitAsync(entry.getValue(), new OffsetCommitCallback() {
                     @Override
@@ -879,7 +880,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
             validateMessageIds(messageIds);
 
             Map<PscBackendConsumer<K, V>, Set<MessageId>> backendConsumers =
-                    getNoAssignmentBackendConsumers(messageIds, true);
+                    getCommitBackendConsumers(messageIds, false);
             for (Map.Entry<PscBackendConsumer<K, V>, Set<MessageId>> entry : backendConsumers.entrySet()) {
                 try {
                     entry.getKey().commitSync(entry.getValue());
@@ -913,7 +914,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
         commitSync(Collections.singleton(messageId));
     }
 
-    private Map<PscBackendConsumer<K, V>, Set<MessageId>> getNoAssignmentBackendConsumers(Collection<MessageId> messageIds, boolean canWakeup) throws ConfigurationException, ConsumerException {
+    private Map<PscBackendConsumer<K, V>, Set<MessageId>> getCommitBackendConsumers(Collection<MessageId> messageIds, boolean canWakeup) throws ConfigurationException, ConsumerException {
         // dispatch messageIds to creators based on the backend
         Map<String, PscBackendConsumerCreator> creator = creatorManager.getBackendCreators();
         Map<String, Set<MessageId>> backendToMessageIds = new HashMap<>();
@@ -927,13 +928,12 @@ public class PscConsumer<K, V> implements AutoCloseable {
         for (Map.Entry<String, Set<MessageId>> entry : backendToMessageIds.entrySet()) {
             if (creator.containsKey(entry.getKey())) {
                 for (MessageId messageId : entry.getValue()) {
-                    PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getAssignmentConsumer(
+                    PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getCommitConsumer(
                             environment,
                             pscConfigurationInternal,
                             consumerInterceptors,
                             messageId.getTopicUriPartition(),
-                            canWakeup && wakeups.get() >= 0,
-                            false
+                            canWakeup && wakeups.get() >= 0
                     );
 
                     backendConsumerToMessageIds.computeIfAbsent(backendConsumer, b -> new HashSet<>())
@@ -1772,12 +1772,11 @@ public class PscConsumer<K, V> implements AutoCloseable {
             for (Map.Entry<String, Map<TopicUriPartition, Long>> entry : backendToTopicUriPartitionTimestampMap.entrySet()) {
                 if (creator.containsKey(entry.getKey())) {
                     for (Map.Entry<TopicUriPartition, Long> entry2 : entry.getValue().entrySet()) {
-                        PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getAssignmentConsumer(
+                        PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getCommitConsumer(
                                 environment,
                                 pscConfigurationInternal,
                                 consumerInterceptors,
                                 entry2.getKey(),
-                                false,
                                 false
                         );
 
@@ -1917,6 +1916,14 @@ public class PscConsumer<K, V> implements AutoCloseable {
             throw new ConsumerException(
                     ExceptionMessage.DUPLICATE_PARTITIONS_IN_MESSAGE_IDS(duplicateTopicUriPartitions)
             );
+        }
+    }
+
+    public void onEvent(PscEvent event) {
+        if (subscribed.get() && event.getTopicUri() != null) {
+            subscriptionMap.get(event.getTopicUri()).onEvent(event);
+        } else if (assigned.get() && event.getTopicUriPartition() != null) {
+            assignmentMap.get(event.getTopicUriPartition()).onEvent(event);
         }
     }
 

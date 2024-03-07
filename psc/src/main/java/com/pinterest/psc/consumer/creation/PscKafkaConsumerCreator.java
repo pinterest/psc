@@ -159,6 +159,22 @@ public class PscKafkaConsumerCreator<K, V> extends PscBackendConsumerCreator<K, 
     }
 
     @Override
+    public Set<PscBackendConsumer<K, V>> getCommitConsumers(Environment environment,
+        PscConfigurationInternal pscConfigurationInternal,
+        ConsumerInterceptors<K, V> consumerInterceptors,
+        Set<TopicUriPartition> topicUriPartitions,
+        boolean shouldWakeup)
+        throws ConsumerException, ConfigurationException {
+        return getAssignmentConsumers(
+            environment,
+            pscConfigurationInternal,
+            consumerInterceptors,
+            topicUriPartitions,
+            shouldWakeup,
+            false);
+    }
+
+    @Override
     public TopicUri validateBackendTopicUri(TopicUri baseTopicUri) throws TopicUriSyntaxException {
         return KafkaTopicUri.validate(baseTopicUri);
     }
