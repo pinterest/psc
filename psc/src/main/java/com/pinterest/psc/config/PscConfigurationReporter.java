@@ -83,8 +83,8 @@ public class PscConfigurationReporter implements Runnable {
     public static boolean isThisYou(PscConfiguration pscConfiguration) {
         return pscConfiguration != null &&
                 pscConfiguration.containsKey(PscConfiguration.PSC_PROJECT) &&
-                pscConfiguration.getProperty(PscConfiguration.PSC_PROJECT).equals("psc") &&
+                pscConfiguration.getString(PscConfiguration.PSC_PROJECT).equals("psc") &&
                 pscConfiguration.containsKey(PscConfiguration.PSC_PRODUCER_CLIENT_ID) &&
-                ((String) pscConfiguration.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID)).contains(PSC_CONFIGURATION_REPORTER_CLIENT_ID);
+                pscConfiguration.getString(PscConfiguration.PSC_PRODUCER_CLIENT_ID).contains(PSC_CONFIGURATION_REPORTER_CLIENT_ID);
     }
 }

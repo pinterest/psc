@@ -19,6 +19,7 @@
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
 import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.eventtime.WatermarkOutput;
 import org.apache.flink.api.common.eventtime.WatermarkOutputMultiplexer;
@@ -38,7 +39,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import static com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscConsumerMetricConstants.COMMITTED_OFFSETS_METRICS_GAUGE;
@@ -382,9 +382,9 @@ public abstract class AbstractFetcher<T, TUPH> {
             SerializedValue<WatermarkStrategy<T>> watermarkStrategy,
             ClassLoader userCodeClassLoader) throws IOException, ClassNotFoundException {
 
-        // CopyOnWrite as adding discovered partitions could happen in parallel
+        // ConcurrentHashMap as adding discovered partitions could happen in parallel
         // while different threads iterate the partitions list
-        Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> partitionStates = new HashMap<>();
+        Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> partitionStates = new ConcurrentHashMap<>();
 
         switch (timestampWatermarkMode) {
             case NO_TIMESTAMPS_WATERMARKS: {

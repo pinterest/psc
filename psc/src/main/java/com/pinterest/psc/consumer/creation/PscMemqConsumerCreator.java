@@ -27,8 +27,6 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
 
     private static final PscLogger logger = PscLogger.getLogger(PscMemqConsumerCreator.class);
 
-    public static volatile boolean failed = false;
-
     @Override
     public Set<PscBackendConsumer<K, V>> getConsumers(Environment environment,
                                                       PscConfigurationInternal pscConfigurationInternal,
@@ -180,8 +178,6 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
                 if (shouldWakeup)
                     pscMemqConsumer.wakeup();
             }
-            if (failed)
-                Thread.dumpStack();
 
             pscMemqConsumer.setConsumerInterceptors(consumerInterceptors);
             if (!pscMemqConsumer.isNotificationSourceInitialized())
