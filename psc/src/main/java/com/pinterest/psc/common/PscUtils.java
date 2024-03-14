@@ -42,7 +42,7 @@ public class PscUtils {
             Process process = processBuilder.start();
             return process.waitFor() == 0;
         } catch (Exception e) {
-            logger.info("Could not detect if host is EC2 from ec2metadata.", e);
+            logger.info("Could not detect if host is EC2 from ec2metadata.", e.getMessage());
             return false;
         }
     }
@@ -51,7 +51,7 @@ public class PscUtils {
         try {
             return getFileContent("/sys/devices/virtual/dmi/id/sys_vendor").trim().equals("Amazon EC2");
         } catch (Exception e) {
-            logger.info("Could not detect if host is EC2 from sys vendor.", e);
+            logger.info("Could not detect if host is EC2 from sys vendor.", e.getMessage());
             return false;
         }
     }
@@ -60,7 +60,7 @@ public class PscUtils {
         try {
             return System.getProperty("os.version").contains("aws");
         } catch (Exception e) {
-            logger.info("Could not detect if host is EC2 from os version.", e);
+            logger.info("Could not detect if host is EC2 from os version.", e.getMessage());
             return false;
         }
     }
