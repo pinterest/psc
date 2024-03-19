@@ -216,6 +216,61 @@ public abstract class PscBackendConsumerCreator<K, V> {
         return pscBackendConsumers.iterator().next();
     }
 
+    /**
+     * Creates/updates the backend consumer(s) and returns a set of active consumers
+     * The creator is responsible of reusing resources
+     *
+     * @param environment                  the Environment of the current PscConsumer instance
+     * @param pscConfigurationInternal     the PscConfiguration of the current initialization of the consumer
+     * @param consumerInterceptors         the consumer interceptors for consumer APIs
+     * @param topicUriPartitions           {@link TopicUriPartition}s that this backend should handle
+     * @param shouldWakeup                 whether the retrieved consumers should be woken up
+     * @return a Set of PscBackendConsumers that are active and should not be removed/unsubscribed
+     * @throws ConsumerException      thrown if extracting a backend consumer fails due to invalid topic URI, or lack of
+     *                                an applicable service discovery method, or ...
+     * @throws ConfigurationException thrown if service discovery fails based on the provided configuration
+     */
+    public abstract Set<PscBackendConsumer<K, V>> getCommitConsumers(
+        Environment environment,
+        PscConfigurationInternal pscConfigurationInternal,
+        ConsumerInterceptors<K, V> consumerInterceptors,
+        Set<TopicUriPartition> topicUriPartitions,
+        boolean shouldWakeup
+    ) throws ConsumerException, ConfigurationException;
+
+    /**
+     * Create/updates consumers suitable for performing commits for this backend
+     * @param environment                  the Environment of the current PscConsumer instance
+     * @param pscConfigurationInternal     the PscConfiguration of the current initialization of the consumer
+     * @param consumerInterceptors         the consumer interceptors for consumer APIs
+     * @param topicUriPartition            {@link TopicUriPartition} that this backend should handle
+     * @param shouldWakeup                 whether the retrieved consumers should be woken up
+     * @return a Set of PscBackendConsumers that are active and should not be removed/unsubscribed
+     * @throws ConsumerException      thrown if extracting a backend consumer fails due to invalid topic URI, or lack of
+     *                                an applicable service discovery method, or ...
+     * @throws ConfigurationException thrown if service discovery fails based on the provided configuration
+     */
+    public PscBackendConsumer<K, V> getCommitConsumer(
+        Environment environment,
+        PscConfigurationInternal pscConfigurationInternal,
+        ConsumerInterceptors<K, V> consumerInterceptors,
+        TopicUriPartition topicUriPartition,
+        boolean shouldWakeup
+    ) throws ConsumerException, ConfigurationException {
+        Set<PscBackendConsumer<K, V>> pscBackendConsumers = getCommitConsumers(
+            environment,
+            pscConfigurationInternal,
+            consumerInterceptors,
+            Collections.singleton(topicUriPartition),
+            shouldWakeup
+        );
+
+        if (pscBackendConsumers.isEmpty())
+            throw new ConsumerException("No consumer was found for topic URI partition" + topicUriPartition);
+
+        return pscBackendConsumers.iterator().next();
+    }
+
     public abstract TopicUri validateBackendTopicUri(TopicUri baseTopicUri) throws TopicUriSyntaxException;
 
     /**

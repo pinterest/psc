@@ -18,6 +18,8 @@
 
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
+import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.eventtime.WatermarkOutput;
 import org.apache.flink.api.common.eventtime.WatermarkOutputMultiplexer;
@@ -37,7 +39,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import static com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscConsumerMetricConstants.COMMITTED_OFFSETS_METRICS_GAUGE;
@@ -91,7 +92,7 @@ public abstract class AbstractFetcher<T, TUPH> {
     /**
      * All partitions (and their state) that this fetcher is subscribed to.
      */
-    private final List<PscTopicUriPartitionState<T, TUPH>> subscribedTopicUriPartitionStates;
+    private final Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> subscribedTopicUriPartitionStates;
 
     /**
      * Queue of partitions that are not yet assigned to any PSC clients for consuming.
@@ -184,27 +185,27 @@ public abstract class AbstractFetcher<T, TUPH> {
                 userCodeClassLoader);
 
         // check that all seed partition states have a defined offset
-        for (PscTopicUriPartitionState<?, ?> partitionState : subscribedTopicUriPartitionStates) {
+        for (PscTopicUriPartitionState<?, ?> partitionState : subscribedTopicUriPartitionStates.values()) {
             if (!partitionState.isOffsetDefined()) {
                 throw new IllegalArgumentException("The fetcher was assigned seed partitions with undefined initial offsets.");
             }
         }
 
         // all seed partitions are not assigned yet, so should be added to the unassigned partitions queue
-        for (PscTopicUriPartitionState<T, TUPH> partition : subscribedTopicUriPartitionStates) {
+        for (PscTopicUriPartitionState<T, TUPH> partition : subscribedTopicUriPartitionStates.values()) {
             unassignedTopicUriPartitionsQueue.add(partition);
         }
 
         // register metrics for the initial seed partitions
         if (useMetrics) {
-            registerOffsetMetrics(consumerMetricGroup, subscribedTopicUriPartitionStates);
+            registerOffsetMetrics(consumerMetricGroup, subscribedTopicUriPartitionStates.values());
         }
 
         // if we have periodic watermarks, kick off the interval scheduler
         if (timestampWatermarkMode == WITH_WATERMARK_GENERATOR && autoWatermarkInterval > 0) {
             PeriodicWatermarkEmitter<T, TUPH> periodicEmitter = new PeriodicWatermarkEmitter<>(
                     checkpointLock,
-                    subscribedTopicUriPartitionStates,
+                    subscribedTopicUriPartitionStates.values(),
                     watermarkOutputMultiplexer,
                     processingTimeProvider,
                     autoWatermarkInterval);
@@ -227,7 +228,7 @@ public abstract class AbstractFetcher<T, TUPH> {
      * @param newPartitions discovered partitions to add
      */
     public void addDiscoveredPartitions(List<PscTopicUriPartition> newPartitions) throws IOException, ClassNotFoundException {
-        List<PscTopicUriPartitionState<T, TUPH>> newPartitionStates = createPartitionStateHolders(
+        Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> newPartitionStates = createPartitionStateHolders(
                 newPartitions,
                 PscTopicUriPartitionStateSentinel.EARLIEST_OFFSET,
                 timestampWatermarkMode,
@@ -235,14 +236,14 @@ public abstract class AbstractFetcher<T, TUPH> {
                 userCodeClassLoader);
 
         if (useMetrics) {
-            registerOffsetMetrics(consumerMetricGroup, newPartitionStates);
+            registerOffsetMetrics(consumerMetricGroup, newPartitionStates.values());
         }
 
-        for (PscTopicUriPartitionState<T, TUPH> newPartitionState : newPartitionStates) {
+        for (Map.Entry<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> newPartitionStateEntry : newPartitionStates.entrySet()) {
             // the ordering is crucial here; first register the state holder, then
             // push it to the partitions queue to be read
-            subscribedTopicUriPartitionStates.add(newPartitionState);
-            unassignedTopicUriPartitionsQueue.add(newPartitionState);
+            subscribedTopicUriPartitionStates.put(newPartitionStateEntry.getKey(), newPartitionStateEntry.getValue());
+            unassignedTopicUriPartitionsQueue.add(newPartitionStateEntry.getValue());
         }
     }
 
@@ -255,7 +256,7 @@ public abstract class AbstractFetcher<T, TUPH> {
      *
      * @return All subscribed partitions.
      */
-    protected final List<PscTopicUriPartitionState<T, TUPH>> subscribedPartitionStates() {
+    protected final Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> subscribedPartitionStates() {
         return subscribedTopicUriPartitionStates;
     }
 
@@ -329,7 +330,7 @@ public abstract class AbstractFetcher<T, TUPH> {
         assert Thread.holdsLock(checkpointLock);
 
         HashMap<PscTopicUriPartition, Long> state = new HashMap<>(subscribedTopicUriPartitionStates.size());
-        for (PscTopicUriPartitionState<T, TUPH> partition : subscribedTopicUriPartitionStates) {
+        for (PscTopicUriPartitionState<T, TUPH> partition : subscribedTopicUriPartitionStates.values()) {
             state.put(partition.getPscTopicUriPartition(), partition.getOffset());
         }
         return state;
@@ -375,15 +376,15 @@ public abstract class AbstractFetcher<T, TUPH> {
      * Utility method that takes the topic partitions and creates the topic partition state
      * holders, depending on the timestamp / watermark mode.
      */
-    private List<PscTopicUriPartitionState<T, TUPH>> createPartitionStateHolders(
-            Map<PscTopicUriPartition, Long> partitionsToInitialOffsets,
+    private Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> createPartitionStateHolders(
+        Map<PscTopicUriPartition, Long> partitionsToInitialOffsets,
             int timestampWatermarkMode,
             SerializedValue<WatermarkStrategy<T>> watermarkStrategy,
             ClassLoader userCodeClassLoader) throws IOException, ClassNotFoundException {
 
-        // CopyOnWrite as adding discovered partitions could happen in parallel
+        // ConcurrentHashMap as adding discovered partitions could happen in parallel
         // while different threads iterate the partitions list
-        List<PscTopicUriPartitionState<T, TUPH>> partitionStates = new CopyOnWriteArrayList<>();
+        Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> partitionStates = new ConcurrentHashMap<>();
 
         switch (timestampWatermarkMode) {
             case NO_TIMESTAMPS_WATERMARKS: {
@@ -395,7 +396,7 @@ public abstract class AbstractFetcher<T, TUPH> {
                             new PscTopicUriPartitionState<>(partitionEntry.getKey(), pscTopicUriPartitionHandle);
                     partitionState.setOffset(partitionEntry.getValue());
 
-                    partitionStates.add(partitionState);
+                    partitionStates.put(partitionEntry.getKey(), partitionState);;
                 }
 
                 return partitionStates;
@@ -427,7 +428,7 @@ public abstract class AbstractFetcher<T, TUPH> {
 
                     partitionState.setOffset(partitionEntry.getValue());
 
-                    partitionStates.add(partitionState);
+                    partitionStates.put(partitionEntry.getKey(), partitionState);
                 }
 
                 return partitionStates;
@@ -443,7 +444,7 @@ public abstract class AbstractFetcher<T, TUPH> {
      * Shortcut variant of {@link #createPartitionStateHolders(Map, int, SerializedValue, ClassLoader)}
      * that uses the same offset for all partitions when creating their state holders.
      */
-    private List<PscTopicUriPartitionState<T, TUPH>> createPartitionStateHolders(
+    private Map<PscTopicUriPartition, PscTopicUriPartitionState<T, TUPH>> createPartitionStateHolders(
             List<PscTopicUriPartition> partitions,
             long initialOffset,
             int timestampWatermarkMode,
@@ -476,7 +477,7 @@ public abstract class AbstractFetcher<T, TUPH> {
      */
     private void registerOffsetMetrics(
             MetricGroup consumerMetricGroup,
-            List<PscTopicUriPartitionState<T, TUPH>> partitionOffsetStates) {
+            Collection<PscTopicUriPartitionState<T, TUPH>> partitionOffsetStates) {
 
         for (PscTopicUriPartitionState<T, TUPH> ktp : partitionOffsetStates) {
             MetricGroup topicPartitionGroup = consumerMetricGroup
@@ -538,7 +539,7 @@ public abstract class AbstractFetcher<T, TUPH> {
 
         private final Object checkpointLock;
 
-        private final List<PscTopicUriPartitionState<T, KPH>> allPartitions;
+        private final Collection<PscTopicUriPartitionState<T, KPH>> allPartitions;
 
         private final WatermarkOutputMultiplexer watermarkOutputMultiplexer;
 
@@ -550,7 +551,7 @@ public abstract class AbstractFetcher<T, TUPH> {
 
         PeriodicWatermarkEmitter(
                 Object checkpointLock,
-                List<PscTopicUriPartitionState<T, KPH>> allPartitions,
+                Collection<PscTopicUriPartitionState<T, KPH>> allPartitions,
                 WatermarkOutputMultiplexer watermarkOutputMultiplexer,
                 ProcessingTimeService timerService,
                 long autoWatermarkInterval) {

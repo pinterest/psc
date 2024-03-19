@@ -17,6 +17,7 @@ import com.pinterest.psc.integration.consumer.TestOneKafkaBackend;
 import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
+import com.pinterest.psc.metrics.PscMetricsUtil;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.producer.PscProducerUtils;
@@ -131,6 +132,7 @@ public class TestAutoRemediation {
 
         PscTestUtils.createTopicAndVerify(sharedKafkaTestResource, topic1, partitions1);
         PscTestUtils.createTopicAndVerify(sharedKafkaTestResource, topic2, partitions2);
+        PscMetricsUtil.cleanup(PscMetricRegistryManager.getInstance());
     }
 
     /**
