@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.pinterest.psc</groupId>
     <artifactId>psc-java-oss</artifactId>
-    <version>3.1.3</version>
+    <version>3.1.4-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>psc-java-oss</name>
     <modules>
