@@ -278,7 +278,6 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         try {
             MutableInt count = new MutableInt();
             if (pscConfigurationInternal.isAutoResolutionEnabled()) {
-                logger.info("Using pre-fetch with auto resolution");
                 memqLogMessageIterator = preFetchPollResultIntoMemoryWithAutoResolution(memqConsumer.poll(pollTimeout, count));
             } else {
                 memqLogMessageIterator = new MemqIteratorAdapter<>(memqConsumer.poll(pollTimeout, count));
