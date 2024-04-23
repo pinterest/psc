@@ -63,8 +63,6 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
     private Properties properties;
     private TopicUri topicUri;
 
-    private long lastResetTime;
-
     private final Map<Integer, MemqOffset> initialSeekOffsets = new ConcurrentHashMap<>();
 
     public PscMemqConsumer() {
@@ -101,7 +99,6 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         } catch (Exception e) {
             throw new ConsumerException("Could not instantiate a Memq consumer instance.", e);
         }
-        lastResetTime = System.currentTimeMillis();
         initializeMetricRegistry(memqConsumer);
     }
 
@@ -266,41 +263,11 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         }).collect(Collectors.toSet());
     }
 
-    private void resetMemqClient() throws ConsumerException{
-        super.resetBackendClient();
-
-        executeBackendCallWithRetries(() -> {
-            try {
-                memqConsumer.close();
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to close Memq consumer instance.", e);
-            }
-        });
-
-        try {
-            memqConsumer = new MemqConsumer<>(properties);
-        }
-        catch (Exception e){
-            throw new ConsumerException("Unable to instantiate a Memq consumer instance.", e);
-        }
-
-        if (!currentAssignment.isEmpty())
-            assign(currentAssignment);
-        else if (!currentSubscription.isEmpty())
-            subscribe(currentSubscription);
-    }
-
     @Override
     public PscConsumerPollMessageIterator<K, V> poll(Duration pollTimeout) throws ConsumerException,
             WakeupException {
         if (memqConsumer == null)
             throw new ConsumerException("[Memq] Consumer is not initialized prior to call to poll().");
-
-        long now = System.currentTimeMillis();
-        if (now - lastResetTime > 3600000) {
-            resetMemqClient();
-            lastResetTime = now;
-        }
 
         long startTs = System.currentTimeMillis();
         CloseableIterator<MemqLogMessage<byte[], byte[]>> memqLogMessageIterator;
