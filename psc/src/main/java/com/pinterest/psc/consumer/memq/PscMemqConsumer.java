@@ -33,10 +33,14 @@ import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
+
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.commons.lang3.mutable.MutableInt;
 import org.apache.commons.logging.Log;
+import software.amazon.awssdk.core.exception.SdkClientException;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -273,7 +277,12 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         CloseableIterator<MemqLogMessage<byte[], byte[]>> memqLogMessageIterator;
         try {
             MutableInt count = new MutableInt();
-            memqLogMessageIterator = new MemqIteratorAdapter<>(memqConsumer.poll(pollTimeout, count));
+            if (pscConfigurationInternal.isAutoResolutionEnabled()) {
+                logger.info("Using pre-fetch with auto resolution");
+                memqLogMessageIterator = preFetchPollResultIntoMemoryWithAutoResolution(memqConsumer.poll(pollTimeout, count));
+            } else {
+                memqLogMessageIterator = new MemqIteratorAdapter<>(memqConsumer.poll(pollTimeout, count));
+            }
         } catch (NoTopicsSubscribedException e) {
             throw new ConsumerException("[Memq] Consumer is not subscribed to any topic.", e);
         } catch (IOException e) {
@@ -291,6 +300,52 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         return new MemqToPscMessageIteratorConverter<>(memqConsumer.getTopicName(),
             memqLogMessageIterator, backendTopicToTopicUri, getConsumerInterceptors(),
             initialSeekOffsets);
+    }
+
+    private MemqPreFetchIteratorAdapter<MemqLogMessage<byte[], byte[]>> preFetchPollResultIntoMemoryWithAutoResolution(com.pinterest.memq.commons.CloseableIterator<MemqLogMessage<byte[], byte[]>> it) {
+        List<MemqLogMessage<byte[], byte[]>> preFetched = new ArrayList<>();
+        int count = 0;
+        while (it.hasNext()) {
+            try {
+                preFetched.add(it.next());
+                count++;
+            } catch (SdkClientException e) {
+                logger.warn("Error while pre-fetching messages, " +
+                        "resetting backend MemQ consumer and returning " + count + " messages in iterator for now", e);
+                try {
+                    it.close();
+                    resetBackendClient();
+                    break;
+                } catch (ConsumerException | IOException ex) {
+                    throw new RuntimeException("Failed to reset backend Memq consumer", ex);
+                }
+            }
+        }
+        return new MemqPreFetchIteratorAdapter<>(preFetched);
+
+    }
+
+    protected void resetBackendClient() throws ConsumerException {
+        super.resetBackendClient();
+        executeBackendCallWithRetries(() -> {
+            try {
+                memqConsumer.close();
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to close Memq consumer instance.", e);
+            }
+        });
+
+        try {
+            memqConsumer = new MemqConsumer<>(properties);
+        } catch (Exception e) {
+            throw new RuntimeException("Unable to instantiate a Memq consumer instance.", e);
+        }
+
+        if (!currentAssignment.isEmpty())
+            assign(currentAssignment);
+        else if (!currentSubscription.isEmpty())
+            subscribe(currentSubscription);
+
     }
 
     private void handleMemqConsumerMetrics(MetricRegistry metricRegistry) {
