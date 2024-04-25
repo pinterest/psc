@@ -221,8 +221,7 @@ public class PscConsumerThread<T> extends Thread {
             return;
         }
 
-        // the latest bulk of records. May carry across the loop if the thread is woken
-        // up
+        // The latest bulk of records. May carry across the loop if the thread is woken up
         // from blocking on the handover
         PscConsumerPollMessageIterator<byte[], byte[]> records = null;
 

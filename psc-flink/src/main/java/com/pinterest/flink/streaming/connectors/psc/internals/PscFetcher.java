@@ -153,16 +153,6 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
                         }
                     }
                 }
-
-                // retired code; doesn't work for memq due to no support of `iteratorFor` method
-                // get the records for each topic partition
-                /* for (PscTopicUriPartitionState<T, TopicUriPartition> partition : subscribedPartitionStates()) {
-
-                    Iterator<PscConsumerMessage<byte[], byte[]>> partitionRecords =
-                            records.iteratorFor(partition.getPscTopicUriPartitionHandle());
-
-                    topicUriPartitionConsumerRecordsHandler(partitionRecords, partition);
-                }*/
             }
         } finally {
             // this signals the consumer thread that no more work is to be done
@@ -198,8 +188,6 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             PscConsumerMessage<byte[], byte[]> record,
             PscTopicUriPartitionState<T, TopicUriPartition> pscTopicUriPartitionState) throws Exception {
 
-//        while (topicUriPartitionMessages.hasNext()) {
-//            PscConsumerMessage<byte[], byte[]> record = topicUriPartitionMessages.next();
             deserializer.deserialize(record, pscCollector);
 
             // emit the actual records. this also updates offset state atomically and emits
@@ -213,9 +201,7 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             if (pscCollector.isEndOfStreamSignalled()) {
                 // end of stream signaled
                 running = false;
-//                break;
             }
-//        }
     }
 
     // ------------------------------------------------------------------------
