@@ -17,6 +17,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
+import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
@@ -133,6 +134,8 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             // kick off the actual PSC consumer
             consumerThread.start();
 
+            Map<TopicUri, Map<Integer, PscTopicUriPartition>> topicUriPartitionsMap = new HashMap<>();
+
             while (running) {
                 // this blocks until we get the next records
                 // it automatically re-throws exceptions encountered in the consumer thread
@@ -140,16 +143,37 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
                 try (PscConsumerPollMessageIterator<byte[], byte[]> records = handover.pollNext()) {
                     while (records.hasNext()) {
                         PscConsumerMessage<byte[], byte[]> record = records.next();
-                        PscTopicUriPartition
-                            key =
-                            new PscTopicUriPartition(
-                                record.getMessageId().getTopicUriPartition().getTopicUri(),
-                                record.getMessageId().getTopicUriPartition().getPartition());
+
+                        TopicUri topicUri = record.getMessageId().getTopicUriPartition()
+                            .getTopicUri();
+                        Integer partition = record.getMessageId().getTopicUriPartition()
+                            .getPartition();
+
+                        PscTopicUriPartition key;
+
+                        if (topicUriPartitionsMap.containsKey(topicUri)) {
+                            if (topicUriPartitionsMap.get(topicUri).containsKey(partition)) {
+                                key = topicUriPartitionsMap.get(topicUri).get(partition);
+                            } else {
+                                key = new PscTopicUriPartition(topicUri, partition);
+                                topicUriPartitionsMap.get(topicUri).put(partition, key);
+                            }
+                        } else {
+                            key = new PscTopicUriPartition(topicUri, partition);
+                            Map<Integer, PscTopicUriPartition> partitionToKeyMap = new HashMap<>();
+                            partitionToKeyMap.put(partition, key);
+                            topicUriPartitionsMap.put(topicUri, partitionToKeyMap);
+                        }
+
                         PscTopicUriPartitionState<T, TopicUriPartition>
                             partitionState =
                             subscribedPartitionStates().get(key);
                         if (partitionState != null) {
                             topicUriPartitionConsumerRecordsHandler(record, partitionState);
+                        } else {
+                            LOG.warn(
+                                "Found unknown topic and partition: {} {} while reading messages from iterator",
+                                topicUri, partition);
                         }
                     }
                 }

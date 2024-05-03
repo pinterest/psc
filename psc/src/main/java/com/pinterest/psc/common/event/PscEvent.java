@@ -5,6 +5,14 @@ import com.pinterest.psc.common.TopicUriPartition;
 
 import java.util.Map;
 
+/**
+ * PscEvent framework enables event driven interaction between main loop and psc consumer thread.
+ * At this point it is used only in MemQ consumer case to inform memq consumer that the main loop encountered
+ * the end of a batch while traversing messages from iterator.
+ *
+ * This is an evolving framework.
+ */
+
 public class PscEvent {
   public final static String EVENT_HEADER = "__EVENT_HEADER";
 
