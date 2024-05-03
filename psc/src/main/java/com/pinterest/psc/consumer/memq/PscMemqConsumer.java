@@ -700,6 +700,10 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         return Collections.emptyMap();
     }
 
+    /**
+     * Allows event-based logic to be executed by the backend producer/consumer
+     * This method is evolving
+     */
     @Override
     public void onEvent(PscEvent event) {
         if (event.getType().equals(END_OF_BATCH_EVENT)) {
