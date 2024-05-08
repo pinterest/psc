@@ -156,7 +156,12 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
         Map<String, Set<TopicUriPartition>> clusterPartitions = new HashMap<>();
 
         for (TopicUriPartition topicUriPartition : topicUriPartitions) {
-            MemqTopicUri memqTopicUri = (MemqTopicUri) topicUriPartition.getTopicUri();
+            MemqTopicUri memqTopicUri;
+            try {
+                memqTopicUri = MemqTopicUri.validate(topicUriPartition.getTopicUri());
+            } catch (TopicUriSyntaxException e) {
+                throw new ConsumerException("TopicUri: " + topicUriPartition.getTopicUri() + " is not a valid MemqTopicUri", e);
+            }
             clusterPartitions.computeIfAbsent(memqTopicUri.getTopicUriPrefix(), p -> new HashSet<>())
                 .add(topicUriPartition);
         }
