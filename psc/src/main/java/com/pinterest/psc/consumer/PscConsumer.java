@@ -880,7 +880,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
             validateMessageIds(messageIds);
 
             Map<PscBackendConsumer<K, V>, Set<MessageId>> backendConsumers =
-                    getCommitBackendConsumers(messageIds, false);
+                    getCommitBackendConsumers(messageIds, true);
             for (Map.Entry<PscBackendConsumer<K, V>, Set<MessageId>> entry : backendConsumers.entrySet()) {
                 try {
                     entry.getKey().commitSync(entry.getValue());
@@ -1905,7 +1905,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
                 messageIdErrors.append("Null message id found in collection passed to consumer API.");
             else if (messageId.getTopicUriPartition() == null)
                 messageIdErrors.append("Message id contains null topic URI partition.");
-            else if (messageId.getTopicUriPartition().getTopicUri() == null)
+            else
                 validateTopicUriPartition(messageId.getTopicUriPartition());
         }
         if (messageIdErrors.length() > 0)
