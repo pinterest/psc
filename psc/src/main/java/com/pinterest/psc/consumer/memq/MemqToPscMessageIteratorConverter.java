@@ -4,10 +4,10 @@ import com.google.common.collect.Iterators;
 import com.pinterest.memq.commons.MemqLogMessage;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.CloseableIterator;
+import com.pinterest.psc.common.PscEventHeaders;
 import com.pinterest.psc.common.PscMessage;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
-import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.consumer.ToPscMessageIteratorConverter;
@@ -108,7 +108,7 @@ public class MemqToPscMessageIteratorConverter<K, V> extends ToPscMessageIterato
         );
 
         if (memqConsumerRecord.isEndOfBatch()) {
-            pscConsumerMessage.setHeader(PscEvent.EVENT_HEADER, PscMemqConsumer.END_OF_BATCH_EVENT.getBytes());
+            pscConsumerMessage.setHeader(PscEventHeaders.EVENT_HEADER.getValue(), PscMemqConsumer.END_OF_BATCH_EVENT.getBytes());
         }
 
         Map<String, byte[]> headers = memqConsumerRecord.getHeaders();

@@ -1,6 +1,7 @@
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
 import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.common.PscEventHeaders;
 import com.pinterest.psc.common.event.EventHandler;
 import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.consumer.PscConsumerMessage;
@@ -17,12 +18,12 @@ public class PscFlinkConsumerEventInterceptor<K, V> extends TypePreservingInterc
 
   @Override
   public PscConsumerMessage<K, V> onConsume(PscConsumerMessage<K, V> message) {
-    if (message.getHeaders().containsKey(PscEvent.EVENT_HEADER)) {
-      String eventType = new String(message.getHeader(PscEvent.EVENT_HEADER));
+    if (message.getHeaders().containsKey(PscEventHeaders.EVENT_HEADER.getValue())) {
+      String eventType = new String(message.getHeader(PscEventHeaders.EVENT_HEADER.getValue()));
       MessageId messageId = message.getMessageId();
       PscEvent event = new PscEvent(messageId.getTopicUriPartition().getTopicUri(), messageId.getTopicUriPartition(), eventType, Collections.emptyMap());
       eventHandler.handle(event);
-      message.getHeaders().remove(PscEvent.EVENT_HEADER);
+      message.getHeaders().remove(PscEventHeaders.EVENT_HEADER.getValue());
     }
     return super.onConsume(message);
   }

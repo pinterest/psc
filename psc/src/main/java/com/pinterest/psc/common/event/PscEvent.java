@@ -14,7 +14,6 @@ import java.util.Map;
  */
 
 public class PscEvent {
-  public final static String EVENT_HEADER = "__EVENT_HEADER";
 
   private final TopicUri topicUri;
   private final TopicUriPartition topicUriPartition;

@@ -149,21 +149,10 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
                         Integer partition = record.getMessageId().getTopicUriPartition()
                             .getPartition();
 
-                        PscTopicUriPartition key;
-
-                        if (topicUriPartitionsMap.containsKey(topicUri)) {
-                            if (topicUriPartitionsMap.get(topicUri).containsKey(partition)) {
-                                key = topicUriPartitionsMap.get(topicUri).get(partition);
-                            } else {
-                                key = new PscTopicUriPartition(topicUri, partition);
-                                topicUriPartitionsMap.get(topicUri).put(partition, key);
-                            }
-                        } else {
-                            key = new PscTopicUriPartition(topicUri, partition);
-                            Map<Integer, PscTopicUriPartition> partitionToKeyMap = new HashMap<>();
-                            partitionToKeyMap.put(partition, key);
-                            topicUriPartitionsMap.put(topicUri, partitionToKeyMap);
-                        }
+                        Map<Integer, PscTopicUriPartition> partitionMap =
+                            topicUriPartitionsMap.computeIfAbsent(topicUri, k -> new HashMap<>());
+                        PscTopicUriPartition key = partitionMap.computeIfAbsent(partition,
+                            k -> new PscTopicUriPartition(topicUri, k));
 
                         PscTopicUriPartitionState<T, TopicUriPartition>
                             partitionState =
