@@ -169,6 +169,21 @@ public class TestPscMemqConsumer {
     }
 
     @Test
+    void testAssignDoesNotRequireSubscribe() throws Exception {
+        PscMemqConsumer<byte[], byte[]> pscMemqConsumer = getPscMemqConsumer(
+                "testAssignDoesNotRequireSubscribe");
+
+        pscMemqConsumer.assign(Collections.emptySet());
+
+        MemqTopicUri uri1 = MemqTopicUri.validate(TopicUri.validate(testMemqTopic1));
+        TopicUriPartition topicUriPartition = TestUtils.getFinalizedTopicUriPartition(uri1, 0);
+
+        pscMemqConsumer.assign(Sets.newHashSet(topicUriPartition));
+
+        pscMemqConsumer.close();
+    }
+
+    @Test
     void close() throws Exception {
         PscMemqConsumer<byte[], byte[]> pscMemqConsumer = getPscMemqConsumer(
                 "test_subscribeErrorScenarios");
