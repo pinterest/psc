@@ -181,6 +181,8 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         currentAssignment.retainAll(topicUriPartitions);
         currentAssignment.addAll(topicUriPartitions);
         try {
+            memqConsumer.subscribe(topicUriPartitions.stream().map(TopicUriPartition::getTopicUri)
+                    .map(TopicUri::getTopic).collect(Collectors.toSet()));
             memqConsumer.assign(topicUriPartitions.stream().map(TopicUriPartition::getPartition)
                     .collect(Collectors.toList()));
         } catch (Exception exception) {
