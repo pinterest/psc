@@ -40,6 +40,8 @@ import java.util.Properties;
  * <p>The version-specific PSC consumers need to extend this class and
  * override {@link #createPscProducer(String, Properties, SerializationSchema, Optional)}}.
  */
+
+// TODO: migration - remove
 @Internal
 public abstract class PscDynamicSinkBase implements DynamicTableSink {
 

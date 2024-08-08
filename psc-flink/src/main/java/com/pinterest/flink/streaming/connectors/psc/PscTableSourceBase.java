@@ -53,6 +53,8 @@ import java.util.Properties;
  * <p>The version-specific PSC consumers need to extend this class and
  * override {@link #createPscConsumer(String, Properties, DeserializationSchema)}}.
  */
+// TODO: migration - remove
+
 @Internal
 public abstract class PscTableSourceBase implements
         StreamTableSource<Row>,

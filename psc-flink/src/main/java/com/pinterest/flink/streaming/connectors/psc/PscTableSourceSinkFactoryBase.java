@@ -77,6 +77,8 @@ import static org.apache.flink.table.descriptors.StreamTableDescriptorValidator.
 /**
  * Factory for creating configured instances of {@link org.apache.flink.streaming.connectors.kafka.PscTableSourceBase}.
  */
+// TODO: migration - remove
+
 public abstract class PscTableSourceSinkFactoryBase implements
         StreamTableSourceFactory<Row>,
         StreamTableSinkFactory<Row> {

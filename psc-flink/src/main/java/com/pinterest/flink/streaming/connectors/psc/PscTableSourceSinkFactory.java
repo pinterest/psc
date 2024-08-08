@@ -35,6 +35,8 @@ import java.util.Properties;
 /**
  * Factory for creating configured instances of {@link PscTableSource}.
  */
+// TODO: migration - remove
+
 public class PscTableSourceSinkFactory extends PscTableSourceSinkFactoryBase {
 
     @Override

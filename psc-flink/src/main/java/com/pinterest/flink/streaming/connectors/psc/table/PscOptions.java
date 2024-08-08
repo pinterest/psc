@@ -43,6 +43,8 @@ import java.util.Set;
 /**
  * Option utils for PSC table source sink.
  */
+
+// TODO: migration - remove
 public class PscOptions {
     private PscOptions() {
     }

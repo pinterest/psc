@@ -30,6 +30,9 @@ import java.util.Properties;
 /**
  * Kafka table sink for writing data into Kafka.
  */
+
+// TODO: migration - remove
+
 @Internal
 public class PscTableSink extends PscTableSinkBase {
 

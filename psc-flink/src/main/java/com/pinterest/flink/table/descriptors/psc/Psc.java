@@ -48,6 +48,8 @@ import static com.pinterest.flink.table.descriptors.psc.PscValidator.CONNECTOR_T
 /**
  * Connector descriptor for the PSC message queue.
  */
+// TODO: migration - remove
+
 @PublicEvolving
 public class Psc extends ConnectorDescriptor {
 

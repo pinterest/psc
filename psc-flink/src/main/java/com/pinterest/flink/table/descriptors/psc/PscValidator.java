@@ -38,6 +38,8 @@ import static org.apache.flink.table.descriptors.StreamTableDescriptorValidator.
 /**
  * The validator for {@link Psc}.
  */
+// TODO: migration - remove
+
 @Internal
 public class PscValidator extends ConnectorDescriptorValidator {
 

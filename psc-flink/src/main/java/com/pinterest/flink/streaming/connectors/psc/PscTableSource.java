@@ -34,6 +34,8 @@ import java.util.Properties;
 /**
  * Kafka {@link StreamTableSource}.
  */
+// TODO: migration - remove
+
 @Internal
 public class PscTableSource extends PscTableSourceBase {
 
