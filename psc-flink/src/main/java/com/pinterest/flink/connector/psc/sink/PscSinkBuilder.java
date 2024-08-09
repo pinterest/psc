@@ -17,14 +17,12 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.serde.ByteArraySerializer;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.java.ClosureCleaner;
 import org.apache.flink.connector.base.DeliveryGuarantee;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaSink;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,15 +34,14 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
- * Builder to construct {@link KafkaSink}.
+ * Builder to construct {@link PscSink}.
  *
- * <p>The following example shows the minimum setup to create a KafkaSink that writes String values
- * to a Kafka topic.
+ * <p>The following example shows the minimum setup to create a PscSink that writes String values
+ * to a topicUri.
  *
  * <pre>{@code
- * KafkaSink<String> sink = KafkaSink
+ * PscSInk<String> sink = PscSink
  *     .<String>builder
- *     .setBootstrapServers(MY_BOOTSTRAP_SERVERS)
  *     .setRecordSerializer(MY_RECORD_SERIALIZER)
  *     .build();
  * }</pre>
@@ -54,22 +51,21 @@ import static org.apache.flink.util.Preconditions.checkState;
  * DeliveryGuarantee#EXACTLY_ONCE} one must set the transactionalIdPrefix {@link
  * #setTransactionalIdPrefix(String)}.
  *
- * @see KafkaSink for a more detailed explanation of the different guarantees.
- * @param <IN> type of the records written to Kafka
+ * @see PscSink for a more detailed explanation of the different guarantees.
+ * @param <IN> type of the records written
  */
 @PublicEvolving
 public class PscSinkBuilder<IN> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSinkBuilder.class);
-    private static final Duration DEFAULT_KAFKA_TRANSACTION_TIMEOUT = Duration.ofHours(1);
+    private static final Duration DEFAULT_PSC_TRANSACTION_TIMEOUT = Duration.ofHours(1);
     private static final int MAXIMUM_PREFIX_BYTES = 64000;
 
     private DeliveryGuarantee deliveryGuarantee = DeliveryGuarantee.NONE;
-    private String transactionalIdPrefix = "kafka-sink";
+    private String transactionalIdPrefix = "psc-sink";
 
-    private Properties kafkaProducerConfig;
-    private KafkaRecordSerializationSchema<IN> recordSerializer;
-    private String bootstrapServers;
+    private Properties pscProducerConfig;
+    private PscRecordSerializationSchema<IN> recordSerializer;
 
     PscSinkBuilder() {}
 
@@ -87,57 +83,57 @@ public class PscSinkBuilder<IN> {
 
     /**
      * Sets the configuration which used to instantiate all used {@link
-     * org.apache.kafka.clients.producer.KafkaProducer}.
+     * com.pinterest.psc.producer.PscProducer}.
      *
-     * @param kafkaProducerConfig
+     * @param pscProducerConfig
      * @return {@link PscSinkBuilder}
      */
-    public PscSinkBuilder<IN> setKafkaProducerConfig(Properties kafkaProducerConfig) {
-        this.kafkaProducerConfig = checkNotNull(kafkaProducerConfig, "kafkaProducerConfig");
-        // set the producer configuration properties for kafka record key value serializers.
-        if (!kafkaProducerConfig.containsKey(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG)) {
-            kafkaProducerConfig.put(
-                    ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+    public PscSinkBuilder<IN> setPscProducerConfig(Properties pscProducerConfig) {
+        this.pscProducerConfig = checkNotNull(pscProducerConfig, "pscProducerConfig");
+        // set the producer configuration properties for PSC record key value serializers.
+        if (!pscProducerConfig.containsKey(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER)) {
+            pscProducerConfig.put(
+                    PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER,
                     ByteArraySerializer.class.getName());
         } else {
             LOG.warn(
                     "Overwriting the '{}' is not recommended",
-                    ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG);
+                    PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER);
         }
 
-        if (!kafkaProducerConfig.containsKey(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG)) {
-            kafkaProducerConfig.put(
-                    ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+        if (!pscProducerConfig.containsKey(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER)) {
+            pscProducerConfig.put(
+                    PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER,
                     ByteArraySerializer.class.getName());
         } else {
             LOG.warn(
                     "Overwriting the '{}' is not recommended",
-                    ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG);
+                    PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER);
         }
 
-        if (!kafkaProducerConfig.containsKey(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG)) {
-            final long timeout = DEFAULT_KAFKA_TRANSACTION_TIMEOUT.toMillis();
+        if (!pscProducerConfig.containsKey(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS)) {
+            final long timeout = DEFAULT_PSC_TRANSACTION_TIMEOUT.toMillis();
             checkState(
                     timeout < Integer.MAX_VALUE && timeout > 0,
                     "timeout does not fit into 32 bit integer");
-            kafkaProducerConfig.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, (int) timeout);
+            pscProducerConfig.put(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS, (int) timeout);
             LOG.warn(
                     "Property [{}] not specified. Setting it to {}",
-                    ProducerConfig.TRANSACTION_TIMEOUT_CONFIG,
-                    DEFAULT_KAFKA_TRANSACTION_TIMEOUT);
+                    PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS,
+                    DEFAULT_PSC_TRANSACTION_TIMEOUT);
         }
         return this;
     }
 
     /**
-     * Sets the {@link KafkaRecordSerializationSchema} that transforms incoming records to {@link
-     * org.apache.kafka.clients.producer.ProducerRecord}s.
+     * Sets the {@link PscRecordSerializationSchema} that transforms incoming records to {@link
+     * com.pinterest.psc.producer.PscProducerMessage}s.
      *
      * @param recordSerializer
      * @return {@link PscSinkBuilder}
      */
     public PscSinkBuilder<IN> setRecordSerializer(
-            KafkaRecordSerializationSchema<IN> recordSerializer) {
+            PscRecordSerializationSchema<IN> recordSerializer) {
         this.recordSerializer = checkNotNull(recordSerializer, "recordSerializer");
         ClosureCleaner.clean(
                 this.recordSerializer, ExecutionConfig.ClosureCleanerLevel.RECURSIVE, true);
@@ -149,7 +145,7 @@ public class PscSinkBuilder<IN> {
      * configured.
      *
      * <p>It is mandatory to always set this value with {@link DeliveryGuarantee#EXACTLY_ONCE} to
-     * prevent corrupted transactions if multiple jobs using the KafkaSink run against the same
+     * prevent corrupted transactions if multiple jobs using the PscSink run against the same
      * Kafka Cluster. The default prefix is {@link #transactionalIdPrefix}.
      *
      * <p>The size of the prefix is capped by {@link #MAXIMUM_PREFIX_BYTES} formatted with UTF-8.
@@ -170,44 +166,26 @@ public class PscSinkBuilder<IN> {
         return this;
     }
 
-    /**
-     * Sets the Kafka bootstrap servers.
-     *
-     * @param bootstrapServers a comma separated list of valid URIs to reach the Kafka broker
-     * @return {@link PscSinkBuilder}
-     */
-    public PscSinkBuilder<IN> setBootstrapServers(String bootstrapServers) {
-        this.bootstrapServers = checkNotNull(bootstrapServers);
-        return this;
-    }
-
     private void sanityCheck() {
-        if (kafkaProducerConfig == null) {
-            setKafkaProducerConfig(new Properties());
+        if (pscProducerConfig == null) {
+            setPscProducerConfig(new Properties());
         }
-        if (bootstrapServers != null) {
-            kafkaProducerConfig.setProperty(
-                    ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        }
-        checkNotNull(
-                kafkaProducerConfig.getProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG),
-                "bootstrapServers");
         if (deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE) {
             checkState(
                     transactionalIdPrefix != null,
-                    "EXACTLY_ONCE delivery guarantee requires a transactionIdPrefix to be set to provide unique transaction names across multiple KafkaSinks writing to the same Kafka cluster.");
+                    "EXACTLY_ONCE delivery guarantee requires a transactionIdPrefix to be set to provide unique transaction names across multiple PscSinks writing to the same Kafka cluster.");
         }
         checkNotNull(recordSerializer, "recordSerializer");
     }
 
     /**
-     * Constructs the {@link KafkaSink} with the configured properties.
+     * Constructs the {@link PscSink} with the configured properties.
      *
-     * @return {@link KafkaSink}
+     * @return {@link PscSink}
      */
-    public KafkaSink<IN> build() {
+    public PscSink<IN> build() {
         sanityCheck();
-        return new KafkaSink<>(
-                deliveryGuarantee, kafkaProducerConfig, transactionalIdPrefix, recordSerializer);
+        return new PscSink<>(
+                deliveryGuarantee, pscProducerConfig, transactionalIdPrefix, recordSerializer);
     }
 }

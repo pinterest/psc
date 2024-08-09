@@ -1081,7 +1081,7 @@ public class FlinkPscProducer<IN>
                                 transaction,
                                 ProducerConfig.TRANSACTIONAL_ID_CONFIG,
                                 ProducerConfig.TRANSACTION_TIMEOUT_CONFIG,
-                                producerConfig.getProperty("psc.producer.transaction.timeout.ms"),
+                                producerConfig.getProperty(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS),
                                 e);
                     }
                 }

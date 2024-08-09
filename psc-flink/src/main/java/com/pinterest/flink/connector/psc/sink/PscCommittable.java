@@ -17,8 +17,7 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
-import org.apache.flink.connector.kafka.sink.FlinkKafkaInternalProducer;
-import org.apache.flink.connector.kafka.sink.KafkaCommitter;
+import com.pinterest.psc.exception.producer.ProducerException;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -26,8 +25,8 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
- * This class holds the necessary information to construct a new {@link FlinkKafkaInternalProducer}
- * to commit transactions in {@link KafkaCommitter}.
+ * This class holds the necessary information to construct a new {@link FlinkPscInternalProducer}
+ * to commit transactions in {@link PscCommitter}.
  */
 class PscCommittable {
 
@@ -49,7 +48,7 @@ class PscCommittable {
 
     public static <K, V> PscCommittable of(
             FlinkPscInternalProducer<K, V> producer,
-            Consumer<FlinkPscInternalProducer<K, V>> recycler) {
+            Consumer<FlinkPscInternalProducer<K, V>> recycler) throws ProducerException {
         return new PscCommittable(
                 producer.getProducerId(),
                 producer.getEpoch(),
@@ -75,7 +74,7 @@ class PscCommittable {
 
     @Override
     public String toString() {
-        return "KafkaCommittable{"
+        return "PscCommittable{"
                 + "producerId="
                 + producerId
                 + ", epoch="

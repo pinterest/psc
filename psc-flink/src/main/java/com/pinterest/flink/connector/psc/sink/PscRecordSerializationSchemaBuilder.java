@@ -17,13 +17,11 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.psc.producer.PscProducerMessage;
+import com.pinterest.psc.serde.Serializer;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
-import org.apache.flink.connector.kafka.sink.TopicSelector;
-import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.serialization.Serializer;
 
 import javax.annotation.Nullable;
 import java.io.Serializable;
@@ -36,32 +34,32 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
- * Builder to construct {@link org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema}.
+ * Builder to construct {@link PscRecordSerializationSchema}.
  *
  * <p>This class should give a first entrypoint when trying to serialize elements to {@link
- * ProducerRecord}. The following examples show some of the possibilities.
+ * PscProducerMessage}. The following examples show some of the possibilities.
  *
  * <pre>Simple key-value serialization:
  * {@code
- * KafkaRecordSerializationSchema.builder()
+ * PscRecordSerializationSchema.builder()
  *     .setTopic("topic)
  *     .setKeySerializationSchema(new SimpleStringSchema())
  *     .setValueSerializationSchema(new SimpleStringSchema())
  *     .build()
  * }</pre>
  *
- * <pre>Using Kafka's serialization stack:
+ * <pre>Using PSC's serialization stack:
  * {@code
- * KafkaRecordSerializationSchema.builder()
+ * PscRecordSerializationSchema.builder()
  *     .setTopic("topic)
  *     .setKeySerializer(StringSerializer.class)
- *     .setKafkaValueSerializer(StringSerializer.class)
+ *     .setPscValueSerializer(StringSerializer.class)
  *     .build()
  * }</pre>
  *
  * <pre>With custom partitioner:
  * {@code
- * KafkaRecordSerializationSchema.builder()
+ * PscRecordSerializationSchema.builder()
  *     .setTopic("topic)
  *     .setPartitioner(MY_FLINK_PARTITIONER)
  *     .setValueSerializationSchema(StringSerializer.class)
@@ -70,19 +68,19 @@ import static org.apache.flink.util.Preconditions.checkState;
  *
  * <p>The different serialization methods for key and value are mutually exclusive thus i.e. it is
  * not possible to use {@link #setKeySerializationSchema(SerializationSchema)} and {@link
- * #setKafkaKeySerializer(Class)} on the same builder instance.
+ * #setPscKeySerializer(Class)} on the same builder instance.
  *
  * <p>It is necessary to configure exactly one serialization method for the value and a topic.
  *
  * @param <IN> type of records to be serialized
- * @see org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema#builder()
+ * @see PscRecordSerializationSchema#builder()
  */
 @PublicEvolving
 public class PscRecordSerializationSchemaBuilder<IN> {
 
-    @Nullable private Function<? super IN, String> topicSelector;
+    @Nullable private Function<? super IN, String> topicUriSelector;
     @Nullable private SerializationSchema<? super IN> valueSerializationSchema;
-    @Nullable private FlinkKafkaPartitioner<? super IN> partitioner;
+    @Nullable private FlinkPscPartitioner<? super IN> partitioner;
     @Nullable private SerializationSchema<? super IN> keySerializationSchema;
 
     /**
@@ -92,42 +90,42 @@ public class PscRecordSerializationSchemaBuilder<IN> {
      * @return {@code this}
      */
     public <T extends IN> PscRecordSerializationSchemaBuilder<T> setPartitioner(
-            FlinkKafkaPartitioner<? super T> partitioner) {
+            FlinkPscPartitioner<? super T> partitioner) {
         PscRecordSerializationSchemaBuilder<T> self = self();
         self.partitioner = checkNotNull(partitioner);
         return self;
     }
 
     /**
-     * Sets a fixed topic which used as destination for all records.
+     * Sets a fixed topicUri which used as destination for all records.
      *
-     * @param topic
+     * @param topicUri
      * @return {@code this}
      */
-    public PscRecordSerializationSchemaBuilder<IN> setTopic(String topic) {
-        checkState(this.topicSelector == null, "Topic selector already set.");
-        checkNotNull(topic);
-        this.topicSelector = new CachingTopicSelector<>((e) -> topic);
+    public PscRecordSerializationSchemaBuilder<IN> setTopic(String topicUri) {
+        checkState(this.topicUriSelector == null, "Topic selector already set.");
+        checkNotNull(topicUri);
+        this.topicUriSelector = new CachingTopicSelector<>((e) -> topicUri);
         return this;
     }
 
     /**
      * Sets a topic selector which computes the target topic for every incoming record.
      *
-     * @param topicSelector
+     * @param topicUriSelector
      * @return {@code this}
      */
-    public <T extends IN> PscRecordSerializationSchemaBuilder<T> setTopicSelector(
-            org.apache.flink.connector.kafka.sink.TopicSelector<? super T> topicSelector) {
-        checkState(this.topicSelector == null, "Topic selector already set.");
+    public <T extends IN> PscRecordSerializationSchemaBuilder<T> setTopicUriSelector(
+            TopicUriSelector<? super T> topicUriSelector) {
+        checkState(this.topicUriSelector == null, "Topic selector already set.");
         PscRecordSerializationSchemaBuilder<T> self = self();
-        self.topicSelector = new CachingTopicSelector<>(checkNotNull(topicSelector));
+        self.topicUriSelector = new CachingTopicSelector<>(checkNotNull(topicUriSelector));
         return self;
     }
 
     /**
      * Sets a {@link SerializationSchema} which is used to serialize the incoming element to the key
-     * of the {@link ProducerRecord}.
+     * of the {@link PscProducerMessage}.
      *
      * @param keySerializationSchema
      * @return {@code this}
@@ -141,24 +139,24 @@ public class PscRecordSerializationSchemaBuilder<IN> {
     }
 
     /**
-     * Sets Kafka's {@link Serializer} to serialize incoming elements to the key of the {@link
-     * ProducerRecord}.
+     * Sets PSC's {@link Serializer} to serialize incoming elements to the key of the {@link
+     * PscProducerMessage}.
      *
      * @param keySerializer
      * @return {@code this}
      */
-    public <T extends IN> PscRecordSerializationSchemaBuilder<T> setKafkaKeySerializer(
+    public <T extends IN> PscRecordSerializationSchemaBuilder<T> setPscKeySerializer(
             Class<? extends Serializer<? super T>> keySerializer) {
         checkKeySerializerNotSet();
         PscRecordSerializationSchemaBuilder<T> self = self();
         self.keySerializationSchema =
-                new org.apache.flink.connector.kafka.sink.KafkaSerializerWrapper<>(keySerializer, true, topicSelector);
+                new PscSerializerWrapper<>(keySerializer, true, topicUriSelector);
         return self;
     }
 
     /**
-     * Sets a configurable Kafka {@link Serializer} and pass a configuration to serialize incoming
-     * elements to the key of the {@link ProducerRecord}.
+     * Sets a configurable PSC {@link Serializer} and pass a configuration to serialize incoming
+     * elements to the key of the {@link PscProducerMessage}.
      *
      * @param keySerializer
      * @param configuration
@@ -166,18 +164,18 @@ public class PscRecordSerializationSchemaBuilder<IN> {
      * @return {@code this}
      */
     public <T extends IN, S extends Serializer<? super T>>
-    PscRecordSerializationSchemaBuilder<T> setKafkaKeySerializer(
+    PscRecordSerializationSchemaBuilder<T> setPscKeySerializer(
                     Class<S> keySerializer, Map<String, String> configuration) {
         checkKeySerializerNotSet();
         PscRecordSerializationSchemaBuilder<T> self = self();
         self.keySerializationSchema =
-                new org.apache.flink.connector.kafka.sink.KafkaSerializerWrapper<>(keySerializer, true, configuration, topicSelector);
+                new PscSerializerWrapper<>(keySerializer, true, configuration, topicUriSelector);
         return self;
     }
 
     /**
      * Sets a {@link SerializationSchema} which is used to serialize the incoming element to the
-     * value of the {@link ProducerRecord}.
+     * value of the {@link PscProducerMessage}.
      *
      * @param valueSerializationSchema
      * @return {@code this}
@@ -196,24 +194,24 @@ public class PscRecordSerializationSchemaBuilder<IN> {
     }
 
     /**
-     * Sets Kafka's {@link Serializer} to serialize incoming elements to the value of the {@link
-     * ProducerRecord}.
+     * Sets PSC's {@link Serializer} to serialize incoming elements to the value of the {@link
+     * PscProducerMessage}.
      *
      * @param valueSerializer
      * @return {@code this}
      */
-    public <T extends IN> PscRecordSerializationSchemaBuilder<T> setKafkaValueSerializer(
+    public <T extends IN> PscRecordSerializationSchemaBuilder<T> setPscValueSerializer(
             Class<? extends Serializer<? super T>> valueSerializer) {
         checkValueSerializerNotSet();
         PscRecordSerializationSchemaBuilder<T> self = self();
         self.valueSerializationSchema =
-                new org.apache.flink.connector.kafka.sink.KafkaSerializerWrapper<>(valueSerializer, false, topicSelector);
+                new PscSerializerWrapper<>(valueSerializer, false, topicUriSelector);
         return self;
     }
 
     /**
-     * Sets a configurable Kafka {@link Serializer} and pass a configuration to serialize incoming
-     * elements to the value of the {@link ProducerRecord}.
+     * Sets a configurable PSC {@link Serializer} and pass a configuration to serialize incoming
+     * elements to the value of the {@link PscProducerMessage}.
      *
      * @param valueSerializer
      * @param configuration
@@ -221,25 +219,25 @@ public class PscRecordSerializationSchemaBuilder<IN> {
      * @return {@code this}
      */
     public <T extends IN, S extends Serializer<? super T>>
-    PscRecordSerializationSchemaBuilder<T> setKafkaValueSerializer(
+    PscRecordSerializationSchemaBuilder<T> setPscValueSerializer(
                     Class<S> valueSerializer, Map<String, String> configuration) {
         checkValueSerializerNotSet();
         PscRecordSerializationSchemaBuilder<T> self = self();
         self.valueSerializationSchema =
-                new org.apache.flink.connector.kafka.sink.KafkaSerializerWrapper<>(valueSerializer, false, configuration, topicSelector);
+                new PscSerializerWrapper<>(valueSerializer, false, configuration, topicUriSelector);
         return self;
     }
 
     /**
      * Constructs the {@link PscRecordSerializationSchemaBuilder} with the configured properties.
      *
-     * @return {@link org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema}
+     * @return {@link PscRecordSerializationSchema}
      */
-    public org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema<IN> build() {
+    public PscRecordSerializationSchema<IN> build() {
         checkState(valueSerializationSchema != null, "No value serializer is configured.");
-        checkState(topicSelector != null, "No topic selector is configured.");
-        return new KafkaRecordSerializationSchemaWrapper<>(
-                topicSelector, valueSerializationSchema, keySerializationSchema, partitioner);
+        checkState(topicUriSelector != null, "No topic selector is configured.");
+        return new PscRecordSerializationSchemaWrapper<>(
+                topicUriSelector, valueSerializationSchema, keySerializationSchema, partitioner);
     }
 
     private void checkValueSerializerNotSet() {
@@ -254,16 +252,16 @@ public class PscRecordSerializationSchemaBuilder<IN> {
 
         private static final int CACHE_RESET_SIZE = 5;
         private final Map<IN, String> cache;
-        private final org.apache.flink.connector.kafka.sink.TopicSelector<IN> topicSelector;
+        private final TopicUriSelector<IN> topicUriSelector;
 
-        CachingTopicSelector(TopicSelector<IN> topicSelector) {
-            this.topicSelector = topicSelector;
+        CachingTopicSelector(TopicUriSelector<IN> topicSelector) {
+            this.topicUriSelector = topicSelector;
             this.cache = new HashMap<>();
         }
 
         @Override
         public String apply(IN in) {
-            final String topic = cache.getOrDefault(in, topicSelector.apply(in));
+            final String topic = cache.getOrDefault(in, topicUriSelector.apply(in));
             cache.put(in, topic);
             if (cache.size() == CACHE_RESET_SIZE) {
                 cache.clear();
@@ -272,19 +270,19 @@ public class PscRecordSerializationSchemaBuilder<IN> {
         }
     }
 
-    private static class KafkaRecordSerializationSchemaWrapper<IN>
-            implements KafkaRecordSerializationSchema<IN> {
+    private static class PscRecordSerializationSchemaWrapper<IN>
+            implements PscRecordSerializationSchema<IN> {
         private final SerializationSchema<? super IN> valueSerializationSchema;
-        private final Function<? super IN, String> topicSelector;
-        private final FlinkKafkaPartitioner<? super IN> partitioner;
+        private final Function<? super IN, String> topicUriSelector;
+        private final FlinkPscPartitioner<? super IN> partitioner;
         private final SerializationSchema<? super IN> keySerializationSchema;
 
-        KafkaRecordSerializationSchemaWrapper(
+        PscRecordSerializationSchemaWrapper(
                 Function<? super IN, String> topicSelector,
                 SerializationSchema<? super IN> valueSerializationSchema,
                 @Nullable SerializationSchema<? super IN> keySerializationSchema,
-                @Nullable FlinkKafkaPartitioner<? super IN> partitioner) {
-            this.topicSelector = checkNotNull(topicSelector);
+                @Nullable FlinkPscPartitioner<? super IN> partitioner) {
+            this.topicUriSelector = checkNotNull(topicSelector);
             this.valueSerializationSchema = checkNotNull(valueSerializationSchema);
             this.partitioner = partitioner;
             this.keySerializationSchema = keySerializationSchema;
@@ -292,7 +290,7 @@ public class PscRecordSerializationSchemaBuilder<IN> {
 
         @Override
         public void open(
-                SerializationSchema.InitializationContext context, KafkaSinkContext sinkContext)
+                SerializationSchema.InitializationContext context, PscSinkContext sinkContext)
                 throws Exception {
             valueSerializationSchema.open(context);
             if (keySerializationSchema != null) {
@@ -306,9 +304,9 @@ public class PscRecordSerializationSchemaBuilder<IN> {
         }
 
         @Override
-        public ProducerRecord<byte[], byte[]> serialize(
-                IN element, KafkaSinkContext context, Long timestamp) {
-            final String targetTopic = topicSelector.apply(element);
+        public PscProducerMessage<byte[], byte[]> serialize(
+                IN element, PscSinkContext context, Long timestamp) {
+            final String targetTopicUri = topicUriSelector.apply(element);
             final byte[] value = valueSerializationSchema.serialize(element);
             byte[] key = null;
             if (keySerializationSchema != null) {
@@ -321,16 +319,16 @@ public class PscRecordSerializationSchemaBuilder<IN> {
                                             element,
                                             key,
                                             value,
-                                            targetTopic,
-                                            context.getPartitionsForTopic(targetTopic)))
+                                            targetTopicUri,
+                                            context.getPartitionsForTopicUri(targetTopicUri)))
                             : OptionalInt.empty();
 
-            return new ProducerRecord<>(
-                    targetTopic,
+            return new PscProducerMessage<>(
+                    targetTopicUri,
                     partition.isPresent() ? partition.getAsInt() : null,
-                    timestamp == null || timestamp < 0L ? null : timestamp,
                     key,
-                    value);
+                    value,
+                    timestamp == null || timestamp < 0L ? null : timestamp);
         }
     }
 }

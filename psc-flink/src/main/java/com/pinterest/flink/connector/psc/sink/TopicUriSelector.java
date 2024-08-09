@@ -28,4 +28,4 @@ import java.util.function.Function;
  * @param <IN> type of the incoming record
  */
 @PublicEvolving
-public interface TopicSelector<IN> extends Function<IN, String>, Serializable {}
+public interface TopicUriSelector<IN> extends Function<IN, String>, Serializable {}

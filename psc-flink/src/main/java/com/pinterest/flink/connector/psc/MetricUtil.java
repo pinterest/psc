@@ -17,27 +17,27 @@
 
 package com.pinterest.flink.connector.psc;
 
+import com.pinterest.psc.metrics.Metric;
+import com.pinterest.psc.metrics.MetricName;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.metrics.Counter;
-import org.apache.kafka.common.Metric;
-import org.apache.kafka.common.MetricName;
 
 import java.util.Map;
 import java.util.function.Predicate;
 
-/** Collection of methods to interact with Kafka's client metric system. */
+/** Collection of methods to interact with PSC's client metric system. */
 @Internal
 public class MetricUtil {
 
     /**
-     * Tries to find the Kafka {@link Metric} in the provided metrics.
+     * Tries to find the PSC {@link Metric} in the provided metrics.
      *
      * @return {@link Metric} which exposes continuous updates
      * @throws IllegalStateException if the metric is not part of the provided metrics
      */
-    public static Metric getKafkaMetric(
+    public static Metric getPscMetric(
             Map<MetricName, ? extends Metric> metrics, String metricGroup, String metricName) {
-        return getKafkaMetric(
+        return getPscMetric(
                 metrics,
                 e ->
                         e.getKey().group().equals(metricGroup)
@@ -45,12 +45,12 @@ public class MetricUtil {
     }
 
     /**
-     * Tries to find the Kafka {@link Metric} in the provided metrics matching a given filter.
+     * Tries to find the PSC {@link Metric} in the provided metrics matching a given filter.
      *
      * @return {@link Metric} which exposes continuous updates
      * @throws IllegalStateException if no metric matches the given filter
      */
-    public static Metric getKafkaMetric(
+    public static Metric getPscMetric(
             Map<MetricName, ? extends Metric> metrics,
             Predicate<Map.Entry<MetricName, ? extends Metric>> filter) {
         return metrics.entrySet().stream()
@@ -60,16 +60,16 @@ public class MetricUtil {
                 .orElseThrow(
                         () ->
                                 new IllegalStateException(
-                                        "Cannot find Kafka metric matching current filter."));
+                                        "Cannot find PSC metric matching current filter."));
     }
 
     /**
-     * Ensures that the counter has the same value as the given Kafka metric.
+     * Ensures that the counter has the same value as the given Psc metric.
      *
      * <p>Do not use this method for every record because {@link Metric#metricValue()} is an
      * expensive operation.
      *
-     * @param from Kafka's {@link Metric} to query
+     * @param from PSC's {@link Metric} to query
      * @param to {@link Counter} to write the value to
      */
     public static void sync(Metric from, Counter to) {

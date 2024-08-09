@@ -17,14 +17,14 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.exception.ClientException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.connector.sink2.Committer;
 import org.apache.flink.api.connector.sink2.StatefulSink;
 import org.apache.flink.api.connector.sink2.TwoPhaseCommittingSink;
 import org.apache.flink.connector.base.DeliveryGuarantee;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaSinkBuilder;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
 import java.io.IOException;
@@ -33,15 +33,17 @@ import java.util.Collections;
 import java.util.Properties;
 
 /**
- * Flink Sink to produce data into a Kafka topic. The sink supports all delivery guarantees
+ * Flink Sink to produce data into a PSC topicUri. The sink supports all delivery guarantees
  * described by {@link DeliveryGuarantee}.
  * <li>{@link DeliveryGuarantee#NONE} does not provide any guarantees: messages may be lost in case
  *     of issues on the Kafka broker and messages may be duplicated in case of a Flink failure.
  * <li>{@link DeliveryGuarantee#AT_LEAST_ONCE} the sink will wait for all outstanding records in the
- *     Kafka buffers to be acknowledged by the Kafka producer on a checkpoint. No messages will be
- *     lost in case of any issue with the Kafka brokers but messages may be duplicated when Flink
+ *     PSC buffers to be acknowledged by the PSC producer on a checkpoint. No messages will be
+ *     lost in case of any issue with the brokers but messages may be duplicated when Flink
  *     restarts.
- * <li>{@link DeliveryGuarantee#EXACTLY_ONCE}: In this mode the KafkaSink will write all messages in
+ * <li>{@link DeliveryGuarantee#EXACTLY_ONCE}: Note that this mode is only supported by KafkaProducers in the backend.
+ *
+ *     In this mode the PscSink will write all messages in
  *     a Kafka transaction that will be committed to Kafka on a checkpoint. Thus, if the consumer
  *     reads only committed data (see Kafka consumer config isolation.level), no duplicates will be
  *     seen in case of a Flink restart. However, this delays record writing effectively until a
@@ -52,8 +54,8 @@ import java.util.Properties;
  *     duration + maximum restart duration or data loss may happen when Kafka expires an uncommitted
  *     transaction.
  *
- * @param <IN> type of the records written to Kafka
- * @see org.apache.flink.connector.kafka.sink.KafkaSinkBuilder on how to construct a KafkaSink
+ * @param <IN> type of the records written
+ * @see PscSinkBuilder on how to construct a PscSink
  */
 @PublicEvolving
 public class PscSink<IN>
@@ -62,35 +64,35 @@ public class PscSink<IN>
 
     private final DeliveryGuarantee deliveryGuarantee;
 
-    private final KafkaRecordSerializationSchema<IN> recordSerializer;
-    private final Properties kafkaProducerConfig;
+    private final PscRecordSerializationSchema<IN> recordSerializer;
+    private final Properties pscProducerConfig;
     private final String transactionalIdPrefix;
 
     PscSink(
             DeliveryGuarantee deliveryGuarantee,
-            Properties kafkaProducerConfig,
+            Properties pscProducerConfig,
             String transactionalIdPrefix,
-            KafkaRecordSerializationSchema<IN> recordSerializer) {
+            PscRecordSerializationSchema<IN> recordSerializer) {
         this.deliveryGuarantee = deliveryGuarantee;
-        this.kafkaProducerConfig = kafkaProducerConfig;
+        this.pscProducerConfig = pscProducerConfig;
         this.transactionalIdPrefix = transactionalIdPrefix;
         this.recordSerializer = recordSerializer;
     }
 
     /**
-     * Create a {@link org.apache.flink.connector.kafka.sink.KafkaSinkBuilder} to construct a new {@link PscSink}.
+     * Create a {@link PscSinkBuilder} to construct a new {@link PscSink}.
      *
      * @param <IN> type of incoming records
-     * @return {@link org.apache.flink.connector.kafka.sink.KafkaSinkBuilder}
+     * @return {@link PscSinkBuilder}
      */
-    public static <IN> org.apache.flink.connector.kafka.sink.KafkaSinkBuilder<IN> builder() {
-        return new KafkaSinkBuilder<>();
+    public static <IN> PscSinkBuilder<IN> builder() {
+        return new PscSinkBuilder<>();
     }
 
     @Internal
     @Override
     public Committer<PscCommittable> createCommitter() throws IOException {
-        return new PscCommitter(kafkaProducerConfig);
+        return new PscCommitter(pscProducerConfig);
     }
 
     @Internal
@@ -102,33 +104,41 @@ public class PscSink<IN>
     @Internal
     @Override
     public PscWriter<IN> createWriter(InitContext context) throws IOException {
-        return new PscWriter<IN>(
-                deliveryGuarantee,
-                kafkaProducerConfig,
-                transactionalIdPrefix,
-                context,
-                recordSerializer,
-                context.asSerializationSchemaInitializationContext(),
-                Collections.emptyList());
+        try {
+            return new PscWriter<IN>(
+                    deliveryGuarantee,
+                    pscProducerConfig,
+                    transactionalIdPrefix,
+                    context,
+                    recordSerializer,
+                    context.asSerializationSchemaInitializationContext(),
+                    Collections.emptyList());
+        } catch (ConfigurationException | ClientException e) {
+            throw new RuntimeException("Failed to createWriter", e);
+        }
     }
 
     @Internal
     @Override
     public PscWriter<IN> restoreWriter(
             InitContext context, Collection<PscWriterState> recoveredState) throws IOException {
-        return new PscWriter<>(
-                deliveryGuarantee,
-                kafkaProducerConfig,
-                transactionalIdPrefix,
-                context,
-                recordSerializer,
-                context.asSerializationSchemaInitializationContext(),
-                recoveredState);
+        try {
+            return new PscWriter<>(
+                    deliveryGuarantee,
+                    pscProducerConfig,
+                    transactionalIdPrefix,
+                    context,
+                    recordSerializer,
+                    context.asSerializationSchemaInitializationContext(),
+                    recoveredState);
+        } catch (ConfigurationException | ClientException e) {
+            throw new RuntimeException("Failed to restoreWriter", e);
+        }
     }
 
     @Internal
     @Override
     public SimpleVersionedSerializer<PscWriterState> getWriterStateSerializer() {
-        return new org.apache.flink.connector.kafka.sink.KafkaWriterStateSerializer();
+        return new PscWriterStateSerializer();
     }
 }

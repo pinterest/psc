@@ -51,7 +51,7 @@ class PscWriterState {
 
     @Override
     public String toString() {
-        return "KafkaWriterState{"
+        return "PscWriterState{"
                 + ", transactionalIdPrefix='"
                 + transactionalIdPrefix
                 + '\''

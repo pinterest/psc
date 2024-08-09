@@ -17,7 +17,13 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.exception.producer.ProducerException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.producer.PscProducer;
+import org.apache.kafka.clients.producer.internals.TransactionManager;
+import org.apache.kafka.clients.producer.internals.TransactionalRequestResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,26 +34,28 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.Properties;
+import java.util.Set;
 
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * A {@link PscProducer} that exposes private fields to allow resume producing from a given state.
+ * Note that transactional operations are only supported by PSC producers in the backend.
+ * This class is implemented assuming only one backendProducer is active. If there are multiple backendProducers,
+ * the operations in this class will fail.
  */
 class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkPscInternalProducer.class);
-    private static final String TRANSACTION_MANAGER_FIELD_NAME = "transactionManager";
     private static final String TRANSACTION_STATE_ENUM =
             "com.pinterest.psc.producer.PscProducer$TransactionalState";
-    private static final String PRODUCER_ID_AND_EPOCH_FIELD_NAME = "producerIdAndEpoch";
-
+    private static final String KAFKA_TXN_MANAGER_PRODUCER_ID_AND_EPOCH_FIELD_NAME = "producerIdAndEpoch";
     @Nullable private String transactionalId;
     private volatile boolean inTransaction;
     private volatile boolean closed;
 
-    public FlinkPscInternalProducer(Properties properties, @Nullable String transactionalId) {
-        super(withTransactionalId(properties, transactionalId));
+    public FlinkPscInternalProducer(Properties properties, @Nullable String transactionalId) throws ConfigurationException, ProducerException {
+        super(PscConfigurationUtils.propertiesToPscConfiguration(withTransactionalId(properties, transactionalId)));
         this.transactionalId = transactionalId;
     }
 
@@ -58,12 +66,12 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         }
         Properties props = new Properties();
         props.putAll(properties);
-        props.setProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, transactionalId);
+        props.setProperty(PscConfiguration.PSC_PRODUCER_TRANSACTIONAL_ID, transactionalId);
         return props;
     }
 
     @Override
-    public void flush() {
+    public void flush() throws ProducerException {
         super.flush();
         if (inTransaction) {
             flushNewPartitions();
@@ -71,13 +79,13 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     }
 
     @Override
-    public void beginTransaction() throws ProducerFencedException {
+    public void beginTransaction() throws ProducerException {
         super.beginTransaction();
         inTransaction = true;
     }
 
     @Override
-    public void abortTransaction() throws ProducerFencedException {
+    public void abortTransaction() throws ProducerException {
         LOG.debug("abortTransaction {}", transactionalId);
         checkState(inTransaction, "Transaction was not started");
         inTransaction = false;
@@ -85,7 +93,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     }
 
     @Override
-    public void commitTransaction() throws ProducerFencedException {
+    public void commitTransaction() throws ProducerException {
         LOG.debug("commitTransaction {}", transactionalId);
         checkState(inTransaction, "Transaction was not started");
         inTransaction = false;
@@ -104,15 +112,23 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             // If this producer is still in transaction, it should be committing.
             // However, at this point, we cannot decide that and we shouldn't prolong cancellation.
             // So hard kill this producer with all resources.
-            super.close(Duration.ZERO);
+            try {
+                super.close(Duration.ZERO);
+            } catch (ProducerException e) {
+                throw new RuntimeException("Failed to close PscProducer", e);
+            }
         } else {
             // If this is outside of a transaction, we should be able to cleanly shutdown.
-            super.close(Duration.ofHours(1));
+            try {
+                super.close(Duration.ofHours(1));
+            } catch (ProducerException e) {
+                throw new RuntimeException("Failed to close PscProducer", e);
+            }
         }
     }
 
     @Override
-    public void close(Duration timeout) {
+    public void close(Duration timeout) throws ProducerException {
         closed = true;
         super.close(timeout);
     }
@@ -126,26 +142,37 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         return transactionalId;
     }
 
-    public short getEpoch() {
+    private static Object getProducerIdAndEpoch(Object transactionManager) {
+        return getField(transactionManager, KAFKA_TXN_MANAGER_PRODUCER_ID_AND_EPOCH_FIELD_NAME);
+    }
+
+    private static void verifyTransactionManagerCompatibility(Object transactionManager) throws ProducerException {
+        if (!(transactionManager instanceof TransactionManager)) {
+            // only Kafka transaction managers are supported at the moment
+            throw new ProducerException("Unsupported transaction manager: " + transactionManager);
+        }
+    }
+
+    public short getEpoch() throws ProducerException {
         Object transactionManager = getTransactionManager();
-        Object producerIdAndEpoch = getField(transactionManager, PRODUCER_ID_AND_EPOCH_FIELD_NAME);
+        Object producerIdAndEpoch = getProducerIdAndEpoch(transactionManager);
         return (short) getField(producerIdAndEpoch, "epoch");
     }
 
-    public long getProducerId() {
+    public long getProducerId() throws ProducerException {
         Object transactionManager = getTransactionManager();
-        Object producerIdAndEpoch = getField(transactionManager, PRODUCER_ID_AND_EPOCH_FIELD_NAME);
+        Object producerIdAndEpoch = getProducerIdAndEpoch(transactionManager);
         return (long) getField(producerIdAndEpoch, "producerId");
     }
 
-    public void initTransactionId(String transactionalId) {
+    public void initTransactionId(String transactionalId) throws ProducerException {
         if (!transactionalId.equals(this.transactionalId)) {
             setTransactionId(transactionalId);
             initTransactions();
         }
     }
 
-    public void setTransactionId(String transactionalId) {
+    public void setTransactionId(String transactionalId) throws ProducerException {
         if (!transactionalId.equals(this.transactionalId)) {
             checkState(
                     !inTransaction,
@@ -164,16 +191,15 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     }
 
     /**
-     * Besides committing {@link KafkaProducer#commitTransaction}
+     * Besides committing {@link PscProducer#commitTransaction}
      * is also adding new partitions to the transaction. flushNewPartitions method is moving this
      * logic to pre-commit/flush, to make resumeTransaction simpler. Otherwise resumeTransaction
      * would require to restore state of the not yet added/"in-flight" partitions.
      */
-    private void flushNewPartitions() {
+    private void flushNewPartitions() throws ProducerException {
         LOG.info("Flushing new partitions");
         TransactionalRequestResult result = enqueueNewPartitions();
-        Object sender = getField("sender");
-        invoke(sender, "wakeup");
+        super.wakeup();
         result.await();
     }
 
@@ -184,7 +210,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
      * <p>If there are no new transactions we return a {@link TransactionalRequestResult} that is
      * already done.
      */
-    private TransactionalRequestResult enqueueNewPartitions() {
+    private TransactionalRequestResult enqueueNewPartitions() throws ProducerException {
         Object transactionManager = getTransactionManager();
         synchronized (transactionManager) {
             Object newPartitionsInTransaction =
@@ -232,12 +258,8 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             method.setAccessible(true);
             return method.invoke(object, args);
         } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException e) {
-            throw new RuntimeException("Incompatible KafkaProducer version", e);
+            throw new RuntimeException("Incompatible PscProducer version", e);
         }
-    }
-
-    private Object getField(String fieldName) {
-        return getField(this, KafkaProducer.class, fieldName);
     }
 
     /**
@@ -258,17 +280,16 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             field.setAccessible(true);
             return field.get(object);
         } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new RuntimeException("Incompatible KafkaProducer version", e);
+            throw new RuntimeException("Incompatible PscProducer version", e);
         }
     }
 
     /**
      * Instead of obtaining producerId and epoch from the transaction coordinator, re-use previously
      * obtained ones, so that we can resume transaction after a restart. Implementation of this
-     * method is based on {@link KafkaProducer#initTransactions}.
-     * https://github.com/apache/kafka/commit/5d2422258cb975a137a42a4e08f03573c49a387e#diff-f4ef1afd8792cd2a2e9069cd7ddea630
+     * method is based on {@link PscProducer#initTransactions()}.
      */
-    public void resumeTransaction(long producerId, short epoch) {
+    public void resumeTransaction(long producerId, short epoch) throws ProducerException {
         checkState(!inTransaction, "Already in transaction %s", transactionalId);
         checkState(
                 producerId >= 0 && epoch >= 0,
@@ -291,7 +312,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
 
             setField(
                     transactionManager,
-                    PRODUCER_ID_AND_EPOCH_FIELD_NAME,
+                    KAFKA_TXN_MANAGER_PRODUCER_ID_AND_EPOCH_FIELD_NAME,
                     createProducerIdAndEpoch(producerId, epoch));
 
             transitionTransactionManagerStateTo(transactionManager, "READY");
@@ -305,7 +326,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     private static Object createProducerIdAndEpoch(long producerId, short epoch) {
         try {
             Field field =
-                    TransactionManager.class.getDeclaredField(PRODUCER_ID_AND_EPOCH_FIELD_NAME);
+                    TransactionManager.class.getDeclaredField(KAFKA_TXN_MANAGER_PRODUCER_ID_AND_EPOCH_FIELD_NAME);
             Class<?> clazz = field.getType();
             Constructor<?> constructor = clazz.getDeclaredConstructor(Long.TYPE, Short.TYPE);
             constructor.setAccessible(true);
@@ -315,7 +336,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
                 | IllegalAccessException
                 | NoSuchFieldException
                 | NoSuchMethodException e) {
-            throw new RuntimeException("Incompatible KafkaProducer version", e);
+            throw new RuntimeException("Incompatible PscProducer version", e);
         }
     }
 
@@ -333,7 +354,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             field.setAccessible(true);
             field.set(object, value);
         } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new RuntimeException("Incompatible KafkaProducer version", e);
+            throw new RuntimeException("Incompatible PscProducer version", e);
         }
     }
 
@@ -343,12 +364,19 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             Class<Enum> cl = (Class<Enum>) Class.forName(TRANSACTION_STATE_ENUM);
             return Enum.valueOf(cl, enumName);
         } catch (ClassNotFoundException e) {
-            throw new RuntimeException("Incompatible KafkaProducer version", e);
+            throw new RuntimeException("Incompatible PscProducer version", e);
         }
     }
 
-    private Object getTransactionManager() {
-        return getField(TRANSACTION_MANAGER_FIELD_NAME);
+    private Object getTransactionManager() throws ProducerException {
+        Set<Object> txnManagers = super.getTransactionManagers();
+        if (txnManagers.size() != 1) {
+            // This should never happen unless the same PscProducer spun up multiple BackendProducers
+            throw new ProducerException("Expected exactly one transaction manager, but found " + txnManagers.size());
+        }
+        Object txnManager = txnManagers.iterator().next();
+        verifyTransactionManagerCompatibility(txnManager);
+        return txnManager;
     }
 
     private static void transitionTransactionManagerStateTo(
@@ -358,7 +386,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
 
     @Override
     public String toString() {
-        return "FlinkKafkaInternalProducer{"
+        return "FlinkPscInternalProducer{"
                 + "transactionalId='"
                 + transactionalId
                 + "', inTransaction="

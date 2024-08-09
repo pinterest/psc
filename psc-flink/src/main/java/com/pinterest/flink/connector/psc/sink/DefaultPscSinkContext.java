@@ -23,6 +23,7 @@ import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.producer.PscProducer;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -63,13 +64,13 @@ class DefaultPscSinkContext implements PscRecordSerializationSchema.PscSinkConte
         return cachedPartitions.computeIfAbsent(topicUri, k -> {
             try {
                 return fetchPartitionsForTopic(topicUri);
-            } catch (ConfigurationException | ProducerException e) {
+            } catch (ConfigurationException | ProducerException | IOException e) {
                 throw new RuntimeException("Failed to get partitions for topicUri " + topicUri, e);
             }
         });
     }
 
-    private int[] fetchPartitionsForTopic(String topicUri) throws ConfigurationException, ProducerException {
+    private int[] fetchPartitionsForTopic(String topicUri) throws ConfigurationException, ProducerException, IOException {
         try (final PscProducer<?, ?> producer = new PscProducer<>(pscProducerConfig)) {
             // the fetched list is immutable, so we're creating a mutable copy in order to sort
             // it

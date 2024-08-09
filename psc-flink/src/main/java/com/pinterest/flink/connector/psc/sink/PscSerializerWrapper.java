@@ -17,11 +17,11 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.exception.producer.SerializerException;
+import com.pinterest.psc.serde.Serializer;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.util.InstantiationUtil;
 import org.apache.flink.util.TemporaryClassLoaderContext;
-import org.apache.kafka.common.Configurable;
-import org.apache.kafka.common.serialization.Serializer;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -31,14 +31,14 @@ import java.util.function.Function;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
-/** Wrapper for Kafka {@link Serializer}. */
+/** Wrapper for Psc {@link Serializer}. */
 class PscSerializerWrapper<IN> implements SerializationSchema<IN> {
 
     private final Class<? extends Serializer<? super IN>> serializerClass;
     // Whether the serializer is for key or value.
     private final boolean isKey;
     private final Map<String, String> config;
-    private final Function<? super IN, String> topicSelector;
+    private final Function<? super IN, String> topicUriSelector;
 
     private transient Serializer<? super IN> serializer;
 
@@ -50,7 +50,7 @@ class PscSerializerWrapper<IN> implements SerializationSchema<IN> {
         this.serializerClass = checkNotNull(serializerClass);
         this.isKey = isKey;
         this.config = checkNotNull(config);
-        this.topicSelector = checkNotNull(topicSelector);
+        this.topicUriSelector = checkNotNull(topicSelector);
     }
 
     PscSerializerWrapper(
@@ -72,11 +72,7 @@ class PscSerializerWrapper<IN> implements SerializationSchema<IN> {
                             Serializer.class,
                             getClass().getClassLoader());
 
-            if (serializer instanceof Configurable) {
-                ((Configurable) serializer).configure(config);
-            } else {
-                serializer.configure(config, isKey);
-            }
+            serializer.configure(config, isKey);
         } catch (Exception e) {
             throw new IOException("Failed to instantiate the serializer of class " + serializer, e);
         }
@@ -85,6 +81,10 @@ class PscSerializerWrapper<IN> implements SerializationSchema<IN> {
     @Override
     public byte[] serialize(IN element) {
         checkState(serializer != null, "Call open() once before trying to serialize elements.");
-        return serializer.serialize(topicSelector.apply(element), element);
+        try {
+            return serializer.serialize(topicUriSelector.apply(element), element);
+        } catch (SerializerException e) {
+            throw new RuntimeException("Serialization failed", e);
+        }
     }
 }

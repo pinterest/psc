@@ -17,7 +17,6 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
-import org.apache.flink.connector.kafka.sink.KafkaWriterState;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
 import java.io.ByteArrayInputStream;
@@ -26,7 +25,7 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 
-/** A serializer used to serialize {@link KafkaWriterState}. */
+/** A serializer used to serialize {@link PscWriterState}. */
 class PscWriterStateSerializer implements SimpleVersionedSerializer<PscWriterState> {
 
     @Override

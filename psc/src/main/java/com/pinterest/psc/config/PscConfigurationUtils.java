@@ -24,6 +24,12 @@ public class PscConfigurationUtils {
         }
     }
 
+    public static PscConfiguration propertiesToPscConfiguration(Properties properties) {
+        PscConfiguration pscConfiguration = new PscConfiguration();
+        properties.forEach((key, value) -> pscConfiguration.setProperty(key.toString(), value));
+        return pscConfiguration;
+    }
+
     public static Properties pscConfigurationInternalToProperties(PscConfigurationInternal pscConfigurationInternal) {
         return ConfigurationConverter.getProperties(pscConfigurationInternal.getConfiguration());
     }

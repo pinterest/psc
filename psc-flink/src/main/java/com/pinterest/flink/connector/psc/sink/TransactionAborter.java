@@ -17,6 +17,8 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.exception.producer.ProducerException;
+
 import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.util.List;
@@ -61,7 +63,7 @@ class TransactionAborter implements Closeable {
         this.closeAction = closeAction;
     }
 
-    void abortLingeringTransactions(List<String> prefixesToAbort, long startCheckpointId) {
+    void abortLingeringTransactions(List<String> prefixesToAbort, long startCheckpointId) throws ProducerException {
         for (String prefix : prefixesToAbort) {
             abortTransactionsWithPrefix(prefix, startCheckpointId);
         }
@@ -77,7 +79,7 @@ class TransactionAborter implements Closeable {
      * all subtasks j in [0; X), where j % Y = i. For example, if we downscale to 2, then subtask 0
      * is responsible for all even and subtask 1 for all odd subtasks.
      */
-    private void abortTransactionsWithPrefix(String prefix, long startCheckpointId) {
+    private void abortTransactionsWithPrefix(String prefix, long startCheckpointId) throws ProducerException {
         for (int subtaskId = this.subtaskId; ; subtaskId += parallelism) {
             if (abortTransactionOfSubtask(prefix, startCheckpointId, subtaskId) == 0) {
                 // If Flink didn't abort any transaction for current subtask, then we assume that no
@@ -94,12 +96,12 @@ class TransactionAborter implements Closeable {
      * <p>We assume that transaction ids are consecutively used and thus Flink can stop aborting as
      * soon as Flink notices that a particular transaction id was unused.
      */
-    private int abortTransactionOfSubtask(String prefix, long startCheckpointId, int subtaskId) {
+    private int abortTransactionOfSubtask(String prefix, long startCheckpointId, int subtaskId) throws ProducerException {
         int numTransactionAborted = 0;
         for (long checkpointId = startCheckpointId; ; checkpointId++, numTransactionAborted++) {
             // initTransactions fences all old transactions with the same id by bumping the epoch
             String transactionalId =
-                    org.apache.flink.connector.kafka.sink.TransactionalIdFactory.buildTransactionalId(prefix, subtaskId, checkpointId);
+                    TransactionalIdFactory.buildTransactionalId(prefix, subtaskId, checkpointId);
             if (producer == null) {
                 producer = producerFactory.apply(transactionalId);
             } else {

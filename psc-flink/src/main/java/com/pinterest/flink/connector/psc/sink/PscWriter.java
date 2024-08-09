@@ -17,6 +17,17 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.flink.connector.psc.MetricUtil;
+import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscMetricMutableWrapper;
+import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.exception.ClientException;
+import com.pinterest.psc.exception.producer.ProducerException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.metrics.Metric;
+import com.pinterest.psc.metrics.MetricName;
+import com.pinterest.psc.producer.Callback;
+import com.pinterest.psc.producer.PscProducerMessage;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.operators.MailboxExecutor;
 import org.apache.flink.api.common.operators.ProcessingTimeService;
@@ -25,9 +36,6 @@ import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.StatefulSink;
 import org.apache.flink.api.connector.sink2.TwoPhaseCommittingSink;
 import org.apache.flink.connector.base.DeliveryGuarantee;
-import org.apache.flink.connector.kafka.MetricUtil;
-import org.apache.flink.connector.kafka.sink.FlinkKafkaInternalProducer;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
@@ -35,13 +43,7 @@ import org.apache.flink.runtime.checkpoint.CheckpointIDCounter;
 import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableList;
 import org.apache.flink.shaded.guava30.com.google.common.collect.Lists;
 import org.apache.flink.shaded.guava30.com.google.common.io.Closer;
-import org.apache.flink.streaming.connectors.kafka.internals.metrics.KafkaMetricMutableWrapper;
 import org.apache.flink.util.FlinkRuntimeException;
-import org.apache.kafka.clients.producer.Callback;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
-import org.apache.kafka.common.Metric;
-import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.errors.UnknownProducerIdException;
 import org.slf4j.Logger;
@@ -65,31 +67,31 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
- * This class is responsible to write records in a Kafka topic and to handle the different delivery
+ * This class is responsible to write records in a PSC topicUri and to handle the different delivery
  * {@link DeliveryGuarantee}s.
  *
  * @param <IN> The type of the input elements.
  */
 class PscWriter<IN>
-        implements StatefulSink.StatefulSinkWriter<IN, org.apache.flink.connector.kafka.sink.KafkaWriterState>,
-                TwoPhaseCommittingSink.PrecommittingSinkWriter<IN, org.apache.flink.connector.kafka.sink.KafkaCommittable> {
+        implements StatefulSink.StatefulSinkWriter<IN, PscWriterState>,
+                TwoPhaseCommittingSink.PrecommittingSinkWriter<IN, PscCommittable> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscWriter.class);
-    private static final String KAFKA_PRODUCER_METRIC_NAME = "KafkaProducer";
+    private static final String PSC_PRODUCER_METRIC_NAME = "PscProducer";
     private static final long METRIC_UPDATE_INTERVAL_MILLIS = 500;
 
     private static final String KEY_DISABLE_METRICS = "flink.disable-metrics";
     private static final String KEY_REGISTER_METRICS = "register.producer.metrics";
-    private static final String KAFKA_PRODUCER_METRICS = "producer-metrics";
+    private static final String PSC_PRODUCER_METRICS = "producer-metrics";
 
     private final DeliveryGuarantee deliveryGuarantee;
-    private final Properties kafkaProducerConfig;
+    private final Properties pscProducerConfig;
     private final String transactionalIdPrefix;
-    private final org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema<IN> recordSerializer;
+    private final PscRecordSerializationSchema<IN> recordSerializer;
     private final Callback deliveryCallback;
-    private final org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema.KafkaSinkContext kafkaSinkContext;
+    private final PscRecordSerializationSchema.PscSinkContext pscSinkContext;
 
-    private final Map<String, KafkaMetricMutableWrapper> previouslyCreatedMetrics = new HashMap<>();
+    private final Map<String, PscMetricMutableWrapper> previouslyCreatedMetrics = new HashMap<>();
     private final SinkWriterMetricGroup metricGroup;
     private final boolean disabledMetrics;
     private final Counter numRecordsOutCounter;
@@ -101,7 +103,7 @@ class PscWriter<IN>
     private long latestOutgoingByteTotal;
     private Metric byteOutMetric;
     private FlinkPscInternalProducer<byte[], byte[]> currentProducer;
-    private final org.apache.flink.connector.kafka.sink.KafkaWriterState kafkaWriterState;
+    private final PscWriterState pscWriterState;
     // producer pool only used for exactly once
     private final Deque<FlinkPscInternalProducer<byte[], byte[]>> producerPool =
             new ArrayDeque<>();
@@ -112,61 +114,61 @@ class PscWriter<IN>
     private long lastSync = System.currentTimeMillis();
 
     /**
-     * Constructor creating a kafka writer.
+     * Constructor creating a PSC writer.
      *
      * <p>It will throw a {@link RuntimeException} if {@link
-     * org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema#open(SerializationSchema.InitializationContext,
-     * org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema.KafkaSinkContext)} fails.
+     * PscRecordSerializationSchema#open(SerializationSchema.InitializationContext,
+     * PscRecordSerializationSchema.PscSinkContext)} fails.
      *
      * @param deliveryGuarantee the Sink's delivery guarantee
-     * @param kafkaProducerConfig the properties to configure the {@link FlinkKafkaInternalProducer}
+     * @param pscProducerConfig the properties to configure the {@link FlinkPscInternalProducer}
      * @param transactionalIdPrefix used to create the transactionalIds
      * @param sinkInitContext context to provide information about the runtime environment
-     * @param recordSerializer serialize to transform the incoming records to {@link ProducerRecord}
-     * @param schemaContext context used to initialize the {@link org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema}
+     * @param recordSerializer serialize to transform the incoming records to {@link PscProducerMessage}
+     * @param schemaContext context used to initialize the {@link PscRecordSerializationSchema}
      * @param recoveredStates state from an previous execution which was covered
      */
     PscWriter(
             DeliveryGuarantee deliveryGuarantee,
-            Properties kafkaProducerConfig,
+            Properties pscProducerConfig,
             String transactionalIdPrefix,
             Sink.InitContext sinkInitContext,
-            KafkaRecordSerializationSchema<IN> recordSerializer,
+            PscRecordSerializationSchema<IN> recordSerializer,
             SerializationSchema.InitializationContext schemaContext,
-            Collection<org.apache.flink.connector.kafka.sink.KafkaWriterState> recoveredStates) {
+            Collection<PscWriterState> recoveredStates) throws ConfigurationException, ClientException {
         this.deliveryGuarantee = checkNotNull(deliveryGuarantee, "deliveryGuarantee");
-        this.kafkaProducerConfig = checkNotNull(kafkaProducerConfig, "kafkaProducerConfig");
+        this.pscProducerConfig = checkNotNull(pscProducerConfig, "pscProducerConfig");
         this.transactionalIdPrefix = checkNotNull(transactionalIdPrefix, "transactionalIdPrefix");
         this.recordSerializer = checkNotNull(recordSerializer, "recordSerializer");
         this.deliveryCallback =
                 new WriterCallback(
                         sinkInitContext.getMailboxExecutor(),
-                        sinkInitContext.<RecordMetadata>metadataConsumer().orElse(null));
+                        sinkInitContext.<MessageId>metadataConsumer().orElse(null));
         this.disabledMetrics =
-                kafkaProducerConfig.containsKey(KEY_DISABLE_METRICS)
+                pscProducerConfig.containsKey(KEY_DISABLE_METRICS)
                                 && Boolean.parseBoolean(
-                                        kafkaProducerConfig.get(KEY_DISABLE_METRICS).toString())
-                        || kafkaProducerConfig.containsKey(KEY_REGISTER_METRICS)
+                                        pscProducerConfig.get(KEY_DISABLE_METRICS).toString())
+                        || pscProducerConfig.containsKey(KEY_REGISTER_METRICS)
                                 && !Boolean.parseBoolean(
-                                        kafkaProducerConfig.get(KEY_REGISTER_METRICS).toString());
+                                        pscProducerConfig.get(KEY_REGISTER_METRICS).toString());
         checkNotNull(sinkInitContext, "sinkInitContext");
         this.timeService = sinkInitContext.getProcessingTimeService();
         this.metricGroup = sinkInitContext.metricGroup();
         this.numBytesOutCounter = metricGroup.getIOMetricGroup().getNumBytesOutCounter();
         this.numRecordsOutCounter = metricGroup.getIOMetricGroup().getNumRecordsOutCounter();
         this.numRecordsOutErrorsCounter = metricGroup.getNumRecordsOutErrorsCounter();
-        this.kafkaSinkContext =
+        this.pscSinkContext =
                 new DefaultPscSinkContext(
                         sinkInitContext.getSubtaskId(),
                         sinkInitContext.getNumberOfParallelSubtasks(),
-                        kafkaProducerConfig);
+                        PscConfigurationUtils.propertiesToPscConfiguration(pscProducerConfig));
         try {
-            recordSerializer.open(schemaContext, kafkaSinkContext);
+            recordSerializer.open(schemaContext, pscSinkContext);
         } catch (Exception e) {
             throw new FlinkRuntimeException("Cannot initialize schema.", e);
         }
 
-        this.kafkaWriterState = new org.apache.flink.connector.kafka.sink.KafkaWriterState(transactionalIdPrefix);
+        this.pscWriterState = new PscWriterState(transactionalIdPrefix);
         this.lastCheckpointId =
                 sinkInitContext
                         .getRestoredCheckpointId()
@@ -178,12 +180,12 @@ class PscWriter<IN>
             this.currentProducer.beginTransaction();
         } else if (deliveryGuarantee == DeliveryGuarantee.AT_LEAST_ONCE
                 || deliveryGuarantee == DeliveryGuarantee.NONE) {
-            this.currentProducer = new FlinkPscInternalProducer<>(this.kafkaProducerConfig, null);
+            this.currentProducer = new FlinkPscInternalProducer<>(this.pscProducerConfig, null);
             closer.register(this.currentProducer);
-            initKafkaMetrics(this.currentProducer);
+            initPscMetrics(this.currentProducer);
         } else {
             throw new UnsupportedOperationException(
-                    "Unsupported Kafka writer semantic " + this.deliveryGuarantee);
+                    "Unsupported PSC writer semantic " + this.deliveryGuarantee);
         }
 
         initFlinkMetrics();
@@ -191,9 +193,13 @@ class PscWriter<IN>
 
     @Override
     public void write(IN element, Context context) throws IOException {
-        final ProducerRecord<byte[], byte[]> record =
-                recordSerializer.serialize(element, kafkaSinkContext, context.timestamp());
-        currentProducer.send(record, deliveryCallback);
+        final PscProducerMessage<byte[], byte[]> record =
+                recordSerializer.serialize(element, pscSinkContext, context.timestamp());
+        try {
+            currentProducer.send(record, deliveryCallback);
+        } catch (ProducerException | ConfigurationException e) {
+            throw new RuntimeException(e);
+        }
         numRecordsOutCounter.inc();
     }
 
@@ -201,16 +207,24 @@ class PscWriter<IN>
     public void flush(boolean endOfInput) throws IOException, InterruptedException {
         if (deliveryGuarantee != DeliveryGuarantee.NONE || endOfInput) {
             LOG.debug("final flush={}", endOfInput);
-            currentProducer.flush();
+            try {
+                currentProducer.flush();
+            } catch (ProducerException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
     @Override
-    public Collection<org.apache.flink.connector.kafka.sink.KafkaCommittable> prepareCommit() {
+    public Collection<PscCommittable> prepareCommit() {
         if (deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE) {
-            final List<org.apache.flink.connector.kafka.sink.KafkaCommittable> committables =
-                    Collections.singletonList(
-                            org.apache.flink.connector.kafka.sink.KafkaCommittable.of(currentProducer, producerPool::add));
+            final List<PscCommittable> committables;
+            try {
+                committables = Collections.singletonList(
+                        PscCommittable.of(currentProducer, producerPool::add));
+            } catch (ProducerException e) {
+                throw new RuntimeException(e);
+            }
             LOG.debug("Committing {} committables.", committables);
             return committables;
         }
@@ -218,12 +232,16 @@ class PscWriter<IN>
     }
 
     @Override
-    public List<org.apache.flink.connector.kafka.sink.KafkaWriterState> snapshotState(long checkpointId) throws IOException {
+    public List<PscWriterState> snapshotState(long checkpointId) throws IOException {
         if (deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE) {
-            currentProducer = getTransactionalProducer(checkpointId + 1);
-            currentProducer.beginTransaction();
+            try {
+                currentProducer = getTransactionalProducer(checkpointId + 1);
+                currentProducer.beginTransaction();
+            } catch (ProducerException | ConfigurationException e) {
+                throw new RuntimeException(e);
+            }
         }
-        return ImmutableList.of(kafkaWriterState);
+        return ImmutableList.of(pscWriterState);
     }
 
     @Override
@@ -244,9 +262,9 @@ class PscWriter<IN>
         if (currentProducer.isInTransaction()) {
             try {
                 currentProducer.abortTransaction();
-            } catch (ProducerFencedException e) {
-                LOG.debug(
-                        "Producer {} fenced while aborting", currentProducer.getTransactionalId());
+            } catch (ProducerException e) {
+                if (e.getCause() instanceof ProducerFencedException)
+                    LOG.debug("Producer {} fenced while aborting", currentProducer.getTransactionalId());
             }
         }
     }
@@ -262,12 +280,12 @@ class PscWriter<IN>
     }
 
     void abortLingeringTransactions(
-            Collection<org.apache.flink.connector.kafka.sink.KafkaWriterState> recoveredStates, long startCheckpointId) {
+            Collection<PscWriterState> recoveredStates, long startCheckpointId) {
         List<String> prefixesToAbort = Lists.newArrayList(transactionalIdPrefix);
 
-        final Optional<org.apache.flink.connector.kafka.sink.KafkaWriterState> lastStateOpt = recoveredStates.stream().findFirst();
+        final Optional<PscWriterState> lastStateOpt = recoveredStates.stream().findFirst();
         if (lastStateOpt.isPresent()) {
-            org.apache.flink.connector.kafka.sink.KafkaWriterState lastState = lastStateOpt.get();
+            PscWriterState lastState = lastStateOpt.get();
             if (!lastState.getTransactionalIdPrefix().equals(transactionalIdPrefix)) {
                 prefixesToAbort.add(lastState.getTransactionalIdPrefix());
                 LOG.warn(
@@ -277,25 +295,27 @@ class PscWriter<IN>
             }
         }
 
-        try (org.apache.flink.connector.kafka.sink.TransactionAborter transactionAborter =
-                new org.apache.flink.connector.kafka.sink.TransactionAborter(
-                        kafkaSinkContext.getParallelInstanceId(),
-                        kafkaSinkContext.getNumberOfParallelInstances(),
+        try (TransactionAborter transactionAborter =
+                new TransactionAborter(
+                        pscSinkContext.getParallelInstanceId(),
+                        pscSinkContext.getNumberOfParallelInstances(),
                         this::getOrCreateTransactionalProducer,
                         producerPool::add)) {
             transactionAborter.abortLingeringTransactions(prefixesToAbort, startCheckpointId);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Failed to abort lingering transactions", e);
         }
     }
 
     /**
-     * For each checkpoint we create new {@link FlinkKafkaInternalProducer} so that new transactions
+     * For each checkpoint we create new {@link FlinkPscInternalProducer} so that new transactions
      * will not clash with transactions created during previous checkpoints ({@code
      * producer.initTransactions()} assures that we obtain new producerId and epoch counters).
      *
      * <p>Ensures that all transaction ids in between lastCheckpointId and checkpointId are
      * initialized.
      */
-    private FlinkPscInternalProducer<byte[], byte[]> getTransactionalProducer(long checkpointId) {
+    private FlinkPscInternalProducer<byte[], byte[]> getTransactionalProducer(long checkpointId) throws ConfigurationException, ProducerException {
         checkState(
                 checkpointId > lastCheckpointId,
                 "Expected %s > %s",
@@ -306,8 +326,8 @@ class PscWriter<IN>
         // this loop ensures that all gaps are filled with initialized (empty) transactions
         for (long id = lastCheckpointId + 1; id <= checkpointId; id++) {
             String transactionalId =
-                    org.apache.flink.connector.kafka.sink.TransactionalIdFactory.buildTransactionalId(
-                            transactionalIdPrefix, kafkaSinkContext.getParallelInstanceId(), id);
+                    TransactionalIdFactory.buildTransactionalId(
+                            transactionalIdPrefix, pscSinkContext.getParallelInstanceId(), id);
             producer = getOrCreateTransactionalProducer(transactionalId);
         }
         this.lastCheckpointId = checkpointId;
@@ -319,13 +339,17 @@ class PscWriter<IN>
     private FlinkPscInternalProducer<byte[], byte[]> getOrCreateTransactionalProducer(
             String transactionalId) {
         FlinkPscInternalProducer<byte[], byte[]> producer = producerPool.poll();
-        if (producer == null) {
-            producer = new FlinkPscInternalProducer<>(kafkaProducerConfig, transactionalId);
-            closer.register(producer);
-            producer.initTransactions();
-            initKafkaMetrics(producer);
-        } else {
-            producer.initTransactionId(transactionalId);
+        try {
+            if (producer == null) {
+                producer = new FlinkPscInternalProducer<>(pscProducerConfig, transactionalId);
+                closer.register(producer);
+                producer.initTransactions();
+                initPscMetrics(producer);
+            } else {
+                producer.initTransactionId(transactionalId);
+            }
+        } catch (ConfigurationException | ClientException e) {
+            throw new RuntimeException(e);
         }
         return producer;
     }
@@ -335,29 +359,29 @@ class PscWriter<IN>
         registerMetricSync();
     }
 
-    private void initKafkaMetrics(FlinkPscInternalProducer<byte[], byte[]> producer) {
+    private void initPscMetrics(FlinkPscInternalProducer<byte[], byte[]> producer) throws ClientException {
         byteOutMetric =
-                MetricUtil.getKafkaMetric(
-                        producer.metrics(), KAFKA_PRODUCER_METRICS, "outgoing-byte-total");
+                MetricUtil.getPscMetric(
+                        producer.metrics(), PSC_PRODUCER_METRICS, "outgoing-byte-total");
         if (disabledMetrics) {
             return;
         }
-        final MetricGroup kafkaMetricGroup = metricGroup.addGroup(KAFKA_PRODUCER_METRIC_NAME);
-        producer.metrics().entrySet().forEach(initMetric(kafkaMetricGroup));
+        final MetricGroup pscMetricGroup = metricGroup.addGroup(PSC_PRODUCER_METRIC_NAME);
+        producer.metrics().entrySet().forEach(initMetric(pscMetricGroup));
     }
 
     private Consumer<Map.Entry<MetricName, ? extends Metric>> initMetric(
-            MetricGroup kafkaMetricGroup) {
+            MetricGroup pscMetricGroup) {
         return (entry) -> {
             final String name = entry.getKey().name();
             final Metric metric = entry.getValue();
             if (previouslyCreatedMetrics.containsKey(name)) {
-                final KafkaMetricMutableWrapper wrapper = previouslyCreatedMetrics.get(name);
-                wrapper.setKafkaMetric(metric);
+                final PscMetricMutableWrapper wrapper = previouslyCreatedMetrics.get(name);
+                wrapper.setPscMetric(metric);
             } else {
-                final KafkaMetricMutableWrapper wrapper = new KafkaMetricMutableWrapper(metric);
+                final PscMetricMutableWrapper wrapper = new PscMetricMutableWrapper(metric);
                 previouslyCreatedMetrics.put(name, wrapper);
-                kafkaMetricGroup.gauge(name, wrapper);
+                pscMetricGroup.gauge(name, wrapper);
             }
         };
     }
@@ -367,14 +391,19 @@ class PscWriter<IN>
         if (producer == null) {
             return -1L;
         }
-        final Metric sendTime =
-                MetricUtil.getKafkaMetric(
-                        producer.metrics(), KAFKA_PRODUCER_METRICS, "request-latency-avg");
-        final Metric queueTime =
-                MetricUtil.getKafkaMetric(
-                        producer.metrics(), KAFKA_PRODUCER_METRICS, "record-queue-time-avg");
-        return ((Number) sendTime.metricValue()).longValue()
-                + ((Number) queueTime.metricValue()).longValue();
+        try {
+            final Metric sendTime =
+                    MetricUtil.getPscMetric(
+                            producer.metrics(), PSC_PRODUCER_METRICS, "request-latency-avg");
+            final Metric queueTime =
+                    MetricUtil.getPscMetric(
+                            producer.metrics(), PSC_PRODUCER_METRICS, "record-queue-time-avg");
+            return ((Number) sendTime.metricValue()).longValue()
+                    + ((Number) queueTime.metricValue()).longValue();
+        } catch (ClientException e) {
+            LOG.warn("Failed to compute send time", e);
+            return -1L;
+        }
     }
 
     private void registerMetricSync() {
@@ -396,17 +425,17 @@ class PscWriter<IN>
 
     private class WriterCallback implements Callback {
         private final MailboxExecutor mailboxExecutor;
-        @Nullable private final Consumer<RecordMetadata> metadataConsumer;
+        @Nullable private final Consumer<MessageId> metadataConsumer;
 
         public WriterCallback(
                 MailboxExecutor mailboxExecutor,
-                @Nullable Consumer<RecordMetadata> metadataConsumer) {
+                @Nullable Consumer<MessageId> metadataConsumer) {
             this.mailboxExecutor = mailboxExecutor;
             this.metadataConsumer = metadataConsumer;
         }
 
         @Override
-        public void onCompletion(RecordMetadata metadata, Exception exception) {
+        public void onCompletion(MessageId metadata, Exception exception) {
             if (exception != null) {
                 FlinkPscInternalProducer<byte[], byte[]> producer =
                         PscWriter.this.currentProducer;
@@ -415,7 +444,7 @@ class PscWriter<IN>
                             numRecordsOutErrorsCounter.inc();
                             throwException(metadata, exception, producer);
                         },
-                        "Failed to send data to Kafka");
+                        "Failed to send data with PSC");
             }
 
             if (metadataConsumer != null) {
@@ -424,12 +453,12 @@ class PscWriter<IN>
         }
 
         private void throwException(
-                RecordMetadata metadata,
+                MessageId metadata,
                 Exception exception,
                 FlinkPscInternalProducer<byte[], byte[]> producer) {
             String message =
-                    String.format("Failed to send data to Kafka %s with %s ", metadata, producer);
-            if (exception instanceof UnknownProducerIdException) {
+                    String.format("Failed to send data with PSC %s with %s ", metadata, producer);
+            if (exception.getCause() instanceof UnknownProducerIdException) {
                 message += PscCommitter.UNKNOWN_PRODUCER_ID_ERROR_MESSAGE;
             }
             throw new FlinkRuntimeException(message, exception);

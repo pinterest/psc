@@ -17,19 +17,16 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
-import com.pinterest.psc.exception.producer.ProducerException;
-import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.producer.PscProducerMessage;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchemaBuilder;
-import org.apache.kafka.clients.producer.ProducerRecord;
 
 import java.io.Serializable;
 
 /**
  * A serialization schema which defines how to convert a value of type {@code T} to {@link
- * ProducerRecord}.
+ * PscProducerMessage}.
  *
  * @param <T> the type of values being serialized
  */
@@ -51,21 +48,21 @@ public interface PscRecordSerializationSchema<T> extends Serializable {
             throws Exception {}
 
     /**
-     * Serializes given element and returns it as a {@link ProducerRecord}.
+     * Serializes given element and returns it as a {@link PscProducerMessage}.
      *
      * @param element element to be serialized
      * @param context context to possibly determine target partition
      * @param timestamp timestamp
-     * @return Kafka {@link ProducerRecord}
+     * @return PSC {@link PscProducerMessage}
      */
-    ProducerRecord<byte[], byte[]> serialize(T element, PscSinkContext context, Long timestamp);
+    PscProducerMessage<byte[], byte[]> serialize(T element, PscSinkContext context, Long timestamp);
 
-    /** Context providing information of the kafka record target location. */
+    /** Context providing information of the PSC record target location. */
     @Internal
     interface PscSinkContext {
 
         /**
-         * Get the ID of the subtask the KafkaSink is running on. The numbering starts from 0 and
+         * Get the ID of the subtask the PscSink is running on. The numbering starts from 0 and
          * goes up to parallelism-1. (parallelism as returned by {@link
          * #getNumberOfParallelInstances()}
          *
@@ -73,7 +70,7 @@ public interface PscRecordSerializationSchema<T> extends Serializable {
          */
         int getParallelInstanceId();
 
-        /** @return number of parallel KafkaSink tasks. */
+        /** @return number of parallel PscSink tasks. */
         int getNumberOfParallelInstances();
 
         /**
@@ -82,7 +79,7 @@ public interface PscRecordSerializationSchema<T> extends Serializable {
          * <p>After the first retrieval the returned partitions are cached. If the partitions are
          * updated the job has to be restarted to make the change visible.
          *
-         * @param topic kafka topic with partitions
+         * @param topicUri topicUri with partitions
          * @return the ids of the currently available partitions
          */
         int[] getPartitionsForTopicUri(String topicUri);
@@ -93,9 +90,9 @@ public interface PscRecordSerializationSchema<T> extends Serializable {
      * value serialization, partitioning.
      *
      * @param <T> type of incoming elements
-     * @return {@link KafkaRecordSerializationSchemaBuilder}
+     * @return {@link PscRecordSerializationSchemaBuilder}
      */
-    static <T> KafkaRecordSerializationSchemaBuilder<T> builder() {
-        return new KafkaRecordSerializationSchemaBuilder<>();
+    static <T> PscRecordSerializationSchemaBuilder<T> builder() {
+        return new PscRecordSerializationSchemaBuilder<>();
     }
 }
