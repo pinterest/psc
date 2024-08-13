@@ -102,7 +102,9 @@ public class TransactionManagerUtils {
     }
 
     /**
-     * Resume the transaction in the transaction manager.
+     * Resume the transaction in the transaction manager with the given transactional properties. Typically,
+     * this is used to resume a transaction with the same transaction ID and producer ID after a previous transaction
+     * has been aborted or failed.
      *
      * @param transactionManager the transaction manager object
      * @param transactionalProperties the transactional properties
