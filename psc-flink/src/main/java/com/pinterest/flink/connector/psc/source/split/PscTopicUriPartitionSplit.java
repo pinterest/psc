@@ -18,10 +18,10 @@
 
 package com.pinterest.flink.connector.psc.source.split;
 
+import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.connector.source.SourceSplit;
 import org.apache.flink.util.FlinkRuntimeException;
-import org.apache.kafka.common.TopicPartition;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -29,7 +29,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** A {@link SourceSplit} for a Kafka partition. */
+/** A {@link SourceSplit} for a PSC topicUriPartition. */
 @Internal
 public class PscTopicUriPartitionSplit implements SourceSplit {
     public static final long NO_STOPPING_OFFSET = Long.MIN_VALUE;
@@ -46,31 +46,31 @@ public class PscTopicUriPartitionSplit implements SourceSplit {
     public static final Set<Long> VALID_STOPPING_OFFSET_MARKERS =
             new HashSet<>(Arrays.asList(LATEST_OFFSET, COMMITTED_OFFSET, NO_STOPPING_OFFSET));
 
-    private final TopicPartition tp;
+    private final TopicUriPartition tup;
     private final long startingOffset;
     private final long stoppingOffset;
 
-    public PscTopicUriPartitionSplit(TopicPartition tp, long startingOffset) {
-        this(tp, startingOffset, NO_STOPPING_OFFSET);
+    public PscTopicUriPartitionSplit(TopicUriPartition tup, long startingOffset) {
+        this(tup, startingOffset, NO_STOPPING_OFFSET);
     }
 
-    public PscTopicUriPartitionSplit(TopicPartition tp, long startingOffset, long stoppingOffset) {
-        verifyInitialOffset(tp, startingOffset, stoppingOffset);
-        this.tp = tp;
+    public PscTopicUriPartitionSplit(TopicUriPartition tup, long startingOffset, long stoppingOffset) {
+        verifyInitialOffset(tup, startingOffset, stoppingOffset);
+        this.tup = tup;
         this.startingOffset = startingOffset;
         this.stoppingOffset = stoppingOffset;
     }
 
-    public String getTopic() {
-        return tp.topic();
+    public String getTopicUri() {
+        return tup.getTopicUriAsString();
     }
 
     public int getPartition() {
-        return tp.partition();
+        return tup.getPartition();
     }
 
-    public TopicPartition getTopicPartition() {
-        return tp;
+    public TopicUriPartition getTopicPartition() {
+        return tup;
     }
 
     public long getStartingOffset() {
@@ -87,19 +87,19 @@ public class PscTopicUriPartitionSplit implements SourceSplit {
 
     @Override
     public String splitId() {
-        return toSplitId(tp);
+        return toSplitId(tup);
     }
 
     @Override
     public String toString() {
         return String.format(
                 "[Partition: %s, StartingOffset: %d, StoppingOffset: %d]",
-                tp, startingOffset, stoppingOffset);
+                tup, startingOffset, stoppingOffset);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(tp, startingOffset, stoppingOffset);
+        return Objects.hash(tup, startingOffset, stoppingOffset);
     }
 
     @Override
@@ -108,19 +108,19 @@ public class PscTopicUriPartitionSplit implements SourceSplit {
             return false;
         }
         PscTopicUriPartitionSplit other = (PscTopicUriPartitionSplit) obj;
-        return tp.equals(other.tp)
+        return tup.equals(other.tup)
                 && startingOffset == other.startingOffset
                 && stoppingOffset == other.stoppingOffset;
     }
 
-    public static String toSplitId(TopicPartition tp) {
-        return tp.toString();
+    public static String toSplitId(TopicUriPartition tup) {
+        return tup.toString();
     }
 
     // ------------ private methods ---------------
 
     private static void verifyInitialOffset(
-            TopicPartition tp, Long startingOffset, long stoppingOffset) {
+            TopicUriPartition tp, Long startingOffset, long stoppingOffset) {
         if (startingOffset == null) {
             throw new FlinkRuntimeException(
                     "Cannot initialize starting offset for partition " + tp);

@@ -18,12 +18,9 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.initializer;
 
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializerValidator;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.common.TopicPartition;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -42,43 +39,43 @@ import static org.apache.flink.util.Preconditions.checkState;
 class ReaderHandledOffsetsInitializer implements OffsetsInitializer, OffsetsInitializerValidator {
     private static final long serialVersionUID = 172938052008787981L;
     private final long startingOffset;
-    private final OffsetResetStrategy offsetResetStrategy;
+    private final String offsetResetStrategy;
 
     /**
      * The only valid value for startingOffset is following. {@link
-     * KafkaPartitionSplit#EARLIEST_OFFSET EARLIEST_OFFSET}, {@link
-     * KafkaPartitionSplit#LATEST_OFFSET LATEST_OFFSET}, {@link KafkaPartitionSplit#COMMITTED_OFFSET
+     * PscTopicUriPartitionSplit#EARLIEST_OFFSET EARLIEST_OFFSET}, {@link
+     * PscTopicUriPartitionSplit#LATEST_OFFSET LATEST_OFFSET}, {@link PscTopicUriPartitionSplit#COMMITTED_OFFSET
      * COMMITTED_OFFSET}
      */
-    ReaderHandledOffsetsInitializer(long startingOffset, OffsetResetStrategy offsetResetStrategy) {
+    ReaderHandledOffsetsInitializer(long startingOffset, String offsetResetStrategy) {
         this.startingOffset = startingOffset;
         this.offsetResetStrategy = offsetResetStrategy;
     }
 
     @Override
-    public Map<TopicPartition, Long> getPartitionOffsets(
-            Collection<TopicPartition> partitions,
+    public Map<TopicUriPartition, Long> getPartitionOffsets(
+            Collection<TopicUriPartition> partitions,
             PartitionOffsetsRetriever partitionOffsetsRetriever) {
-        Map<TopicPartition, Long> initialOffsets = new HashMap<>();
-        for (TopicPartition tp : partitions) {
+        Map<TopicUriPartition, Long> initialOffsets = new HashMap<>();
+        for (TopicUriPartition tp : partitions) {
             initialOffsets.put(tp, startingOffset);
         }
         return initialOffsets;
     }
 
     @Override
-    public OffsetResetStrategy getAutoOffsetResetStrategy() {
+    public String getAutoOffsetResetStrategy() {
         return offsetResetStrategy;
     }
 
     @Override
     public void validate(Properties kafkaSourceProperties) {
-        if (startingOffset == KafkaPartitionSplit.COMMITTED_OFFSET) {
+        if (startingOffset == PscTopicUriPartitionSplit.COMMITTED_OFFSET) {
             checkState(
-                    kafkaSourceProperties.containsKey(ConsumerConfig.GROUP_ID_CONFIG),
+                    kafkaSourceProperties.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID),
                     String.format(
                             "Property %s is required when using committed offset for offsets initializer",
-                            ConsumerConfig.GROUP_ID_CONFIG));
+                            PscConfiguration.PSC_CONSUMER_GROUP_ID));
         }
     }
 }

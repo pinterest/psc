@@ -18,10 +18,9 @@
 
 package com.pinterest.flink.connector.psc.source.split;
 
+import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
-import org.apache.kafka.common.TopicPartition;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -31,11 +30,11 @@ import java.io.IOException;
 
 /**
  * The {@link SimpleVersionedSerializer serializer} for {@link
- * org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit}.
+ * PscTopicUriPartitionSplit}.
  */
 @Internal
 public class PscTopicUriPartitionSplitSerializer
-        implements SimpleVersionedSerializer<org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit> {
+        implements SimpleVersionedSerializer<PscTopicUriPartitionSplit> {
 
     private static final int CURRENT_VERSION = 0;
 
@@ -45,28 +44,28 @@ public class PscTopicUriPartitionSplitSerializer
     }
 
     @Override
-    public byte[] serialize(org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit split) throws IOException {
+    public byte[] serialize(PscTopicUriPartitionSplit split) throws IOException {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(baos)) {
-            out.writeUTF(split.getTopic());
+            out.writeUTF(split.getTopicUri());
             out.writeInt(split.getPartition());
             out.writeLong(split.getStartingOffset());
-            out.writeLong(split.getStoppingOffset().orElse(org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit.NO_STOPPING_OFFSET));
+            out.writeLong(split.getStoppingOffset().orElse(PscTopicUriPartitionSplit.NO_STOPPING_OFFSET));
             out.flush();
             return baos.toByteArray();
         }
     }
 
     @Override
-    public org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit deserialize(int version, byte[] serialized) throws IOException {
+    public PscTopicUriPartitionSplit deserialize(int version, byte[] serialized) throws IOException {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serialized);
                 DataInputStream in = new DataInputStream(bais)) {
-            String topic = in.readUTF();
+            String topicUri = in.readUTF();
             int partition = in.readInt();
             long offset = in.readLong();
             long stoppingOffset = in.readLong();
-            return new KafkaPartitionSplit(
-                    new TopicPartition(topic, partition), offset, stoppingOffset);
+            return new PscTopicUriPartitionSplit(
+                    new TopicUriPartition(topicUri, partition), offset, stoppingOffset);
         }
     }
 }

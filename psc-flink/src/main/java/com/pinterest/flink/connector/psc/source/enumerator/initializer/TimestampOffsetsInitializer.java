@@ -18,9 +18,8 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.initializer;
 
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.common.TopicPartition;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -40,11 +39,11 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
     }
 
     @Override
-    public Map<TopicPartition, Long> getPartitionOffsets(
-            Collection<TopicPartition> partitions,
+    public Map<TopicUriPartition, Long> getPartitionOffsets(
+            Collection<TopicUriPartition> partitions,
             PartitionOffsetsRetriever partitionOffsetsRetriever) {
-        Map<TopicPartition, Long> startingTimestamps = new HashMap<>();
-        Map<TopicPartition, Long> initialOffsets = new HashMap<>();
+        Map<TopicUriPartition, Long> startingTimestamps = new HashMap<>();
+        Map<TopicUriPartition, Long> initialOffsets = new HashMap<>();
 
         // First get the current end offsets of the partitions. This is going to be used
         // in case we cannot find a suitable offsets based on the timestamp, i.e. the message
@@ -52,14 +51,14 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
         // this case, we just use the latest offset.
         // We need to get the latest offsets before querying offsets by time to ensure that
         // no message is going to be missed.
-        Map<TopicPartition, Long> endOffsets = partitionOffsetsRetriever.endOffsets(partitions);
+        Map<TopicUriPartition, Long> endOffsets = partitionOffsetsRetriever.endOffsets(partitions);
         partitions.forEach(tp -> startingTimestamps.put(tp, startingTimestamp));
         partitionOffsetsRetriever
                 .offsetsForTimes(startingTimestamps)
                 .forEach(
                         (tp, offsetMetadata) -> {
                             if (offsetMetadata != null) {
-                                initialOffsets.put(tp, offsetMetadata.offset());
+                                initialOffsets.put(tp, offsetMetadata.getOffset());
                             } else {
                                 // The timestamp does not exist in the partition yet, we will just
                                 // consume from the latest.
@@ -70,7 +69,7 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
     }
 
     @Override
-    public OffsetResetStrategy getAutoOffsetResetStrategy() {
-        return OffsetResetStrategy.NONE;
+    public String getAutoOffsetResetStrategy() {
+        return PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE;
     }
 }

@@ -18,12 +18,9 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.initializer;
 
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializerValidator;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.common.TopicPartition;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,22 +40,22 @@ import static org.apache.flink.util.Preconditions.checkState;
  */
 class SpecifiedOffsetsInitializer implements OffsetsInitializer, OffsetsInitializerValidator {
     private static final long serialVersionUID = 1649702397250402877L;
-    private final Map<TopicPartition, Long> initialOffsets;
-    private final OffsetResetStrategy offsetResetStrategy;
+    private final Map<TopicUriPartition, Long> initialOffsets;
+    private final String offsetResetStrategy;
 
     SpecifiedOffsetsInitializer(
-            Map<TopicPartition, Long> initialOffsets, OffsetResetStrategy offsetResetStrategy) {
+            Map<TopicUriPartition, Long> initialOffsets, String offsetResetStrategy) {
         this.initialOffsets = Collections.unmodifiableMap(initialOffsets);
         this.offsetResetStrategy = offsetResetStrategy;
     }
 
     @Override
-    public Map<TopicPartition, Long> getPartitionOffsets(
-            Collection<TopicPartition> partitions,
+    public Map<TopicUriPartition, Long> getPartitionOffsets(
+            Collection<TopicUriPartition> partitions,
             PartitionOffsetsRetriever partitionOffsetsRetriever) {
-        Map<TopicPartition, Long> offsets = new HashMap<>();
-        List<TopicPartition> toLookup = new ArrayList<>();
-        for (TopicPartition tp : partitions) {
+        Map<TopicUriPartition, Long> offsets = new HashMap<>();
+        List<TopicUriPartition> toLookup = new ArrayList<>();
+        for (TopicUriPartition tp : partitions) {
             Long offset = initialOffsets.get(tp);
             if (offset == null) {
                 toLookup.add(tp);
@@ -68,16 +65,16 @@ class SpecifiedOffsetsInitializer implements OffsetsInitializer, OffsetsInitiali
         }
         if (!toLookup.isEmpty()) {
             // First check the committed offsets.
-            Map<TopicPartition, Long> committedOffsets =
+            Map<TopicUriPartition, Long> committedOffsets =
                     partitionOffsetsRetriever.committedOffsets(toLookup);
             offsets.putAll(committedOffsets);
             toLookup.removeAll(committedOffsets.keySet());
 
             switch (offsetResetStrategy) {
-                case EARLIEST:
+                case (PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST):
                     offsets.putAll(partitionOffsetsRetriever.beginningOffsets(toLookup));
                     break;
-                case LATEST:
+                case (PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST):
                     offsets.putAll(partitionOffsetsRetriever.endOffsets(toLookup));
                     break;
                 default:
@@ -89,20 +86,20 @@ class SpecifiedOffsetsInitializer implements OffsetsInitializer, OffsetsInitiali
     }
 
     @Override
-    public OffsetResetStrategy getAutoOffsetResetStrategy() {
+    public String getAutoOffsetResetStrategy() {
         return offsetResetStrategy;
     }
 
     @Override
-    public void validate(Properties kafkaSourceProperties) {
+    public void validate(Properties pscSourceProperties) {
         initialOffsets.forEach(
                 (tp, offset) -> {
-                    if (offset == KafkaPartitionSplit.COMMITTED_OFFSET) {
+                    if (offset == PscTopicUriPartitionSplit.COMMITTED_OFFSET) {
                         checkState(
-                                kafkaSourceProperties.containsKey(ConsumerConfig.GROUP_ID_CONFIG),
+                                pscSourceProperties.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID),
                                 String.format(
                                         "Property %s is required because partition %s is initialized with committed offset",
-                                        ConsumerConfig.GROUP_ID_CONFIG, tp));
+                                        PscConfiguration.PSC_CONSUMER_GROUP_ID, tp));
                     }
                 });
     }

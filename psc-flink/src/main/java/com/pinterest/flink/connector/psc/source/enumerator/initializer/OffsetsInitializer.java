@@ -18,17 +18,11 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.initializer;
 
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.annotation.PublicEvolving;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.ReaderHandledOffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.SpecifiedOffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.TimestampOffsetsInitializer;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.kafka.clients.admin.KafkaAdminClient;
-import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsOptions;
-import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.common.TopicPartition;
 
 import java.io.Serializable;
 import java.util.Collection;
@@ -36,7 +30,7 @@ import java.util.Map;
 
 /**
  * An interface for users to specify the starting / stopping offset of a {@link
- * KafkaPartitionSplit}.
+ * PscTopicUriPartitionSplit}.
  *
  * @see ReaderHandledOffsetsInitializer
  * @see SpecifiedOffsetsInitializer
@@ -50,15 +44,15 @@ public interface OffsetsInitializer extends Serializable {
      * starting offsets or stopping offsets of the Kafka partitions.
      *
      * <p>If the implementation returns a starting offset which causes {@code
-     * OffsetsOutOfRangeException} from Kafka. The {@link OffsetResetStrategy} provided by the
+     * OffsetsOutOfRangeException} from Kafka. The offsetResetStrategy provided by the
      * {@link #getAutoOffsetResetStrategy()} will be used to reset the offset.
      *
      * @param partitions the Kafka partitions to get the starting offsets.
      * @param partitionOffsetsRetriever a helper to retrieve information of the Kafka partitions.
      * @return A mapping from Kafka partition to their offsets to start consuming from.
      */
-    Map<TopicPartition, Long> getPartitionOffsets(
-            Collection<TopicPartition> partitions,
+    Map<TopicUriPartition, Long> getPartitionOffsets(
+            Collection<TopicUriPartition> partitions,
             PartitionOffsetsRetriever partitionOffsetsRetriever);
 
     /**
@@ -67,10 +61,10 @@ public interface OffsetsInitializer extends Serializable {
      * <p>The OffsetStrategy is only used when the offset initializer is used to initialize the
      * starting offsets and the starting offsets is out of range.
      *
-     * @return An {@link OffsetResetStrategy} to use if the initialized offsets are out of the
+     * @return An offsetResetStrategy to use if the initialized offsets are out of the
      *     range.
      */
-    OffsetResetStrategy getAutoOffsetResetStrategy();
+    String getAutoOffsetResetStrategy();
 
     /**
      * An interface that provides necessary information to the {@link OffsetsInitializer} to get the
@@ -79,23 +73,22 @@ public interface OffsetsInitializer extends Serializable {
     interface PartitionOffsetsRetriever {
 
         /**
-         * The group id should be the set for {@link KafkaSource KafkaSource} before invoking this
+         * The group id should be the set for {@link com.pinterest.flink.connector.psc.source.PscSource PscSource} before invoking this
          * method. Otherwise an {@code IllegalStateException} will be thrown.
          *
-         * @see KafkaAdminClient#listConsumerGroupOffsets(String, ListConsumerGroupOffsetsOptions)
          * @throws IllegalStateException if the group id is not set for the {@code KafkaSource}.
          */
-        Map<TopicPartition, Long> committedOffsets(Collection<TopicPartition> partitions);
+        Map<TopicUriPartition, Long> committedOffsets(Collection<TopicUriPartition> partitions);
 
         /** List end offsets for the specified partitions. */
-        Map<TopicPartition, Long> endOffsets(Collection<TopicPartition> partitions);
+        Map<TopicUriPartition, Long> endOffsets(Collection<TopicUriPartition> partitions);
 
         /** List beginning offsets for the specified partitions. */
-        Map<TopicPartition, Long> beginningOffsets(Collection<TopicPartition> partitions);
+        Map<TopicUriPartition, Long> beginningOffsets(Collection<TopicUriPartition> partitions);
 
         /** List offsets matching a timestamp for the specified partitions. */
-        Map<TopicPartition, OffsetAndTimestamp> offsetsForTimes(
-                Map<TopicPartition, Long> timestampsToSearch);
+        Map<TopicUriPartition, MessageId> offsetsForTimes(
+                Map<TopicUriPartition, Long> timestampsToSearch);
     }
 
     // --------------- factory methods ---------------
@@ -107,21 +100,21 @@ public interface OffsetsInitializer extends Serializable {
      * @return an offset initializer which initialize the offsets to the committed offsets.
      */
     static OffsetsInitializer committedOffsets() {
-        return committedOffsets(OffsetResetStrategy.NONE);
+        return committedOffsets(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE);
     }
 
     /**
      * Get an {@link OffsetsInitializer} which initializes the offsets to the committed offsets. Use
-     * the given {@link OffsetResetStrategy} to initialize the offsets if the committed offsets does
+     * the given offsetResetStrategy to initialize the offsets if the committed offsets does
      * not exist.
      *
      * @param offsetResetStrategy the offset reset strategy to use when the committed offsets do not
      *     exist.
      * @return an {@link OffsetsInitializer} which initializes the offsets to the committed offsets.
      */
-    static OffsetsInitializer committedOffsets(OffsetResetStrategy offsetResetStrategy) {
+    static OffsetsInitializer committedOffsets(String offsetResetStrategy) {
         return new ReaderHandledOffsetsInitializer(
-                KafkaPartitionSplit.COMMITTED_OFFSET, offsetResetStrategy);
+                PscTopicUriPartitionSplit.COMMITTED_OFFSET, offsetResetStrategy);
     }
 
     /**
@@ -132,7 +125,6 @@ public interface OffsetsInitializer extends Serializable {
      * @param timestamp the timestamp (milliseconds) to start the consumption.
      * @return an {@link OffsetsInitializer} which initializes the offsets based on the given
      *     timestamp.
-     * @see KafkaAdminClient#listOffsets(Map)
      */
     static OffsetsInitializer timestamp(long timestamp) {
         return new TimestampOffsetsInitializer(timestamp);
@@ -147,7 +139,7 @@ public interface OffsetsInitializer extends Serializable {
      */
     static OffsetsInitializer earliest() {
         return new ReaderHandledOffsetsInitializer(
-                KafkaPartitionSplit.EARLIEST_OFFSET, OffsetResetStrategy.EARLIEST);
+                PscTopicUriPartitionSplit.EARLIEST_OFFSET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
     }
 
     /**
@@ -158,7 +150,7 @@ public interface OffsetsInitializer extends Serializable {
      */
     static OffsetsInitializer latest() {
         return new ReaderHandledOffsetsInitializer(
-                KafkaPartitionSplit.LATEST_OFFSET, OffsetResetStrategy.LATEST);
+                PscTopicUriPartitionSplit.LATEST_OFFSET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST);
     }
 
     /**
@@ -167,22 +159,22 @@ public interface OffsetsInitializer extends Serializable {
      * @param offsets the specified offsets for each partition.
      * @return an {@link OffsetsInitializer} which initializes the offsets to the specified offsets.
      */
-    static OffsetsInitializer offsets(Map<TopicPartition, Long> offsets) {
-        return new SpecifiedOffsetsInitializer(offsets, OffsetResetStrategy.EARLIEST);
+    static OffsetsInitializer offsets(Map<TopicUriPartition, Long> offsets) {
+        return new SpecifiedOffsetsInitializer(offsets, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
     }
 
     /**
      * Get an {@link OffsetsInitializer} which initializes the offsets to the specified offsets. Use
-     * the given {@link OffsetResetStrategy} to initialize the offsets in case the specified offset
+     * the given offsetResetStrategy to initialize the offsets in case the specified offset
      * is out of range.
      *
      * @param offsets the specified offsets for each partition.
-     * @param offsetResetStrategy the {@link OffsetResetStrategy} to use when the specified offset
+     * @param offsetResetStrategy the offsetResetStrategy to use when the specified offset
      *     is out of range.
      * @return an {@link OffsetsInitializer} which initializes the offsets to the specified offsets.
      */
     static OffsetsInitializer offsets(
-            Map<TopicPartition, Long> offsets, OffsetResetStrategy offsetResetStrategy) {
+            Map<TopicUriPartition, Long> offsets, String offsetResetStrategy) {
         return new SpecifiedOffsetsInitializer(offsets, offsetResetStrategy);
     }
 }

@@ -18,17 +18,15 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.initializer;
 
+import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.common.TopicPartition;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 
 /**
- * An implementation of {@link org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer} which does not initialize anything.
+ * An implementation of {@link OffsetsInitializer} which does not initialize anything.
  *
  * <p>This class is used as the default stopping offsets initializer for unbounded Kafka sources.
  */
@@ -37,14 +35,14 @@ public class NoStoppingOffsetsInitializer implements OffsetsInitializer {
     private static final long serialVersionUID = 4186323669290142732L;
 
     @Override
-    public Map<TopicPartition, Long> getPartitionOffsets(
-            Collection<TopicPartition> partitions,
+    public Map<TopicUriPartition, Long> getPartitionOffsets(
+            Collection<TopicUriPartition> topicUriPartitions,
             PartitionOffsetsRetriever partitionOffsetsRetriever) {
         return Collections.emptyMap();
     }
 
     @Override
-    public OffsetResetStrategy getAutoOffsetResetStrategy() {
+    public String getAutoOffsetResetStrategy() {
         throw new UnsupportedOperationException(
                 "The NoStoppingOffsetsInitializer does not have an OffsetResetStrategy. It should only be used "
                         + "to end offset.");

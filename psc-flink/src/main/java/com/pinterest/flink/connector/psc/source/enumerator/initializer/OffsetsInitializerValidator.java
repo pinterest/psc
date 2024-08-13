@@ -19,13 +19,12 @@
 package com.pinterest.flink.connector.psc.source.enumerator.initializer;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 
 import java.util.Properties;
 
 /**
  * Interface for validating {@link OffsetsInitializer} with properties from {@link
- * org.apache.flink.connector.kafka.source.KafkaSource}.
+ * com.pinterest.flink.connector.psc.source.PscSource}.
  */
 @Internal
 public interface OffsetsInitializerValidator {
@@ -33,8 +32,8 @@ public interface OffsetsInitializerValidator {
     /**
      * Validate offsets initializer with properties of Kafka source.
      *
-     * @param kafkaSourceProperties Properties of Kafka source
+     * @param pscSourceProperties Properties of Kafka source
      * @throws IllegalStateException if validation fails
      */
-    void validate(Properties kafkaSourceProperties) throws IllegalStateException;
+    void validate(Properties pscSourceProperties) throws IllegalStateException;
 }

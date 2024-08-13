@@ -19,15 +19,14 @@
 package com.pinterest.flink.connector.psc.source.split;
 
 import org.apache.flink.annotation.Internal;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 
-/** This class extends KafkaPartitionSplit to track a mutable current offset. */
+/** This class extends PscTopicUriPartitionSplit to track a mutable current offset. */
 @Internal
-public class PscTopicUriPartitionSplitState extends org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit {
+public class PscTopicUriPartitionSplitState extends PscTopicUriPartitionSplit {
 
     private long currentOffset;
 
-    public PscTopicUriPartitionSplitState(org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit partitionSplit) {
+    public PscTopicUriPartitionSplitState(PscTopicUriPartitionSplit partitionSplit) {
         super(
                 partitionSplit.getTopicPartition(),
                 partitionSplit.getStartingOffset(),
@@ -48,8 +47,8 @@ public class PscTopicUriPartitionSplitState extends org.apache.flink.connector.k
      *
      * @return a new KafkaPartitionSplit which uses the current offset as its starting offset.
      */
-    public org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit toKafkaPartitionSplit() {
-        return new KafkaPartitionSplit(
+    public PscTopicUriPartitionSplit toPscTopicUriPartitionSplit() {
+        return new PscTopicUriPartitionSplit(
                 getTopicPartition(),
                 getCurrentOffset(),
                 getStoppingOffset().orElse(NO_STOPPING_OFFSET));
