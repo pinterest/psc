@@ -443,7 +443,8 @@ public class PscProducer<K, V> implements AutoCloseable {
     }
 
     /**
-     * Centralized logic for initializing transactions for a given backend producer
+     * Centralized logic for initializing transactions for a given backend producer.
+     * 
      * @param backendProducer the backendProducer to initialize transactions for
      * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
      */
