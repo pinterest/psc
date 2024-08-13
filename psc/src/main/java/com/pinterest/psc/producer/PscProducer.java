@@ -32,6 +32,8 @@ import com.pinterest.psc.serde.Serializer;
 import org.apache.commons.configuration2.Configuration;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -48,7 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-public class PscProducer<K, V> implements AutoCloseable {
+public class PscProducer<K, V> implements Closeable {
     private static final PscLogger logger = PscLogger.getLogger(PscProducer.class);
 
     static {
@@ -438,6 +440,22 @@ public class PscProducer<K, V> implements AutoCloseable {
 
         TopicUri topicUri = validateTopicUri(topicUriString);
         PscBackendProducer<K, V> backendProducer = getBackendProducerForTopicUri(topicUri);
+        initTransactions(backendProducer);
+        return backendProducer.getTransactionalProperties();
+    }
+
+    /**
+     * Initializes all backend producers of this PscProducer to be transactional ready.
+     * @throws ProducerException
+     */
+    public void initTransactions() throws ProducerException {
+        ensureOpen();
+        for (PscBackendProducer<K, V> backendProducer : backendProducers) {
+            initTransactions(backendProducer);
+        }
+    }
+
+    private void initTransactions(PscBackendProducer<K, V> backendProducer) throws ProducerException {
         if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
                 !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
             throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
@@ -456,7 +474,6 @@ public class PscProducer<K, V> implements AutoCloseable {
         }
 
         this.beginTransaction();
-        return backendProducer.getTransactionalProperties();
     }
 
     /**
@@ -671,6 +688,14 @@ public class PscProducer<K, V> implements AutoCloseable {
         return transactionManagers;
     }
 
+    @InterfaceStability.Evolving
+    protected Object getExactlyOneTransactionManager() throws ProducerException {
+        Set<Object> transactionManagers = getTransactionManagers();
+        if (transactionManagers.size() != 1)
+            throw new ProducerException("Expected exactly one transaction manager, but found " + transactionManagers.size());
+        return transactionManagers.iterator().next();
+    }
+
     /**
      * This API is added due to a dependency by Flink connector, and should not be normally used by a typical producer.
      *
@@ -728,10 +753,14 @@ public class PscProducer<K, V> implements AutoCloseable {
     /**
      * Closes this PscProducer instance.
      *
-     * @throws ProducerException if closing some backend producer fails
      */
-    public void close() throws ProducerException {
-        close(Duration.ofMillis(Long.MAX_VALUE));
+    @Override
+    public void close() {
+        try {
+            close(Duration.ofMillis(Long.MAX_VALUE));
+        } catch (ProducerException e) {
+            throw new RuntimeException("Failed to close PscProducer", e);
+        }
     }
 
     /**

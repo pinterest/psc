@@ -31,6 +31,7 @@ import com.pinterest.psc.producer.Callback;
 import com.pinterest.psc.producer.PscBackendProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
+import com.pinterest.psc.producer.transaction.TransactionManagerUtils;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -731,42 +732,9 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
             handleUninitializedKafkaProducer("resumeTransaction()");
 
         try {
-            Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
+            Object transactionManager = getTransactionManager();
             synchronized (kafkaProducer) {
-                Object topicPartitionBookkeeper =
-                        PscCommon.getField(transactionManager, "topicPartitionBookkeeper");
-
-                PscCommon.invoke(
-                        transactionManager,
-                        "transitionTo",
-                        PscCommon.getEnum(
-                                "org.apache.kafka.clients.producer.internals.TransactionManager$State.INITIALIZING"
-                        )
-                );
-
-                PscCommon.invoke(topicPartitionBookkeeper, "reset");
-
-                Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-                PscCommon.setField(producerIdAndEpoch, "producerId", pscProducerTransactionalProperties.getProducerId());
-                PscCommon.setField(producerIdAndEpoch, "epoch", pscProducerTransactionalProperties.getEpoch());
-
-                PscCommon.invoke(
-                        transactionManager,
-                        "transitionTo",
-                        PscCommon.getEnum(
-                                "org.apache.kafka.clients.producer.internals.TransactionManager$State.READY"
-                        )
-                );
-
-                PscCommon.invoke(
-                        transactionManager,
-                        "transitionTo",
-                        PscCommon.getEnum(
-                                "org.apache.kafka.clients.producer.internals.TransactionManager$State.IN_TRANSACTION"
-                        )
-                );
-
-                PscCommon.setField(transactionManager, "transactionStarted", true);
+                TransactionManagerUtils.resumeTransaction(transactionManager, pscProducerTransactionalProperties);
             }
         } catch (Exception exception) {
             handleException(exception, true);
@@ -778,11 +746,10 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
         if (kafkaProducer == null)
             handleUninitializedKafkaProducer("getTransactionalProperties()");
 
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
+        Object transactionManager = getTransactionManager();
         return new PscProducerTransactionalProperties(
-                (long) PscCommon.getField(producerIdAndEpoch, "producerId"),
-                (short) PscCommon.getField(producerIdAndEpoch, "epoch")
+                TransactionManagerUtils.getProducerId(transactionManager),
+                TransactionManagerUtils.getEpoch(transactionManager)
         );
     }
 
@@ -798,30 +765,38 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     }
 
     private long getProducerId() {
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-        return (long) PscCommon.getField(producerIdAndEpoch, "producerId");
+        try {
+            Object transactionManager = getTransactionManager();
+            return TransactionManagerUtils.getProducerId(transactionManager);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to get producerId", e);
+        }
     }
 
     private void setProducerId(long producerId) {
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        if (transactionManager != null) {
-            Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-            PscCommon.setField(producerIdAndEpoch, "producerId", producerId);
+        try {
+            Object transactionManager = getTransactionManager();
+            TransactionManagerUtils.setProducerId(transactionManager, producerId);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to set producerId", e);
         }
     }
 
     public short getEpoch() {
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-        return (short) PscCommon.getField(producerIdAndEpoch, "epoch");
+        try {
+            Object transactionManager = getTransactionManager();
+            return TransactionManagerUtils.getEpoch(transactionManager);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to get epoch", e);
+        }
     }
 
     private void setEpoch(short epoch) {
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        if (transactionManager != null) {
-            Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-            PscCommon.setField(producerIdAndEpoch, "epoch", epoch);
+        try {
+            Object transactionManager = getTransactionManager();
+            TransactionManagerUtils.setEpoch(transactionManager, epoch);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to set epoch", e);
         }
     }
 
