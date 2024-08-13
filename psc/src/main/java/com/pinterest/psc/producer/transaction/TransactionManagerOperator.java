@@ -4,6 +4,9 @@ import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 
 import java.util.concurrent.Future;
 
+/**
+ * Backend-agnostic interface for operating on a transaction manager.
+ */
 public interface TransactionManagerOperator {
 
     short getEpoch(Object transactionManager);
