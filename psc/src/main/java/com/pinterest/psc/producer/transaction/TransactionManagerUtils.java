@@ -15,7 +15,7 @@ import java.util.concurrent.Future;
  * For regular transaction operations like beginTransaction, commitTransaction, and abortTransaction, they are not included here
  * because they should be directly accessible via public APIs of the backend producer implementation.
  *
- * Each backend PubSub implementation should provide a TransactionManagerOperator implementation to support the operations,
+ * Each backend PubSub implementation should provide a {@link TransactionManagerOperator} implementation to support the operations,
  * and register it in the TXN_MANAGER_CLASSNAME_TO_OPERATOR map.
  */
 public class TransactionManagerUtils {

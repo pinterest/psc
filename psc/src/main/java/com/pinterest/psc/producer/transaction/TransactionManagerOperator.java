@@ -6,6 +6,7 @@ import java.util.concurrent.Future;
 
 /**
  * Backend-agnostic interface for operating on a transaction manager.
+ * See {@link TransactionManagerUtils} for more details.
  */
 public interface TransactionManagerOperator {
 
