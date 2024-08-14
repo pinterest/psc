@@ -114,8 +114,16 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
         // they must be -1 in order for initTransaction to succeed - we don't yet know why
         // in some cases they are not -1 even though they should be initialized to -1 on calling the KafkaProducer
         // constructor
-        setProducerId(-1);
-        setEpoch((short) -1);
+        try {
+            // the transactionManager will be non-null iff the producer enables idempotence and transactions
+            if (getTransactionManager() != null) {
+                setProducerId(-1);
+                setEpoch((short) -1);
+            }
+        } catch (ProducerException e) {
+            logger.warn("Error in setting producer ID and epoch." +
+                    " This might be ok if the producer won't be transactional.", e);
+        }
         updateStatus(kafkaProducer, true);
         PscMetricRegistryManager.getInstance().incrementBackendCounterMetric(
                 null,
@@ -733,6 +741,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
 
         try {
             Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
             synchronized (kafkaProducer) {
                 TransactionManagerUtils.resumeTransaction(transactionManager, pscProducerTransactionalProperties);
             }
@@ -747,9 +757,22 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
             handleUninitializedKafkaProducer("getTransactionalProperties()");
 
         Object transactionManager = getTransactionManager();
+        if (transactionManager == null)
+            handleNullTransactionManager();
         return new PscProducerTransactionalProperties(
                 TransactionManagerUtils.getProducerId(transactionManager),
                 TransactionManagerUtils.getEpoch(transactionManager)
+        );
+    }
+
+    private void handleNullTransactionManager() throws ProducerException {
+        handleException(
+                new BackendProducerException(
+                        "Attempting to get transactionManager in KafkaProducer when " +
+                        "transactionManager is null. This indicates that the KafkaProducer " +
+                        "was not initialized to be transaction-ready.",
+                        PscUtils.BACKEND_TYPE_KAFKA
+                ), true
         );
     }
 
@@ -767,6 +790,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private long getProducerId() {
         try {
             Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
             return TransactionManagerUtils.getProducerId(transactionManager);
         } catch (ProducerException e) {
             throw new RuntimeException("Unable to get producerId", e);
@@ -776,6 +801,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private void setProducerId(long producerId) {
         try {
             Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
             TransactionManagerUtils.setProducerId(transactionManager, producerId);
         } catch (ProducerException e) {
             throw new RuntimeException("Unable to set producerId", e);
@@ -785,6 +812,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     public short getEpoch() {
         try {
             Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
             return TransactionManagerUtils.getEpoch(transactionManager);
         } catch (ProducerException e) {
             throw new RuntimeException("Unable to get epoch", e);
@@ -794,6 +823,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private void setEpoch(short epoch) {
         try {
             Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
             TransactionManagerUtils.setEpoch(transactionManager, epoch);
         } catch (ProducerException e) {
             throw new RuntimeException("Unable to set epoch", e);
