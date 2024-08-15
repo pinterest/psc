@@ -1,6 +1,7 @@
 package com.pinterest.psc.producer.transaction;
 
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
+import com.pinterest.psc.producer.transaction.kafka.KafkaTransactionManagerOperator;
 import org.apache.kafka.clients.producer.internals.TransactionManager;
 
 import java.util.HashMap;

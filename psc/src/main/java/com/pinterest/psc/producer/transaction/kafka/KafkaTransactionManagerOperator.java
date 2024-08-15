@@ -1,7 +1,8 @@
-package com.pinterest.psc.producer.transaction;
+package com.pinterest.psc.producer.transaction.kafka;
 
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
+import com.pinterest.psc.producer.transaction.TransactionManagerOperator;
 import org.apache.kafka.clients.producer.internals.TransactionManager;
 import org.apache.kafka.clients.producer.internals.TransactionalRequestResult;
 import org.apache.kafka.common.utils.ProducerIdAndEpoch;
