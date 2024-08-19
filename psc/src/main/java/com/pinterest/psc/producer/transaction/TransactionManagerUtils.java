@@ -113,4 +113,14 @@ public class TransactionManagerUtils {
     public static void resumeTransaction(Object transactionManager, PscProducerTransactionalProperties transactionalProperties) {
         getOrCreateTransactionManagerOperator(transactionManager).resumeTransaction(transactionManager, transactionalProperties);
     }
+
+    /**
+     * Get the transaction coordinator ID of the transaction manager.
+     *
+     * @param transactionManager the transaction manager object
+     * @return the transaction coordinator ID of the transaction manager
+     */
+    public static int getTransactionCoordinatorId(Object transactionManager) {
+        return getOrCreateTransactionManagerOperator(transactionManager).getTransactionCoordinatorId(transactionManager);
+    }
 }

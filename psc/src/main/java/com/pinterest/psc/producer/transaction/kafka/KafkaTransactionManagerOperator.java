@@ -5,6 +5,8 @@ import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 import com.pinterest.psc.producer.transaction.TransactionManagerOperator;
 import org.apache.kafka.clients.producer.internals.TransactionManager;
 import org.apache.kafka.clients.producer.internals.TransactionalRequestResult;
+import org.apache.kafka.common.Node;
+import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.utils.ProducerIdAndEpoch;
 
 import java.lang.reflect.Constructor;
@@ -233,6 +235,21 @@ public class KafkaTransactionManagerOperator implements TransactionManagerOperat
 
         transitionTransactionManagerStateTo(transactionManager, "IN_TRANSACTION");
         PscCommon.setField(transactionManager, "transactionStarted", true);
+    }
+
+    /**
+     * Returns the transaction coordinator id of the transaction manager.
+     *
+     * @param transactionManager the transaction manager
+     * @return the transaction coordinator id
+     */
+    @Override
+    public int getTransactionCoordinatorId(Object transactionManager) {
+        Node coordinatorNode = (Node) PscCommon.invoke(transactionManager, "coordinator", FindCoordinatorRequest.CoordinatorType.TRANSACTION);
+        if (coordinatorNode == null) {
+            throw new IllegalStateException("Transaction coordinator node is null");
+        }
+        return coordinatorNode.id();
     }
 
     /**

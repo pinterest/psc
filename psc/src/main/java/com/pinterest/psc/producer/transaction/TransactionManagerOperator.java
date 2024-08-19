@@ -25,4 +25,6 @@ public interface TransactionManagerOperator {
     Future<Boolean> enqueueInFlightTransactions(Object transactionManager);
 
     void resumeTransaction(Object transactionManager, PscProducerTransactionalProperties transactionalProperties);
+
+    int getTransactionCoordinatorId(Object transactionManager);
 }
