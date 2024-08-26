@@ -272,6 +272,12 @@ public class PscProducer<K, V> implements AutoCloseable {
     public Future<MessageId> send(PscProducerMessage<K, V> pscProducerMessage, Callback callback) throws ProducerException, ConfigurationException {
         ensureOpen();
         validateProducerMessage(pscProducerMessage);
+        if (transactionalState.get() != TransactionalState.NON_TRANSACTIONAL &&
+                !backendProducers.isEmpty() &&
+                !pscBackendProducerByTopicUriPrefix.containsKey(pscProducerMessage.getTopicUriPartition().getTopicUri().getTopicUriPrefix())) {
+            throw new ProducerException("Invalid call to send() which would have created a new backend producer. This is not allowed when the PscProducer" +
+                    " is already transactional.");
+        }
         PscBackendProducer<K, V> backendProducer =
                 getBackendProducerForTopicUri(pscProducerMessage.getTopicUriPartition().getTopicUri());
 
@@ -303,7 +309,7 @@ public class PscProducer<K, V> implements AutoCloseable {
                 }
                 break;
             case BEGUN:
-                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.INIT_AND_BEGUN, TransactionalState.IN_TRANSACTION);
+                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.BEGUN, TransactionalState.IN_TRANSACTION);
                 break;
         }
 
