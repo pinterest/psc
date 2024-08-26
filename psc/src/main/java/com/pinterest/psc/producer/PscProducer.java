@@ -32,8 +32,6 @@ import com.pinterest.psc.serde.Serializer;
 import org.apache.commons.configuration2.Configuration;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -50,7 +48,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-public class PscProducer<K, V> implements Closeable {
+public class PscProducer<K, V> implements AutoCloseable {
     private static final PscLogger logger = PscLogger.getLogger(PscProducer.class);
 
     static {
@@ -274,6 +272,12 @@ public class PscProducer<K, V> implements Closeable {
     public Future<MessageId> send(PscProducerMessage<K, V> pscProducerMessage, Callback callback) throws ProducerException, ConfigurationException {
         ensureOpen();
         validateProducerMessage(pscProducerMessage);
+        if (transactionalState.get() != TransactionalState.NON_TRANSACTIONAL &&
+                !backendProducers.isEmpty() &&
+                !pscBackendProducerByTopicUriPrefix.containsKey(pscProducerMessage.getTopicUriPartition().getTopicUri().getTopicUriPrefix())) {
+            throw new ProducerException("Invalid call to send() which would have created a new backend producer. This is not allowed when the PscProducer" +
+                    " is already transactional.");
+        }
         PscBackendProducer<K, V> backendProducer =
                 getBackendProducerForTopicUri(pscProducerMessage.getTopicUriPartition().getTopicUri());
 
@@ -305,7 +309,7 @@ public class PscProducer<K, V> implements Closeable {
                 }
                 break;
             case BEGUN:
-                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.INIT_AND_BEGUN, TransactionalState.IN_TRANSACTION);
+                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.BEGUN, TransactionalState.IN_TRANSACTION);
                 break;
         }
 
@@ -445,16 +449,11 @@ public class PscProducer<K, V> implements Closeable {
     }
 
     /**
-     * Initializes all backend producers of this PscProducer to be transactional ready.
-     * @throws ProducerException
+     * Centralized logic for initializing transactions for a given backend producer.
+     *
+     * @param backendProducer the backendProducer to initialize transactions for
+     * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
      */
-    public void initTransactions() throws ProducerException {
-        ensureOpen();
-        for (PscBackendProducer<K, V> backendProducer : backendProducers) {
-            initTransactions(backendProducer);
-        }
-    }
-
     private void initTransactions(PscBackendProducer<K, V> backendProducer) throws ProducerException {
         if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
                 !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
@@ -689,6 +688,22 @@ public class PscProducer<K, V> implements Closeable {
     }
 
     /**
+     * Get exactly one transaction manager. If there is more than one transaction managers / backend producers,
+     * this method will throw an exception. Note that this is added due to a dependency by Flink connector,
+     * and should not need to be used otherwise.
+     *
+     * @return the transaction manager object
+     * @throws ProducerException if there is an error in the backend producer or if there is more than one transaction managers
+     */
+    @InterfaceStability.Evolving
+    protected Object getExactlyOneTransactionManager() throws ProducerException {
+        Set<Object> transactionManagers = getTransactionManagers();
+        if (transactionManagers.size() != 1)
+            throw new ProducerException("Expected exactly one transaction manager, but found " + transactionManagers.size());
+        return transactionManagers.iterator().next();
+    }
+
+    /**
      * This API is added due to a dependency by Flink connector, and should not be normally used by a typical producer.
      *
      * @return an object representing the backend transaction manager for the given producer message.
@@ -745,14 +760,11 @@ public class PscProducer<K, V> implements Closeable {
     /**
      * Closes this PscProducer instance.
      *
+     * @throws ProducerException if closing some backend producer fails
      */
     @Override
-    public void close() throws IOException {
-        try {
-            close(Duration.ofMillis(Long.MAX_VALUE));
-        } catch (ProducerException e) {
-            throw new IOException(e);
-        }
+    public void close() throws ProducerException {
+        close(Duration.ofMillis(Long.MAX_VALUE));
     }
 
     /**
