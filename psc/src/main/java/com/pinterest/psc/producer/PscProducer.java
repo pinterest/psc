@@ -272,6 +272,12 @@ public class PscProducer<K, V> implements AutoCloseable {
     public Future<MessageId> send(PscProducerMessage<K, V> pscProducerMessage, Callback callback) throws ProducerException, ConfigurationException {
         ensureOpen();
         validateProducerMessage(pscProducerMessage);
+        if (transactionalState.get() != TransactionalState.NON_TRANSACTIONAL &&
+                !backendProducers.isEmpty() &&
+                !pscBackendProducerByTopicUriPrefix.containsKey(pscProducerMessage.getTopicUriPartition().getTopicUri().getTopicUriPrefix())) {
+            throw new ProducerException("Invalid call to send() which would have created a new backend producer. This is not allowed when the PscProducer" +
+                    " is already transactional.");
+        }
         PscBackendProducer<K, V> backendProducer =
                 getBackendProducerForTopicUri(pscProducerMessage.getTopicUriPartition().getTopicUri());
 
@@ -303,7 +309,7 @@ public class PscProducer<K, V> implements AutoCloseable {
                 }
                 break;
             case BEGUN:
-                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.INIT_AND_BEGUN, TransactionalState.IN_TRANSACTION);
+                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.BEGUN, TransactionalState.IN_TRANSACTION);
                 break;
         }
 
@@ -438,6 +444,17 @@ public class PscProducer<K, V> implements AutoCloseable {
 
         TopicUri topicUri = validateTopicUri(topicUriString);
         PscBackendProducer<K, V> backendProducer = getBackendProducerForTopicUri(topicUri);
+        initTransactions(backendProducer);
+        return backendProducer.getTransactionalProperties();
+    }
+
+    /**
+     * Centralized logic for initializing transactions for a given backend producer.
+     * 
+     * @param backendProducer the backendProducer to initialize transactions for
+     * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
+     */
+    private void initTransactions(PscBackendProducer<K, V> backendProducer) throws ProducerException {
         if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
                 !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
             throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
@@ -456,7 +473,6 @@ public class PscProducer<K, V> implements AutoCloseable {
         }
 
         this.beginTransaction();
-        return backendProducer.getTransactionalProperties();
     }
 
     /**
@@ -672,6 +688,22 @@ public class PscProducer<K, V> implements AutoCloseable {
     }
 
     /**
+     * Get exactly one transaction manager. If there is more than one transaction managers / backend producers,
+     * this method will throw an exception. Note that this is added due to a dependency by Flink connector,
+     * and should not need to be used otherwise.
+     *
+     * @return the transaction manager object
+     * @throws ProducerException if there is an error in the backend producer or if there is more than one transaction managers
+     */
+    @InterfaceStability.Evolving
+    protected Object getExactlyOneTransactionManager() throws ProducerException {
+        Set<Object> transactionManagers = getTransactionManagers();
+        if (transactionManagers.size() != 1)
+            throw new ProducerException("Expected exactly one transaction manager, but found " + transactionManagers.size());
+        return transactionManagers.iterator().next();
+    }
+
+    /**
      * This API is added due to a dependency by Flink connector, and should not be normally used by a typical producer.
      *
      * @return an object representing the backend transaction manager for the given producer message.
@@ -730,6 +762,7 @@ public class PscProducer<K, V> implements AutoCloseable {
      *
      * @throws ProducerException if closing some backend producer fails
      */
+    @Override
     public void close() throws ProducerException {
         close(Duration.ofMillis(Long.MAX_VALUE));
     }
