@@ -111,6 +111,10 @@ public class TopicRn {
         return topicRnPrefixString;
     }
 
+    public String getStandard() {
+        return standard;
+    }
+
     public String getService() {
         return service;
     }

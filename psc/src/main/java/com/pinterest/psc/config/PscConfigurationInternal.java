@@ -37,7 +37,8 @@ public class PscConfigurationInternal {
     private final static String PSC_CLIENT_TYPE = "psc.client.type";
     public final static String PSC_CLIENT_TYPE_CONSUMER = "consumer";
     public final static String PSC_CLIENT_TYPE_PRODUCER = "producer";
-    private final static String[] PSC_VALID_CLIENT_TYPES = {PSC_CLIENT_TYPE_CONSUMER, PSC_CLIENT_TYPE_PRODUCER};
+    public final static String PSC_CLIENT_TYPE_METADATA = "metadata";
+    private final static String[] PSC_VALID_CLIENT_TYPES = {PSC_CLIENT_TYPE_CONSUMER, PSC_CLIENT_TYPE_PRODUCER, PSC_CLIENT_TYPE_METADATA};
 
     private PscConfiguration pscConfiguration;
     private Deserializer keyDeserializer, valueDeserializer;
@@ -139,6 +140,9 @@ public class PscConfigurationInternal {
                 break;
             case PSC_CLIENT_TYPE_PRODUCER:
                 validateProducerConfiguration(isLenient, isLogConfiguration);
+                break;
+            case PSC_CLIENT_TYPE_METADATA:
+                // no-op, we only need environment for metadata client
                 break;
             default:
                 throw new ConfigurationException("Valid client type expected: " + String.join(", ", PSC_VALID_CLIENT_TYPES));
