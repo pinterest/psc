@@ -4,6 +4,7 @@ import com.pinterest.psc.exception.startup.TopicRnSyntaxException;
 import com.pinterest.psc.logging.PscLogger;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -107,6 +108,10 @@ public class TopicRn {
         );
     }
 
+    public String getTopicRnString() {
+        return topicRnString;
+    }
+
     public String getTopicRnPrefixString() {
         return topicRnPrefixString;
     }
@@ -169,6 +174,31 @@ public class TopicRn {
          */
 
         throw new TopicRnSyntaxException(String.format("Unsupported topic RN version %d", serializedVersion));
+    }
+
+    public void setTopic(String topic) {
+        this.topic = topic;
+        if (this.topicRnString.endsWith(":")) {
+            this.topicRnString = this.topicRnString + topic;
+        } else {
+            this.topicRnString = this.topicRnString + ":" + topic;
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                topicRnString,
+                topicRnPrefixString,
+                standard,
+                service,
+                environment,
+                cloud,
+                region,
+                classifier,
+                cluster,
+                topic
+        );
     }
 
     @Override

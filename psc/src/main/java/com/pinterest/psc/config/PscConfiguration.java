@@ -481,6 +481,12 @@ public class PscConfiguration extends PropertiesConfiguration {
     public static final String PSC_PRODUCER_SSL_TRUSTSTORE_TYPE = PSC_PRODUCER + "." + SSL_TRUSTSTORE_TYPE;
     */
 
+    // **********************
+    // MetadataClient Configuration
+    // **********************
+
+    protected static final String PSC_METADATA = "psc.metadata";
+    public static final String PSC_METADATA_CLIENT_ID = PSC_METADATA + "." + CLIENT_ID;
 
     // **********************
     // Metrics Configuration

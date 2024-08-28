@@ -42,7 +42,7 @@ public class TopicUriPartition implements Comparable<TopicUriPartition> {
         }
     }
 
-    protected TopicUriPartition(TopicUri topicUri, int partition) {
+    public TopicUriPartition(TopicUri topicUri, int partition) {
         this.backendTopicUri = topicUri;
         this.topicUriStr = topicUri.getTopicUriAsString();
         this.partition = partition;
