@@ -12,9 +12,9 @@ import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.metadata.TopicRnMetadata;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -32,11 +32,29 @@ public abstract class PscBackendMetadataClient implements AutoCloseable {
                 ServiceDiscoveryManager.getServiceDiscoveryConfig(env, pscConfigurationInternal.getDiscoveryConfiguration(), topicUri);
     }
 
-    public abstract List<TopicRn> listTopicRns(long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException;
+    public abstract List<TopicRn> listTopicRns(
+            long timeout,
+            TimeUnit timeUnit
+    ) throws ExecutionException, InterruptedException, TimeoutException;
 
-    public abstract Map<TopicRn, TopicRnMetadata> describeTopicRns(Set<TopicRn> topicRns, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException;
+    public abstract Map<TopicRn, TopicRnMetadata> describeTopicRns(
+            Collection<TopicRn> topicRns,
+            long timeout,
+            TimeUnit timeUnit
+    ) throws ExecutionException, InterruptedException, TimeoutException;
 
-    public abstract Map<TopicUriPartition, MessageId> listOffsets(Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicRnsAndOptions, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException;
+    public abstract Map<TopicUriPartition, MessageId> listOffsets(
+            Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicRnsAndOptions,
+            long timeout,
+            TimeUnit timeUnit
+    ) throws ExecutionException, InterruptedException, TimeoutException;
+
+    public abstract Map<TopicUriPartition, MessageId> listOffsetsForConsumerGroup(
+            String consumerGroupId,
+            Collection<TopicUriPartition> topicUriPartitions,
+            long timeout,
+            TimeUnit timeUnit
+    ) throws ExecutionException, InterruptedException, TimeoutException;
 
     public abstract void close() throws Exception;
 

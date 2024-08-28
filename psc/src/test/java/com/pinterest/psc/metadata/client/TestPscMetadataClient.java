@@ -20,7 +20,7 @@ public class TestPscMetadataClient {
     protected static final String testKafkaTopic1 = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:aws_us-west-1::kafkacluster01:topic1";
 
     @Test
-    void testGetBackendMetadataClient() throws ConfigurationException, TopicUriSyntaxException, IOException {
+    void testGetBackendMetadataClient() throws Exception {
         String fallbackDiscoveryFilename = DiscoveryUtil.createTempFallbackFile();
         PscConfiguration pscConfiguration = new PscConfiguration();
         pscConfiguration.addProperty(PscConfiguration.PSC_DISCOVERY_FALLBACK_FILE, fallbackDiscoveryFilename);
@@ -30,14 +30,18 @@ public class TestPscMetadataClient {
         PscBackendMetadataClient backendMetadataClient = pscMetadataClient.getBackendMetadataClient(TopicUri.validate(testKafkaTopic1));
         assertEquals(PscKafkaMetadataClient.class, backendMetadataClient.getClass());
         assertEquals("kafkacluster01001:9092,kafkacluster01002:9092", backendMetadataClient.getDiscoveryConfig().getConnect());
+        pscMetadataClient.close();
     }
 
     @Test
     void testCreateTopicRn() throws TopicUriSyntaxException {
         TopicRn topic1Rn = TopicUri.validate(testKafkaTopic1).getTopicRn();
         TopicRn topic1RnCreated = MetadataUtils.createTopicRn(TopicUri.validate(testKafkaTopic1), "topic1");
-        assertTrue(topic1Rn.equals(topic1RnCreated));
+        assertTrue(topic1Rn.equals(topic1RnCreated));   // ensure that equality is implemented correctly
+
         TopicRn topic2Rn = MetadataUtils.createTopicRn(TopicUri.validate(testKafkaTopic1), "topic2");
+
+        // Ensure that the new topic name is the only difference
         assertEquals(topic1Rn.getStandard(), topic2Rn.getStandard());
         assertEquals(topic1Rn.getService(), topic2Rn.getService());
         assertEquals(topic1Rn.getEnvironment(), topic2Rn.getEnvironment());

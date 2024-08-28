@@ -215,6 +215,11 @@ public class TestPscMetadataClient {
         pscProducer.close();
     }
 
+    @Test
+    public void testListOffsetsForConsumerGroup() {
+
+    }
+
     private static PscProducer<Integer, Integer> getPscProducer() throws ConfigurationException, ProducerException {
         PscConfiguration producerConfiguration = new PscConfiguration();
         String baseProducerId = "psc-producer-client";
