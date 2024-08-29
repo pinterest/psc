@@ -13,6 +13,7 @@ import com.pinterest.psc.metadata.TopicRnMetadata;
 import com.pinterest.psc.metadata.creation.PscBackendMetadataClientCreator;
 import com.pinterest.psc.metadata.creation.PscMetadataClientCreatorManager;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +54,11 @@ public class PscMetadataClient implements AutoCloseable {
     public Map<TopicUriPartition, MessageId> listOffsets(TopicUri clusterUri, Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicRnsAndOptions, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
         return backendMetadataClient.listOffsets(topicRnsAndOptions, timeout, timeUnit);
+    }
+
+    public Map<TopicUriPartition, MessageId> listOffsetsForConsumerGroup(TopicUri clusterUri, String consumerGroup, Collection<TopicUriPartition> topicUriPartitions, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException {
+        PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
+        return backendMetadataClient.listOffsetsForConsumerGroup(consumerGroup, topicUriPartitions, timeout, timeUnit);
     }
 
     @VisibleForTesting

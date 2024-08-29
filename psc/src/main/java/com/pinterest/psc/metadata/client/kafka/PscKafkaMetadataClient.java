@@ -143,9 +143,10 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
         offsets.forEach((tp, offsetAndMetadata) -> {
             TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, tp.topic());
             TopicUriPartition tup = createKafkaTopicUriPartition(topicRn, tp.partition());
+            MessageId messageId = offsetAndMetadata == null ? null : new MessageId(tup, offsetAndMetadata.offset());
             result.put(
                     tup,
-                    new MessageId(tup, offsetAndMetadata.offset())
+                    messageId
             );
         });
         return result;
