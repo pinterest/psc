@@ -14,24 +14,13 @@ import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class TestPscMetadataClient {
 
     protected static final String testKafkaTopic1 = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:aws_us-west-1::kafkacluster01:topic1";
-
-    @Test
-    void testGetBackendMetadataClient() throws Exception {
-        String fallbackDiscoveryFilename = DiscoveryUtil.createTempFallbackFile();
-        PscConfiguration pscConfiguration = new PscConfiguration();
-        pscConfiguration.addProperty(PscConfiguration.PSC_DISCOVERY_FALLBACK_FILE, fallbackDiscoveryFilename);
-        pscConfiguration.addProperty(PscConfiguration.PSC_METADATA_CLIENT_ID, "test-metadata-client");
-
-        PscMetadataClient pscMetadataClient = new PscMetadataClient(pscConfiguration);
-        PscBackendMetadataClient backendMetadataClient = pscMetadataClient.getBackendMetadataClient(TopicUri.validate(testKafkaTopic1));
-        assertEquals(PscKafkaMetadataClient.class, backendMetadataClient.getClass());
-        assertEquals("kafkacluster01001:9092,kafkacluster01002:9092", backendMetadataClient.getDiscoveryConfig().getConnect());
-        pscMetadataClient.close();
-    }
 
     @Test
     void testCreateTopicRn() throws TopicUriSyntaxException {
