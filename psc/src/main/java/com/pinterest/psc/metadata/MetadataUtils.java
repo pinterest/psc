@@ -4,6 +4,9 @@ import com.google.common.annotations.VisibleForTesting;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 
+/**
+ * Utility class for common metadata logic
+ */
 public class MetadataUtils {
 
     @VisibleForTesting

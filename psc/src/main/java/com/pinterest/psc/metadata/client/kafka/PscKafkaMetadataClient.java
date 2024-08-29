@@ -38,6 +38,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
+/**
+ * A Kafka-specific implementation of the {@link PscBackendMetadataClient}.
+ */
 public class PscKafkaMetadataClient extends PscBackendMetadataClient {
 
     private static final PscLogger logger = PscLogger.getLogger(PscKafkaMetadataClient.class);

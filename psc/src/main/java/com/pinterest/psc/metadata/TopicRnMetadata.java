@@ -5,6 +5,9 @@ import com.pinterest.psc.common.TopicUriPartition;
 
 import java.util.List;
 
+/**
+ * Metadata for a {@link TopicRn}, including the list of its partitions
+ */
 public class TopicRnMetadata {
 
     private final TopicRn topicRn;

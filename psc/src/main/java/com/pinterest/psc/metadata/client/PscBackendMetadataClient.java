@@ -19,6 +19,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+/**
+ * An abstract class that defines the interface for metadata queries and operations. Specific implementations
+ * of this class should be created for each backend, such as Kafka, MemQ, etc.
+ */
 public abstract class PscBackendMetadataClient implements AutoCloseable {
 
     protected TopicUri topicUri;
@@ -61,10 +65,5 @@ public abstract class PscBackendMetadataClient implements AutoCloseable {
     @VisibleForTesting
     protected TopicUri getTopicUri() {
         return topicUri;
-    }
-
-    @VisibleForTesting
-    protected ServiceDiscoveryConfig getDiscoveryConfig() {
-        return discoveryConfig;
     }
 }

@@ -31,6 +31,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,6 +45,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+/**
+ * Tests the functionality and correctness of {@link PscMetadataClient}
+ */
 public class TestPscMetadataClient {
 
     @RegisterExtension
@@ -116,6 +120,11 @@ public class TestPscMetadataClient {
         Thread.sleep(1000);
     }
 
+    /**
+     * Tests that {@link PscMetadataClient#listTopicRns(TopicUri, long, TimeUnit)} returns the correct list of topic RNs
+     *
+     * @throws Exception
+     */
     @Test
     public void testListTopicRns() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
@@ -125,6 +134,12 @@ public class TestPscMetadataClient {
         client.close();
     }
 
+    /**
+     * Tests that {@link PscMetadataClient#describeTopicRns(TopicUri, java.util.Set, long, TimeUnit)} returns the correct
+     * metadata for the supplied topic RNs
+     *
+     * @throws Exception
+     */
     @Test
     public void testDescribeTopicRns() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
@@ -157,6 +172,12 @@ public class TestPscMetadataClient {
         client.close();
     }
 
+    /**
+     * Tests that {@link PscMetadataClient#listOffsets(TopicUri, Map, long, TimeUnit)} returns the correct offsets for the
+     * supplied topic partitions and specs
+     *
+     * @throws Exception
+     */
     @Test
     public void testListOffsets() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
@@ -227,6 +248,13 @@ public class TestPscMetadataClient {
         pscProducer.close();
     }
 
+    /**
+     * Tests that {@link PscMetadataClient#listOffsetsForConsumerGroup(TopicUri, String, Collection, long, TimeUnit)} returns
+     * the correct offsets for the supplied consumer group and topic partitions. Also tests correct behavior when supplied
+     * with edge case scenarios such as non-existent consumerGroupId, non-existent partitions, etc.
+     *
+     * @throws Exception
+     */
     @Test
     public void testListOffsetsForConsumerGroup() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
@@ -354,6 +382,38 @@ public class TestPscMetadataClient {
         assertEquals(500, offsets.get(t1p1).getOffset());
         assertEquals(1000, offsets.get(t2p23).getOffset());
         assertEquals(999, offsets.get(t3p0).getOffset());
+
+        // query a non-existent consumer group
+        offsets = client.listOffsetsForConsumerGroup(
+                clusterUri,
+                "non-existent-consumer-group",
+                topicUriPartitions,
+                10000,
+                TimeUnit.MILLISECONDS
+        );
+
+        assertEquals(4, offsets.size());
+        assertTrue(offsets.containsKey(t1p0));
+        assertTrue(offsets.containsKey(t1p1));
+        assertTrue(offsets.containsKey(t2p23));
+        assertTrue(offsets.containsKey(t3p0));
+        assertNull(offsets.get(t1p0));
+        assertNull(offsets.get(t1p1));
+        assertNull(offsets.get(t2p23));
+        assertNull(offsets.get(t3p0));
+
+        // query a non-existent set of partitions
+        offsets = client.listOffsetsForConsumerGroup(
+                clusterUri,
+                consumerGroupId,
+                Collections.singleton(new TopicUriPartition(topic1Uri, 100)),
+                10000,
+                TimeUnit.MILLISECONDS
+        );
+
+        assertEquals(1, offsets.size());
+        assertTrue(offsets.containsKey(new TopicUriPartition(topic1Uri, 100)));
+        assertNull(offsets.get(new TopicUriPartition(topic1Uri, 100)));
 
         pscConsumer.close();
         pscProducer.close();

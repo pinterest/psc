@@ -22,6 +22,10 @@ public class TestPscMetadataClient {
 
     protected static final String testKafkaTopic1 = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:aws_us-west-1::kafkacluster01:topic1";
 
+    /**
+     * Ensure that {@link TopicRn} creation is correct, and that equality is implemented correctly
+     * @throws TopicUriSyntaxException
+     */
     @Test
     void testCreateTopicRn() throws TopicUriSyntaxException {
         TopicRn topic1Rn = TopicUri.validate(testKafkaTopic1).getTopicRn();

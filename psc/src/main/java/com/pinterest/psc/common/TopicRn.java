@@ -108,10 +108,6 @@ public class TopicRn {
         );
     }
 
-    public String getTopicRnString() {
-        return topicRnString;
-    }
-
     public String getTopicRnPrefixString() {
         return topicRnPrefixString;
     }
@@ -174,15 +170,6 @@ public class TopicRn {
          */
 
         throw new TopicRnSyntaxException(String.format("Unsupported topic RN version %d", serializedVersion));
-    }
-
-    public void setTopic(String topic) {
-        this.topic = topic;
-        if (this.topicRnString.endsWith(":")) {
-            this.topicRnString = this.topicRnString + topic;
-        } else {
-            this.topicRnString = this.topicRnString + ":" + topic;
-        }
     }
 
     @Override

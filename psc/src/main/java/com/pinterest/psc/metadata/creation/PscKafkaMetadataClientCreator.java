@@ -7,6 +7,9 @@ import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.metadata.client.kafka.PscKafkaMetadataClient;
 
+/**
+ * A class that creates a {@link com.pinterest.psc.metadata.client.PscBackendMetadataClient} for Kafka.
+ */
 @PscMetadataClientCreatorPlugin(backend = PscUtils.BACKEND_TYPE_KAFKA)
 public class PscKafkaMetadataClientCreator extends PscBackendMetadataClientCreator {
 

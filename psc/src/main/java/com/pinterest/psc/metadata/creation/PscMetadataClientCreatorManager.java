@@ -7,6 +7,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Manages the different {@link PscBackendMetadataClientCreator} implementations and provides a registry of them.
+ *
+ * This class is responsible for finding and registering the different {@link PscBackendMetadataClientCreator} implementations
+ * that are annotated with {@link PscMetadataClientCreatorPlugin}. Each backend can have at most one implementation of
+ * {@link PscBackendMetadataClientCreator} that is returned by this class. To access all the backend creators, keyed by
+ * the backend name, use {@link #getBackendCreators()}.
+ */
 public class PscMetadataClientCreatorManager {
 
     private static final PscLogger logger = PscLogger.getLogger(PscMetadataClientCreatorManager.class);
