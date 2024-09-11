@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -39,7 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -121,21 +121,21 @@ public class TestPscMetadataClient {
     }
 
     /**
-     * Tests that {@link PscMetadataClient#listTopicRns(TopicUri, long, TimeUnit)} returns the correct list of topic RNs
+     * Tests that {@link PscMetadataClient#listTopicRns(TopicUri, Duration)} returns the correct list of topic RNs
      *
      * @throws Exception
      */
     @Test
     public void testListTopicRns() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
-        List<TopicRn> topicRnList = client.listTopicRns(KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr)), 10000, TimeUnit.MILLISECONDS);
+        List<TopicRn> topicRnList = client.listTopicRns(KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr)), Duration.ofMillis(10000));
         List<TopicRn> expectedTopicRnList = Arrays.asList(topic1Rn, topic2Rn, topic3Rn);
         assertEquals(expectedTopicRnList, topicRnList);
         client.close();
     }
 
     /**
-     * Tests that {@link PscMetadataClient#describeTopicRns(TopicUri, java.util.Set, long, TimeUnit)} returns the correct
+     * Tests that {@link PscMetadataClient#describeTopicRns(TopicUri, java.util.Set, Duration)} returns the correct
      * metadata for the supplied topic RNs
      *
      * @throws Exception
@@ -146,8 +146,7 @@ public class TestPscMetadataClient {
         Map<TopicRn, TopicRnMetadata> topicRnDescriptionMap = client.describeTopicRns(
                 KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr)),
                 new HashSet<>(Arrays.asList(topic1Rn, topic2Rn, topic3Rn)),
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
         assertEquals(3, topicRnDescriptionMap.size());
 
@@ -173,7 +172,7 @@ public class TestPscMetadataClient {
     }
 
     /**
-     * Tests that {@link PscMetadataClient#listOffsets(TopicUri, Map, long, TimeUnit)} returns the correct offsets for the
+     * Tests that {@link PscMetadataClient#listOffsets(TopicUri, Map, Duration)} returns the correct offsets for the
      * supplied topic partitions and specs
      *
      * @throws Exception
@@ -185,35 +184,33 @@ public class TestPscMetadataClient {
         topicUriPartitionsAndOptions.put(new TopicUriPartition(topic1Uri, 0), PscMetadataClient.MetadataClientOption.OFFSET_SPEC_EARLIEST);
         topicUriPartitionsAndOptions.put(new TopicUriPartition(topic2Uri, 0), PscMetadataClient.MetadataClientOption.OFFSET_SPEC_LATEST);
         TopicUri clusterUri = KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr));
-        Map<TopicUriPartition, MessageId> offsets = client.listOffsets(
+        Map<TopicUriPartition, Long> offsets = client.listOffsets(
                 clusterUri,
                 topicUriPartitionsAndOptions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
         assertEquals(2, offsets.size());
 
         // ensure that the offsets are 0 when the topic is empty
-        assertEquals(0, offsets.get(new TopicUriPartition(topic1Uri, 0)).getOffset());
-        assertEquals(0, offsets.get(new TopicUriPartition(topic2Uri, 0)).getOffset());
+        assertEquals(0, (long) offsets.get(new TopicUriPartition(topic1Uri, 0)));
+        assertEquals(0, (long) offsets.get(new TopicUriPartition(topic2Uri, 0)));
 
         // send one message to partition 0 for both topics
         PscProducer<Integer, Integer> pscProducer = getPscProducer();
-        pscProducer.send(new PscProducerMessage(topicUriStr1, 0,0,0));
-        pscProducer.send(new PscProducerMessage(topicUriStr2, 0,0,0));
+        pscProducer.send(new PscProducerMessage<>(topicUriStr1, 0,0,0));
+        pscProducer.send(new PscProducerMessage<>(topicUriStr2, 0,0,0));
         pscProducer.flush();
 
         offsets = client.listOffsets(
                 clusterUri,
                 topicUriPartitionsAndOptions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
         // ensure sent offsets are captured in next metadataClient call
         assertEquals(2, offsets.size());
-        assertEquals(0, offsets.get(new TopicUriPartition(topic1Uri, 0)).getOffset());    // earliest offset
-        assertEquals(1, offsets.get(new TopicUriPartition(topic2Uri, 0)).getOffset());    // latest offset
+        assertEquals(0, (long) offsets.get(new TopicUriPartition(topic1Uri, 0)));    // earliest offset
+        assertEquals(1, (long) offsets.get(new TopicUriPartition(topic2Uri, 0)));    // latest offset
 
         // now change the spec to latest for both topics, and add topic1 partitions 5 and 10 to the query
         topicUriPartitionsAndOptions.put(new TopicUriPartition(topic1Uri, 0), PscMetadataClient.MetadataClientOption.OFFSET_SPEC_LATEST);
@@ -233,23 +230,22 @@ public class TestPscMetadataClient {
         offsets = client.listOffsets(
                 clusterUri,
                 topicUriPartitionsAndOptions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
         // ensure sent offsets are captured in next metadataClient call
         assertEquals(4, offsets.size());
-        assertEquals(3, offsets.get(new TopicUriPartition(topic1Uri, 0)).getOffset());
-        assertEquals(1, offsets.get(new TopicUriPartition(topic1Uri, 5)).getOffset());
-        assertEquals(0, offsets.get(new TopicUriPartition(topic1Uri, 10)).getOffset());
-        assertEquals(2, offsets.get(new TopicUriPartition(topic2Uri, 0)).getOffset());
+        assertEquals(3, (long) offsets.get(new TopicUriPartition(topic1Uri, 0)));
+        assertEquals(1, (long) offsets.get(new TopicUriPartition(topic1Uri, 5)));
+        assertEquals(0, (long) offsets.get(new TopicUriPartition(topic1Uri, 10)));
+        assertEquals(2, (long) offsets.get(new TopicUriPartition(topic2Uri, 0)));
 
         client.close();
         pscProducer.close();
     }
 
     /**
-     * Tests that {@link PscMetadataClient#listOffsetsForConsumerGroup(TopicUri, String, Collection, long, TimeUnit)} returns
+     * Tests that {@link PscMetadataClient#listOffsetsForConsumerGroup(TopicUri, String, Collection, Duration)} returns
      * the correct offsets for the supplied consumer group and topic partitions. Also tests correct behavior when supplied
      * with edge case scenarios such as non-existent consumerGroupId, non-existent partitions, etc.
      *
@@ -286,12 +282,11 @@ public class TestPscMetadataClient {
         pollNMessages(1, pscConsumer);
         pscConsumer.commitSync();
 
-        Map<TopicUriPartition, MessageId> offsets = client.listOffsetsForConsumerGroup(
+        Map<TopicUriPartition, Long> offsets = client.listOffsetsForConsumerGroup(
                 clusterUri,
                 consumerGroupId,
                 topicUriPartitions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
         assertEquals(4, offsets.size());
@@ -299,8 +294,7 @@ public class TestPscMetadataClient {
         assertTrue(offsets.containsKey(t1p1));
         assertTrue(offsets.containsKey(t2p23));
         assertTrue(offsets.containsKey(t3p0));
-        assertEquals(t1p0, offsets.get(t1p0).getTopicUriPartition());
-        assertEquals(1, offsets.get(t1p0).getOffset());
+        assertEquals(1, (long) offsets.get(t1p0));
         assertNull(offsets.get(t1p1));
         assertNull(offsets.get(t2p23));
         assertNull(offsets.get(t3p0));
@@ -314,11 +308,10 @@ public class TestPscMetadataClient {
                 clusterUri,
                 consumerGroupId,
                 topicUriPartitions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
-        assertEquals(901, offsets.get(t1p0).getOffset());
+        assertEquals(901, (long) offsets.get(t1p0));
         assertNull(offsets.get(t1p1));
         assertNull(offsets.get(t2p23));
         assertNull(offsets.get(t3p0));
@@ -334,12 +327,11 @@ public class TestPscMetadataClient {
                 clusterUri,
                 consumerGroupId,
                 topicUriPartitions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
-        assertEquals(901, offsets.get(t1p0).getOffset());
-        assertEquals(500, offsets.get(t1p1).getOffset());
+        assertEquals(901, (long) offsets.get(t1p0));
+        assertEquals(500, (long) offsets.get(t1p1));
         assertNull(offsets.get(t2p23));
         assertNull(offsets.get(t3p0));
 
@@ -354,13 +346,12 @@ public class TestPscMetadataClient {
                 clusterUri,
                 consumerGroupId,
                 topicUriPartitions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
-        assertEquals(901, offsets.get(t1p0).getOffset());
-        assertEquals(500, offsets.get(t1p1).getOffset());
-        assertEquals(1000, offsets.get(t2p23).getOffset());
+        assertEquals(901, (long) offsets.get(t1p0));
+        assertEquals(500, (long) offsets.get(t1p1));
+        assertEquals(1000, (long) offsets.get(t2p23));
         assertNull(offsets.get(t3p0));
 
         // assign to t3p0, poll 999 messages, commit - this should set the offset to 999
@@ -374,22 +365,20 @@ public class TestPscMetadataClient {
                 clusterUri,
                 consumerGroupId,
                 topicUriPartitions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
-        assertEquals(901, offsets.get(t1p0).getOffset());
-        assertEquals(500, offsets.get(t1p1).getOffset());
-        assertEquals(1000, offsets.get(t2p23).getOffset());
-        assertEquals(999, offsets.get(t3p0).getOffset());
+        assertEquals(901, (long) offsets.get(t1p0));
+        assertEquals(500, (long) offsets.get(t1p1));
+        assertEquals(1000, (long) offsets.get(t2p23));
+        assertEquals(999, (long) offsets.get(t3p0));
 
         // query a non-existent consumer group
         offsets = client.listOffsetsForConsumerGroup(
                 clusterUri,
                 "non-existent-consumer-group",
                 topicUriPartitions,
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
         assertEquals(4, offsets.size());
@@ -407,8 +396,7 @@ public class TestPscMetadataClient {
                 clusterUri,
                 consumerGroupId,
                 Collections.singleton(new TopicUriPartition(topic1Uri, 100)),
-                10000,
-                TimeUnit.MILLISECONDS
+                Duration.ofMillis(10000)
         );
 
         assertEquals(1, offsets.size());

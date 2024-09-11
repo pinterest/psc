@@ -27,6 +27,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -61,23 +62,20 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
     }
 
     @Override
-    public List<TopicRn> listTopicRns(
-            long timeout,
-            TimeUnit timeUnit
-    ) throws ExecutionException, InterruptedException, TimeoutException {
+    public List<TopicRn> listTopicRns(Duration duration)
+            throws ExecutionException, InterruptedException, TimeoutException {
         ListTopicsResult listTopicsResult = kafkaAdminClient.listTopics();
-        Collection<TopicListing> topicListing = listTopicsResult.listings().get(timeout, timeUnit);
+        Collection<TopicListing> topicListing = listTopicsResult.listings().get(duration.toMillis(), TimeUnit.MILLISECONDS);
         return topicListing.stream().map(tl -> MetadataUtils.createTopicRn(topicUri, tl.name())).collect(Collectors.toList());
     }
 
     @Override
     public Map<TopicRn, TopicRnMetadata> describeTopicRns(
             Collection<TopicRn> topicRns,
-            long timeout,
-            TimeUnit timeUnit
+            Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException {
         Collection<String> topicNames = topicRns.stream().map(TopicRn::getTopic).collect(Collectors.toSet());
-        Map<String, TopicDescription> topicMetadata = kafkaAdminClient.describeTopics(topicNames).all().get(timeout, timeUnit);
+        Map<String, TopicDescription> topicMetadata = kafkaAdminClient.describeTopics(topicNames).all().get(duration.toMillis(), TimeUnit.MILLISECONDS);
         Map<TopicRn, TopicRnMetadata> result = new HashMap<>();
         for (Map.Entry<String, TopicDescription> entry : topicMetadata.entrySet()) {
             String topicName = entry.getKey();
@@ -95,10 +93,9 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
     }
 
     @Override
-    public Map<TopicUriPartition, MessageId> listOffsets(
+    public Map<TopicUriPartition, Long> listOffsets(
             Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicUriPartitionsAndOptions,
-            long timeout,
-            TimeUnit timeUnit
+            Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException {
         Map<TopicPartition, OffsetSpec> topicPartitionOffsets = new HashMap<>();
         for (Map.Entry<TopicUriPartition, PscMetadataClient.MetadataClientOption> entry : topicUriPartitionsAndOptions.entrySet()) {
@@ -115,25 +112,24 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
                     new TopicPartition(topicUriPartition.getTopicUri().getTopic(), topicUriPartition.getPartition()), offsetSpec);
         }
         ListOffsetsResult listOffsetsResult = kafkaAdminClient.listOffsets(topicPartitionOffsets);
-        Map<TopicUriPartition, MessageId> result = new HashMap<>();
-        listOffsetsResult.all().get(timeout, timeUnit).entrySet().forEach(e -> {
+        Map<TopicUriPartition, Long> result = new HashMap<>();
+        listOffsetsResult.all().get(duration.toMillis(), TimeUnit.MILLISECONDS).entrySet().forEach(e -> {
             TopicPartition tp = e.getKey();
             ListOffsetsResult.ListOffsetsResultInfo info = e.getValue();
             TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, tp.topic());
             result.put(
                     createKafkaTopicUriPartition(topicRn, tp.partition()),
-                    new MessageId(createKafkaTopicUriPartition(topicRn, tp.partition()), info.offset(), info.timestamp())
+                    info.offset()
             );
         });
         return result;
     }
 
     @Override
-    public Map<TopicUriPartition, MessageId> listOffsetsForConsumerGroup(
+    public Map<TopicUriPartition, Long> listOffsetsForConsumerGroup(
             String consumerGroupId,
             Collection<TopicUriPartition> topicUriPartitions,
-            long timeout,
-            TimeUnit timeUnit
+            Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException {
         ListConsumerGroupOffsetsOptions options = new ListConsumerGroupOffsetsOptions();
         options.topicPartitions(topicUriPartitions.stream().map(tup ->
@@ -141,15 +137,15 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
         Map<TopicPartition, OffsetAndMetadata> offsets = kafkaAdminClient
                 .listConsumerGroupOffsets(consumerGroupId, options)
                 .partitionsToOffsetAndMetadata()
-                .get(timeout, timeUnit);
-        Map<TopicUriPartition, MessageId> result = new HashMap<>();
+                .get(duration.toMillis(), TimeUnit.MILLISECONDS);
+        Map<TopicUriPartition, Long> result = new HashMap<>();
         offsets.forEach((tp, offsetAndMetadata) -> {
             TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, tp.topic());
             TopicUriPartition tup = createKafkaTopicUriPartition(topicRn, tp.partition());
-            MessageId messageId = offsetAndMetadata == null ? null : new MessageId(tup, offsetAndMetadata.offset());
+            Long offset = offsetAndMetadata == null ? null : offsetAndMetadata.offset();
             result.put(
-                    tup,
-                    messageId
+                    createKafkaTopicUriPartition(topicRn, tp.partition()),
+                    offset
             );
         });
         return result;

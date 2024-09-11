@@ -13,13 +13,13 @@ import com.pinterest.psc.metadata.TopicRnMetadata;
 import com.pinterest.psc.metadata.creation.PscBackendMetadataClientCreator;
 import com.pinterest.psc.metadata.creation.PscMetadataClientCreatorManager;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -68,16 +68,15 @@ public class PscMetadataClient implements AutoCloseable {
      * List all the {@link TopicRn}'s in the cluster.
      *
      * @param clusterUri
-     * @param timeout
-     * @param timeUnit
+     * @param duration
      * @return the list of {@link TopicRn}'s in the cluster
      * @throws ExecutionException
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public List<TopicRn> listTopicRns(TopicUri clusterUri, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException {
+    public List<TopicRn> listTopicRns(TopicUri clusterUri, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
-        return backendMetadataClient.listTopicRns(timeout, timeUnit);
+        return backendMetadataClient.listTopicRns(duration);
     }
 
     /**
@@ -85,16 +84,15 @@ public class PscMetadataClient implements AutoCloseable {
      *
      * @param clusterUri
      * @param topicRns
-     * @param timeout
-     * @param timeUnit
+     * @param duration
      * @return a map of {@link TopicRn} to {@link TopicRnMetadata}
      * @throws ExecutionException
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public Map<TopicRn, TopicRnMetadata> describeTopicRns(TopicUri clusterUri, Set<TopicRn> topicRns, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException {
+    public Map<TopicRn, TopicRnMetadata> describeTopicRns(TopicUri clusterUri, Set<TopicRn> topicRns, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
-        return backendMetadataClient.describeTopicRns(topicRns, timeout, timeUnit);
+        return backendMetadataClient.describeTopicRns(topicRns, duration);
     }
 
     /**
@@ -108,17 +106,16 @@ public class PscMetadataClient implements AutoCloseable {
      *
      * @param clusterUri
      * @param topicRnsAndOptions
-     * @param timeout
-     * @param timeUnit
+     * @param duration
      * @return a map of {@link TopicUriPartition} to {@link MessageId}. The {@link MessageId} will contain the offset but
      * not necessarily the timestamp (timestamp might be null or unset)
      * @throws ExecutionException
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public Map<TopicUriPartition, MessageId> listOffsets(TopicUri clusterUri, Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicRnsAndOptions, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException {
+    public Map<TopicUriPartition, Long> listOffsets(TopicUri clusterUri, Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicRnsAndOptions, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
-        return backendMetadataClient.listOffsets(topicRnsAndOptions, timeout, timeUnit);
+        return backendMetadataClient.listOffsets(topicRnsAndOptions, duration);
     }
 
     /**
@@ -127,17 +124,16 @@ public class PscMetadataClient implements AutoCloseable {
      * @param clusterUri
      * @param consumerGroup
      * @param topicUriPartitions
-     * @param timeout
-     * @param timeUnit
+     * @param duration
      * @return a map of {@link TopicUriPartition} to {@link MessageId}. The {@link MessageId} will contain the offset but
      * not necessarily the timestamp (timestamp might be null or unset)
      * @throws ExecutionException
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public Map<TopicUriPartition, MessageId> listOffsetsForConsumerGroup(TopicUri clusterUri, String consumerGroup, Collection<TopicUriPartition> topicUriPartitions, long timeout, TimeUnit timeUnit) throws ExecutionException, InterruptedException, TimeoutException {
+    public Map<TopicUriPartition, Long> listOffsetsForConsumerGroup(TopicUri clusterUri, String consumerGroup, Collection<TopicUriPartition> topicUriPartitions, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
-        return backendMetadataClient.listOffsetsForConsumerGroup(consumerGroup, topicUriPartitions, timeout, timeUnit);
+        return backendMetadataClient.listOffsetsForConsumerGroup(consumerGroup, topicUriPartitions, duration);
     }
 
     @VisibleForTesting
