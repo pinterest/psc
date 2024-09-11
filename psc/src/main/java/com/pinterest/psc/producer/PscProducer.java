@@ -454,7 +454,7 @@ public class PscProducer<K, V> implements AutoCloseable {
      * @param backendProducer the backendProducer to initialize transactions for
      * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
      */
-    private void initTransactions(PscBackendProducer<K, V> backendProducer) throws ProducerException {
+    protected void initTransactions(PscBackendProducer<K, V> backendProducer) throws ProducerException {
         if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
                 !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
             throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
@@ -882,7 +882,7 @@ public class PscProducer<K, V> implements AutoCloseable {
 
     }
 
-    private void ensureOpen() throws ProducerException {
+    protected void ensureOpen() throws ProducerException {
         if (closed.get())
             throw new ProducerException(ExceptionMessage.ALREADY_CLOSED_EXCEPTION);
     }
@@ -926,7 +926,7 @@ public class PscProducer<K, V> implements AutoCloseable {
         pscProducerMessage.setTopicUriPartition(topicUriPartition);
     }
 
-    private PscBackendProducer<K, V> getBackendProducerForTopicUri(TopicUri topicUri) throws ProducerException, ConfigurationException {
+    protected PscBackendProducer<K, V> getBackendProducerForTopicUri(TopicUri topicUri) throws ProducerException, ConfigurationException {
         topicUriStrToTopicUri.put(topicUri.getTopicUriAsString(), topicUri);
 
         if (pscBackendProducerByTopicUriPrefix.containsKey(topicUri.getTopicUriPrefix()))

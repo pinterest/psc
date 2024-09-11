@@ -24,6 +24,7 @@ import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
 import com.pinterest.psc.producer.Callback;
@@ -135,7 +136,7 @@ class PscWriter<IN>
             Sink.InitContext sinkInitContext,
             PscRecordSerializationSchema<IN> recordSerializer,
             SerializationSchema.InitializationContext schemaContext,
-            Collection<PscWriterState> recoveredStates) throws ConfigurationException, ClientException {
+            Collection<PscWriterState> recoveredStates) throws ConfigurationException, ClientException, TopicUriSyntaxException {
         this.deliveryGuarantee = checkNotNull(deliveryGuarantee, "deliveryGuarantee");
         this.pscProducerConfig = checkNotNull(pscProducerConfig, "pscProducerConfig");
         this.transactionalIdPrefix = checkNotNull(transactionalIdPrefix, "transactionalIdPrefix");
@@ -348,8 +349,8 @@ class PscWriter<IN>
             } else {
                 producer.initTransactionId(transactionalId);
             }
-        } catch (ConfigurationException | ClientException e) {
-            throw new RuntimeException(e);
+        } catch (ConfigurationException | ClientException | TopicUriSyntaxException e) {
+            throw new RuntimeException("Failed to create transactional producer", e);
         }
         return producer;
     }

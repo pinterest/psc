@@ -17,10 +17,14 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.common.BaseTopicUri;
+import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
+import com.pinterest.psc.producer.PscBackendProducer;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 import com.pinterest.psc.producer.transaction.TransactionManagerUtils;
@@ -43,13 +47,26 @@ import static org.apache.flink.util.Preconditions.checkState;
 class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkPscInternalProducer.class);
+    private static final String CLUSTER_URI_CONFIG = "psc.producer.cluster.uri";
     @Nullable private String transactionalId;
     private volatile boolean inTransaction;
     private volatile boolean closed;
 
-    public FlinkPscInternalProducer(Properties properties, @Nullable String transactionalId) throws ConfigurationException, ProducerException {
+    public FlinkPscInternalProducer(Properties properties, @Nullable String transactionalId) throws ConfigurationException, ProducerException, TopicUriSyntaxException {
         super(PscConfigurationUtils.propertiesToPscConfiguration(withTransactionalId(properties, transactionalId)));
+        if (transactionalId != null) {
+            // Producer is transactional, so the backend producer should be immediately initialized given the ClusterUri in the properties
+            TopicUri clusterUri = validateClusterUriForTransactionalProducer(properties);
+            getBackendProducerForTopicUri(clusterUri);
+        }
         this.transactionalId = transactionalId;
+    }
+
+    private static TopicUri validateClusterUriForTransactionalProducer(Properties properties) throws TopicUriSyntaxException {
+        if (!properties.containsKey(CLUSTER_URI_CONFIG)) {
+            throw new IllegalArgumentException("Cluster URI is required for transactional producer");
+        }
+        return BaseTopicUri.validate(properties.getProperty(CLUSTER_URI_CONFIG));
     }
 
     private static Properties withTransactionalId(
@@ -150,6 +167,22 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         }
     }
 
+    /**
+     * Initializes the transactional producer in the backend. This is a custom implementation of initTransactions specifically
+     * for this class which does not require passing in a topicUri to the method. Instead, creating an instance
+     * of this class with non-null transactional ID will already initialize the backend producer, which allows
+     * this method to be called without any arguments since there is only one backend producer.
+     * @throws ProducerException
+     */
+    public void initTransactions() throws ProducerException {
+        ensureOpen();
+        if (getBackendProducers().size() != 1)
+            throw new IllegalStateException("initTransactions() can only be called when there is exactly one backend producer" +
+                    " already created.");
+        PscBackendProducer<K, V> backendProducer = getBackendProducers().iterator().next();
+        initTransactions(backendProducer);
+    }
+
     public void setTransactionId(String transactionalId) throws ProducerException {
         if (!transactionalId.equals(this.transactionalId)) {
             checkState(
@@ -186,8 +219,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
 
     /**
      * Instead of obtaining producerId and epoch from the transaction coordinator, re-use previously
-     * obtained ones, so that we can resume transaction after a restart. Implementation of this
-     * method is based on {@link PscProducer#initTransactions()}.
+     * obtained ones, so that we can resume transaction after a restart.
      */
     public void resumeTransaction(long producerId, short epoch) throws ProducerException {
         checkState(!inTransaction, "Already in transaction %s", transactionalId);

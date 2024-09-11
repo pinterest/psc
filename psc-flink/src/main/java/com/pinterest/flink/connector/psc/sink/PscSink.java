@@ -19,6 +19,7 @@ package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.connector.sink2.Committer;
@@ -113,7 +114,7 @@ public class PscSink<IN>
                     recordSerializer,
                     context.asSerializationSchemaInitializationContext(),
                     Collections.emptyList());
-        } catch (ConfigurationException | ClientException e) {
+        } catch (ConfigurationException | ClientException | TopicUriSyntaxException e) {
             throw new RuntimeException("Failed to createWriter", e);
         }
     }
@@ -131,7 +132,7 @@ public class PscSink<IN>
                     recordSerializer,
                     context.asSerializationSchemaInitializationContext(),
                     recoveredState);
-        } catch (ConfigurationException | ClientException e) {
+        } catch (ConfigurationException | ClientException | TopicUriSyntaxException e) {
             throw new RuntimeException("Failed to restoreWriter", e);
         }
     }

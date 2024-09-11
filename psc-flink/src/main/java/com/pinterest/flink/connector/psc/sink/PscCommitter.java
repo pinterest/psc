@@ -19,6 +19,7 @@ package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.flink.api.connector.sink2.Committer;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -73,7 +74,7 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
                                 .orElseGet(() -> {
                                     try {
                                         return getRecoveryProducer(committable);
-                                    } catch (ConfigurationException | ProducerException e) {
+                                    } catch (ConfigurationException | ProducerException | TopicUriSyntaxException e) {
                                         throw new RuntimeException("Error getting recovery producer", e);
                                     }
                                 });
@@ -147,7 +148,7 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
      * Creates a producer that can commit into the same transaction as the upstream producer that
      * was serialized into {@link PscCommittable}.
      */
-    private FlinkPscInternalProducer<?, ?> getRecoveryProducer(PscCommittable committable) throws ConfigurationException, ProducerException {
+    private FlinkPscInternalProducer<?, ?> getRecoveryProducer(PscCommittable committable) throws ConfigurationException, ProducerException, TopicUriSyntaxException {
         if (recoveryProducer == null) {
             recoveryProducer =
                     new FlinkPscInternalProducer<>(
