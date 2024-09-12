@@ -13,6 +13,7 @@ import com.pinterest.psc.metadata.TopicRnMetadata;
 import com.pinterest.psc.metadata.creation.PscBackendMetadataClientCreator;
 import com.pinterest.psc.metadata.creation.PscMetadataClientCreatorManager;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -151,7 +152,7 @@ public class PscMetadataClient implements AutoCloseable {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws IOException {
         for (PscBackendMetadataClient client : pscBackendMetadataClientByTopicUriPrefix.values()) {
             client.close();
         }

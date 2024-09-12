@@ -28,7 +28,7 @@ public class PscTopicUriPartitionSplitState extends PscTopicUriPartitionSplit {
 
     public PscTopicUriPartitionSplitState(PscTopicUriPartitionSplit partitionSplit) {
         super(
-                partitionSplit.getTopicPartition(),
+                partitionSplit.getTopicUriPartition(),
                 partitionSplit.getStartingOffset(),
                 partitionSplit.getStoppingOffset().orElse(NO_STOPPING_OFFSET));
         this.currentOffset = partitionSplit.getStartingOffset();
@@ -49,7 +49,7 @@ public class PscTopicUriPartitionSplitState extends PscTopicUriPartitionSplit {
      */
     public PscTopicUriPartitionSplit toPscTopicUriPartitionSplit() {
         return new PscTopicUriPartitionSplit(
-                getTopicPartition(),
+                getTopicUriPartition(),
                 getCurrentOffset(),
                 getStoppingOffset().orElse(NO_STOPPING_OFFSET));
     }

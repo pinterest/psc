@@ -18,11 +18,11 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.TopicPartitionInfo;
+import com.pinterest.psc.common.TopicRn;
+import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,36 +31,32 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import static org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriberUtils.getAllTopicMetadata;
+import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getAllTopicRnMetadata;
 
 /** A subscriber to a topic pattern. */
-class TopicUriPatternSubscriber implements KafkaSubscriber {
+class TopicUriPatternSubscriber implements PscSubscriber {
     private static final long serialVersionUID = -7471048577725467797L;
     private static final Logger LOG = LoggerFactory.getLogger(TopicUriPatternSubscriber.class);
-    private final Pattern topicPattern;
+    private final Pattern topicRnPattern;
 
     TopicUriPatternSubscriber(Pattern topicPattern) {
-        this.topicPattern = topicPattern;
+        this.topicRnPattern = topicPattern;
     }
 
     @Override
-    public Set<TopicPartition> getSubscribedTopicPartitions(AdminClient adminClient) {
+    public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri) {
         LOG.debug("Fetching descriptions for all topics on Kafka cluster");
-        final Map<String, TopicDescription> allTopicMetadata = getAllTopicMetadata(adminClient);
+        final Map<TopicRn, TopicRnMetadata> allTopicRnMetadata = getAllTopicRnMetadata(metadataClient, clusterUri);
 
-        Set<TopicPartition> subscribedTopicPartitions = new HashSet<>();
+        Set<TopicUriPartition> subscribedTopicUriPartitions = new HashSet<>();
 
-        allTopicMetadata.forEach(
-                (topicName, topicDescription) -> {
-                    if (topicPattern.matcher(topicName).matches()) {
-                        for (TopicPartitionInfo partition : topicDescription.partitions()) {
-                            subscribedTopicPartitions.add(
-                                    new TopicPartition(
-                                            topicDescription.name(), partition.partition()));
-                        }
+        allTopicRnMetadata.forEach(
+                (topicRn, topicRnMetadata) -> {
+                    if (topicRnPattern.matcher(topicRn.toString()).matches()) {
+                        subscribedTopicUriPartitions.addAll(topicRnMetadata.getTopicUriPartitions());
                     }
                 });
 
-        return subscribedTopicPartitions;
+        return subscribedTopicUriPartitions;
     }
 }

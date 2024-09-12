@@ -18,52 +18,55 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.common.TopicPartition;
+import com.pinterest.psc.common.TopicRn;
+import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriberUtils.getTopicMetadata;
+import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicRnMetadata;
 
 /** A subscriber for a partition set. */
-class TopicUriPartitionSetSubscriber implements KafkaSubscriber {
+class TopicUriPartitionSetSubscriber implements PscSubscriber {
     private static final long serialVersionUID = 390970375272146036L;
     private static final Logger LOG = LoggerFactory.getLogger(TopicUriPartitionSetSubscriber.class);
-    private final Set<TopicPartition> subscribedPartitions;
+    private final Set<TopicUriPartition> subscribedPartitions;
 
-    TopicUriPartitionSetSubscriber(Set<TopicPartition> partitions) {
+    TopicUriPartitionSetSubscriber(Set<TopicUriPartition> partitions) {
         this.subscribedPartitions = partitions;
     }
 
     @Override
-    public Set<TopicPartition> getSubscribedTopicPartitions(AdminClient adminClient) {
-        final Set<String> topicNames =
+    public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri) {
+        final List<TopicRn> topicRns =
                 subscribedPartitions.stream()
-                        .map(TopicPartition::topic)
-                        .collect(Collectors.toSet());
+                        .map(TopicUriPartition::getTopicUri)
+                        .map(TopicUri::getTopicRn)
+                        .collect(Collectors.toList());
 
-        LOG.debug("Fetching descriptions for topics: {}", topicNames);
-        final Map<String, TopicDescription> topicMetadata =
-                getTopicMetadata(adminClient, topicNames);
+        LOG.debug("Fetching descriptions for topics: {}", topicRns);
+        final Map<TopicRn, TopicRnMetadata> topicRnMetadata =
+                getTopicRnMetadata(metadataClient, clusterUri, topicRns);
 
-        Set<TopicPartition> existingSubscribedPartitions = new HashSet<>();
+        Set<TopicUriPartition> existingSubscribedPartitions = new HashSet<>();
 
-        for (TopicPartition subscribedPartition : this.subscribedPartitions) {
-            if (topicMetadata.containsKey(subscribedPartition.topic())
+        for (TopicUriPartition subscribedPartition : this.subscribedPartitions) {
+            if (topicRnMetadata.containsKey(subscribedPartition.getTopicUri().getTopicRn())
                     && partitionExistsInTopic(
-                            subscribedPartition, topicMetadata.get(subscribedPartition.topic()))) {
+                            subscribedPartition, topicRnMetadata.get(subscribedPartition.getTopicUri().getTopicRn()))) {
                 existingSubscribedPartitions.add(subscribedPartition);
             } else {
                 throw new RuntimeException(
                         String.format(
-                                "Partition '%s' does not exist on Kafka brokers",
+                                "Partition '%s' does not exist on PubSub brokers",
                                 subscribedPartition));
             }
         }
@@ -71,7 +74,7 @@ class TopicUriPartitionSetSubscriber implements KafkaSubscriber {
         return existingSubscribedPartitions;
     }
 
-    private boolean partitionExistsInTopic(TopicPartition partition, TopicDescription topic) {
-        return topic.partitions().size() > partition.partition();
+    private boolean partitionExistsInTopic(TopicUriPartition partition, TopicRnMetadata topicRnMetadata) {
+        return topicRnMetadata.getTopicUriPartitions().size() > partition.getPartition();
     }
 }

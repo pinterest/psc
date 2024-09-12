@@ -18,11 +18,11 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.TopicPartitionInfo;
+import com.pinterest.psc.common.TopicRn;
+import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,32 +31,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriberUtils.getTopicMetadata;
+import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicRnMetadata;
 
 /**
  * A subscriber to a fixed list of topics. The subscribed topics must have existed in the Kafka
  * cluster, otherwise an exception will be thrown.
  */
-class PscTopicUriListSubscriber implements KafkaSubscriber {
+class PscTopicUriListSubscriber implements PscSubscriber {
     private static final long serialVersionUID = -6917603843104947866L;
     private static final Logger LOG = LoggerFactory.getLogger(PscTopicUriListSubscriber.class);
-    private final List<String> topics;
+    private final List<TopicRn> topicRns;
 
-    PscTopicUriListSubscriber(List<String> topics) {
-        this.topics = topics;
+    PscTopicUriListSubscriber(List<TopicRn> topicRns) {
+        this.topicRns = topicRns;
     }
 
     @Override
-    public Set<TopicPartition> getSubscribedTopicPartitions(AdminClient adminClient) {
-        LOG.debug("Fetching descriptions for topics: {}", topics);
-        final Map<String, TopicDescription> topicMetadata =
-                getTopicMetadata(adminClient, new HashSet<>(topics));
+    public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri) {
+        LOG.debug("Fetching descriptions for topicRns: {}", topicRns);
+        final Map<TopicRn, TopicRnMetadata> topicMetadata =
+                getTopicRnMetadata(metadataClient, clusterUri, topicRns);
 
-        Set<TopicPartition> subscribedPartitions = new HashSet<>();
-        for (TopicDescription topic : topicMetadata.values()) {
-            for (TopicPartitionInfo partition : topic.partitions()) {
-                subscribedPartitions.add(new TopicPartition(topic.name(), partition.partition()));
-            }
+        Set<TopicUriPartition> subscribedPartitions = new HashSet<>();
+        for (TopicRnMetadata topic : topicMetadata.values()) {
+            subscribedPartitions.addAll(topic.getTopicUriPartitions());
         }
 
         return subscribedPartitions;

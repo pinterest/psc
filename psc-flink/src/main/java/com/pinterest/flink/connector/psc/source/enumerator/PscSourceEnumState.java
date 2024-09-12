@@ -18,21 +18,21 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator;
 
+import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.annotation.Internal;
-import org.apache.kafka.common.TopicPartition;
 
 import java.util.Set;
 
-/** The state of Kafka source enumerator. */
+/** The state of PSC source enumerator. */
 @Internal
 public class PscSourceEnumState {
-    private final Set<TopicPartition> assignedPartitions;
+    private final Set<TopicUriPartition> assignedPartitions;
 
-    PscSourceEnumState(Set<TopicPartition> assignedPartitions) {
+    PscSourceEnumState(Set<TopicUriPartition> assignedPartitions) {
         this.assignedPartitions = assignedPartitions;
     }
 
-    public Set<TopicPartition> assignedPartitions() {
+    public Set<TopicUriPartition> assignedPartitions() {
         return assignedPartitions;
     }
 }

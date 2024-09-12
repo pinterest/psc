@@ -32,6 +32,8 @@ import com.pinterest.psc.serde.Serializer;
 import org.apache.commons.configuration2.Configuration;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -48,7 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-public class PscProducer<K, V> implements AutoCloseable {
+public class PscProducer<K, V> implements Closeable {
     private static final PscLogger logger = PscLogger.getLogger(PscProducer.class);
 
     static {
@@ -760,10 +762,10 @@ public class PscProducer<K, V> implements AutoCloseable {
     /**
      * Closes this PscProducer instance.
      *
-     * @throws ProducerException if closing some backend producer fails
+     * @throws IOException if closing some backend producer fails
      */
     @Override
-    public void close() throws ProducerException {
+    public void close() throws IOException {
         close(Duration.ofMillis(Long.MAX_VALUE));
     }
 
@@ -772,9 +774,9 @@ public class PscProducer<K, V> implements AutoCloseable {
      * Any request not completed by the given timeout will fail.
      *
      * @param duration maximum time that each backend producer should wait for incomplete requests.
-     * @throws ProducerException if closing some backend producer fails.
+     * @throws IOException if closing some backend producer fails.
      */
-    public void close(Duration duration) throws ProducerException {
+    public void close(Duration duration) throws IOException {
         if (closed.getAndSet(true)) {
             // avoid multiple closes
             return;
@@ -796,7 +798,7 @@ public class PscProducer<K, V> implements AutoCloseable {
         transactionalState.set(TransactionalState.NON_TRANSACTIONAL);
 
         if (!exceptions.isEmpty()) {
-            throw new ProducerException(
+            throw new IOException(
                     String.format(
                             "Some backend producers failed to close.\n%s",
                             exceptions.stream().map(Throwable::getMessage).collect(Collectors.joining("\n"))

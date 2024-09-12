@@ -82,6 +82,7 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
                 producer.flush();
                 recyclable.ifPresent(Recyclable::close);
             } catch (Exception ex) {
+                // TODO: make exception handling backend-agnostic
                 Throwable cause = ex.getCause();
                 try {
                     if (cause instanceof Exception)

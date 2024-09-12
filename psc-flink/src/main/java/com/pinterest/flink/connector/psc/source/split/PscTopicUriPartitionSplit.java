@@ -69,7 +69,7 @@ public class PscTopicUriPartitionSplit implements SourceSplit {
         return tup.getPartition();
     }
 
-    public TopicUriPartition getTopicPartition() {
+    public TopicUriPartition getTopicUriPartition() {
         return tup;
     }
 

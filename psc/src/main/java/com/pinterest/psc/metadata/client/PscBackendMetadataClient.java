@@ -12,6 +12,7 @@ import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.metadata.TopicRnMetadata;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -55,7 +56,7 @@ public abstract class PscBackendMetadataClient implements AutoCloseable {
             Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException;
 
-    public abstract void close() throws Exception;
+    public abstract void close() throws IOException;
 
     @VisibleForTesting
     protected TopicUri getTopicUri() {

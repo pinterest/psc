@@ -18,30 +18,28 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator;
 
+import com.pinterest.flink.connector.psc.source.PscSourceOptions;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriber;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.SplitEnumerator;
 import org.apache.flink.api.connector.source.SplitEnumeratorContext;
 import org.apache.flink.api.connector.source.SplitsAssignment;
-import org.apache.flink.connector.kafka.source.KafkaSourceOptions;
-import org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumState;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 import org.apache.flink.util.FlinkRuntimeException;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.KafkaAdminClient;
-import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsOptions;
-import org.apache.kafka.clients.admin.ListOffsetsResult;
-import org.apache.kafka.clients.admin.OffsetSpec;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
-import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -59,41 +57,41 @@ import java.util.stream.Collectors;
 /** The enumerator class for Kafka source. */
 @Internal
 public class PscSourceEnumerator
-        implements SplitEnumerator<KafkaPartitionSplit, org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumState> {
+        implements SplitEnumerator<PscTopicUriPartitionSplit, PscSourceEnumState> {
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceEnumerator.class);
-    private final KafkaSubscriber subscriber;
+    private final PscSubscriber subscriber;
     private final OffsetsInitializer startingOffsetInitializer;
     private final OffsetsInitializer stoppingOffsetInitializer;
     private final Properties properties;
     private final long partitionDiscoveryIntervalMs;
-    private final SplitEnumeratorContext<KafkaPartitionSplit> context;
+    private final SplitEnumeratorContext<PscTopicUriPartitionSplit> context;
     private final Boundedness boundedness;
 
     /** Partitions that have been assigned to readers. */
-    private final Set<TopicPartition> assignedPartitions;
+    private final Set<TopicUriPartition> assignedPartitions;
 
     /**
      * The discovered and initialized partition splits that are waiting for owner reader to be
      * ready.
      */
-    private final Map<Integer, Set<KafkaPartitionSplit>> pendingPartitionSplitAssignment;
+    private final Map<Integer, Set<PscTopicUriPartitionSplit>> pendingPartitionSplitAssignment;
 
     /** The consumer group id used for this KafkaSource. */
     private final String consumerGroupId;
 
     // Lazily instantiated or mutable fields.
-    private AdminClient adminClient;
+    private PscMetadataClient metadataClient;
 
     // This flag will be marked as true if periodically partition discovery is disabled AND the
     // initializing partition discovery has finished.
     private boolean noMoreNewPartitionSplits = false;
 
     public PscSourceEnumerator(
-            KafkaSubscriber subscriber,
+            PscSubscriber subscriber,
             OffsetsInitializer startingOffsetInitializer,
             OffsetsInitializer stoppingOffsetInitializer,
             Properties properties,
-            SplitEnumeratorContext<KafkaPartitionSplit> context,
+            SplitEnumeratorContext<PscTopicUriPartitionSplit> context,
             Boundedness boundedness) {
         this(
                 subscriber,
@@ -106,13 +104,13 @@ public class PscSourceEnumerator
     }
 
     public PscSourceEnumerator(
-            KafkaSubscriber subscriber,
+            PscSubscriber subscriber,
             OffsetsInitializer startingOffsetInitializer,
             OffsetsInitializer stoppingOffsetInitializer,
             Properties properties,
-            SplitEnumeratorContext<KafkaPartitionSplit> context,
+            SplitEnumeratorContext<PscTopicUriPartitionSplit> context,
             Boundedness boundedness,
-            Set<TopicPartition> assignedPartitions) {
+            Set<TopicUriPartition> assignedPartitions) {
         this.subscriber = subscriber;
         this.startingOffsetInitializer = startingOffsetInitializer;
         this.stoppingOffsetInitializer = stoppingOffsetInitializer;
@@ -123,11 +121,11 @@ public class PscSourceEnumerator
         this.assignedPartitions = new HashSet<>(assignedPartitions);
         this.pendingPartitionSplitAssignment = new HashMap<>();
         this.partitionDiscoveryIntervalMs =
-                KafkaSourceOptions.getOption(
+                PscSourceOptions.getOption(
                         properties,
-                        KafkaSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS,
+                        PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS,
                         Long::parseLong);
-        this.consumerGroupId = properties.getProperty(ConsumerConfig.GROUP_ID_CONFIG);
+        this.consumerGroupId = properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
     }
 
     /**
@@ -139,7 +137,7 @@ public class PscSourceEnumerator
      * <p>The invoking chain of partition discovery would be:
      *
      * <ol>
-     *   <li>{@link #getSubscribedTopicPartitions} in worker thread
+     *   <li>{@link #getSubscribedTopicUriPartitions} in worker thread
      *   <li>{@link #checkPartitionChanges} in coordinator thread
      *   <li>{@link #initializePartitionSplits} in worker thread
      *   <li>{@link #handlePartitionSplitChanges} in coordinator thread
@@ -147,7 +145,7 @@ public class PscSourceEnumerator
      */
     @Override
     public void start() {
-        adminClient = getKafkaAdminClient();
+        metadataClient = getPscMetadataClient();
         if (partitionDiscoveryIntervalMs > 0) {
             LOG.info(
                     "Starting the KafkaSourceEnumerator for consumer group {} "
@@ -155,7 +153,7 @@ public class PscSourceEnumerator
                     consumerGroupId,
                     partitionDiscoveryIntervalMs);
             context.callAsync(
-                    this::getSubscribedTopicPartitions,
+                    this::getSubscribedTopicUriPartitions,
                     this::checkPartitionChanges,
                     0,
                     partitionDiscoveryIntervalMs);
@@ -164,7 +162,7 @@ public class PscSourceEnumerator
                     "Starting the KafkaSourceEnumerator for consumer group {} "
                             + "without periodic partition discovery.",
                     consumerGroupId);
-            context.callAsync(this::getSubscribedTopicPartitions, this::checkPartitionChanges);
+            context.callAsync(this::getSubscribedTopicUriPartitions, this::checkPartitionChanges);
         }
     }
 
@@ -174,7 +172,7 @@ public class PscSourceEnumerator
     }
 
     @Override
-    public void addSplitsBack(List<KafkaPartitionSplit> splits, int subtaskId) {
+    public void addSplitsBack(List<PscTopicUriPartitionSplit> splits, int subtaskId) {
         addPartitionSplitChangeToPendingAssignments(splits);
 
         // If the failed subtask has already restarted, we need to assign pending splits to it
@@ -193,14 +191,14 @@ public class PscSourceEnumerator
     }
 
     @Override
-    public org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumState snapshotState(long checkpointId) throws Exception {
-        return new KafkaSourceEnumState(assignedPartitions);
+    public PscSourceEnumState snapshotState(long checkpointId) throws Exception {
+        return new PscSourceEnumState(assignedPartitions);
     }
 
     @Override
-    public void close() {
-        if (adminClient != null) {
-            adminClient.close();
+    public void close() throws IOException {
+        if (metadataClient != null) {
+            metadataClient.close();
         }
     }
 
@@ -212,10 +210,10 @@ public class PscSourceEnumerator
      * <p>NOTE: This method should only be invoked in the worker executor thread, because it
      * requires network I/O with Kafka brokers.
      *
-     * @return Set of subscribed {@link TopicPartition}s
+     * @return Set of subscribed {@link TopicUriPartition}s
      */
-    private Set<TopicPartition> getSubscribedTopicPartitions() {
-        return subscriber.getSubscribedTopicPartitions(adminClient);
+    private Set<TopicUriPartition> getSubscribedTopicUriPartitions() {
+        return subscriber.getSubscribedTopicUriPartitions(metadataClient, clusterUri);
     }
 
     /**
@@ -228,7 +226,7 @@ public class PscSourceEnumerator
      * @param fetchedPartitions Map from topic name to its description
      * @param t Exception in worker thread
      */
-    private void checkPartitionChanges(Set<TopicPartition> fetchedPartitions, Throwable t) {
+    private void checkPartitionChanges(Set<TopicUriPartition> fetchedPartitions, Throwable t) {
         if (t != null) {
             throw new FlinkRuntimeException(
                     "Failed to list subscribed topic partitions due to ", t);
@@ -259,25 +257,25 @@ public class PscSourceEnumerator
      * potentially requires network I/O with Kafka brokers for fetching offsets.
      *
      * @param partitionChange Newly discovered and removed partitions
-     * @return {@link KafkaPartitionSplit} of new partitions and {@link TopicPartition} of removed
+     * @return {@link PscTopicUriPartitionSplit} of new partitions and {@link TopicUriPartition} of removed
      *     partitions
      */
     private PartitionSplitChange initializePartitionSplits(PartitionChange partitionChange) {
-        Set<TopicPartition> newPartitions =
+        Set<TopicUriPartition> newPartitions =
                 Collections.unmodifiableSet(partitionChange.getNewPartitions());
         OffsetsInitializer.PartitionOffsetsRetriever offsetsRetriever = getOffsetsRetriever();
 
-        Map<TopicPartition, Long> startingOffsets =
+        Map<TopicUriPartition, Long> startingOffsets =
                 startingOffsetInitializer.getPartitionOffsets(newPartitions, offsetsRetriever);
-        Map<TopicPartition, Long> stoppingOffsets =
+        Map<TopicUriPartition, Long> stoppingOffsets =
                 stoppingOffsetInitializer.getPartitionOffsets(newPartitions, offsetsRetriever);
 
-        Set<KafkaPartitionSplit> partitionSplits = new HashSet<>(newPartitions.size());
-        for (TopicPartition tp : newPartitions) {
+        Set<PscTopicUriPartitionSplit> partitionSplits = new HashSet<>(newPartitions.size());
+        for (TopicUriPartition tp : newPartitions) {
             Long startingOffset = startingOffsets.get(tp);
             long stoppingOffset =
-                    stoppingOffsets.getOrDefault(tp, KafkaPartitionSplit.NO_STOPPING_OFFSET);
-            partitionSplits.add(new KafkaPartitionSplit(tp, startingOffset, stoppingOffset));
+                    stoppingOffsets.getOrDefault(tp, PscTopicUriPartitionSplit.NO_STOPPING_OFFSET);
+            partitionSplits.add(new PscTopicUriPartitionSplit(tp, startingOffset, stoppingOffset));
         }
         return new PartitionSplitChange(partitionSplits, partitionChange.getRemovedPartitions());
     }
@@ -308,10 +306,10 @@ public class PscSourceEnumerator
 
     // This method should only be invoked in the coordinator executor thread.
     private void addPartitionSplitChangeToPendingAssignments(
-            Collection<KafkaPartitionSplit> newPartitionSplits) {
+            Collection<PscTopicUriPartitionSplit> newPartitionSplits) {
         int numReaders = context.currentParallelism();
-        for (KafkaPartitionSplit split : newPartitionSplits) {
-            int ownerReader = getSplitOwner(split.getTopicPartition(), numReaders);
+        for (PscTopicUriPartitionSplit split : newPartitionSplits) {
+            int ownerReader = getSplitOwner(split.getTopicUriPartition(), numReaders);
             pendingPartitionSplitAssignment
                     .computeIfAbsent(ownerReader, r -> new HashSet<>())
                     .add(split);
@@ -325,14 +323,14 @@ public class PscSourceEnumerator
 
     // This method should only be invoked in the coordinator executor thread.
     private void assignPendingPartitionSplits(Set<Integer> pendingReaders) {
-        Map<Integer, List<KafkaPartitionSplit>> incrementalAssignment = new HashMap<>();
+        Map<Integer, List<PscTopicUriPartitionSplit>> incrementalAssignment = new HashMap<>();
 
         // Check if there's any pending splits for given readers
         for (int pendingReader : pendingReaders) {
             checkReaderRegistered(pendingReader);
 
             // Remove pending assignment for the reader
-            final Set<KafkaPartitionSplit> pendingAssignmentForReader =
+            final Set<PscTopicUriPartitionSplit> pendingAssignmentForReader =
                     pendingPartitionSplitAssignment.remove(pendingReader);
 
             if (pendingAssignmentForReader != null && !pendingAssignmentForReader.isEmpty()) {
@@ -343,7 +341,7 @@ public class PscSourceEnumerator
 
                 // Mark pending partitions as already assigned
                 pendingAssignmentForReader.forEach(
-                        split -> assignedPartitions.add(split.getTopicPartition()));
+                        split -> assignedPartitions.add(split.getTopicUriPartition()));
             }
         }
 
@@ -373,9 +371,9 @@ public class PscSourceEnumerator
     }
 
     @VisibleForTesting
-    PartitionChange getPartitionChange(Set<TopicPartition> fetchedPartitions) {
-        final Set<TopicPartition> removedPartitions = new HashSet<>();
-        Consumer<TopicPartition> dedupOrMarkAsRemoved =
+    PartitionChange getPartitionChange(Set<TopicUriPartition> fetchedPartitions) {
+        final Set<TopicUriPartition> removedPartitions = new HashSet<>();
+        Consumer<TopicUriPartition> dedupOrMarkAsRemoved =
                 (tp) -> {
                     if (!fetchedPartitions.remove(tp)) {
                         removedPartitions.add(tp);
@@ -386,7 +384,7 @@ public class PscSourceEnumerator
         pendingPartitionSplitAssignment.forEach(
                 (reader, splits) ->
                         splits.forEach(
-                                split -> dedupOrMarkAsRemoved.accept(split.getTopicPartition())));
+                                split -> dedupOrMarkAsRemoved.accept(split.getTopicUriPartition())));
 
         if (!fetchedPartitions.isEmpty()) {
             LOG.info("Discovered new partitions: {}", fetchedPartitions);
@@ -398,20 +396,20 @@ public class PscSourceEnumerator
         return new PartitionChange(fetchedPartitions, removedPartitions);
     }
 
-    private AdminClient getKafkaAdminClient() {
-        Properties adminClientProps = new Properties();
-        deepCopyProperties(properties, adminClientProps);
+    private PscMetadataClient getPscMetadataClient() throws ConfigurationException {
+        Properties metadataClientProps = new Properties();
+        deepCopyProperties(properties, metadataClientProps);
         // set client id prefix
         String clientIdPrefix =
-                adminClientProps.getProperty(KafkaSourceOptions.CLIENT_ID_PREFIX.key());
-        adminClientProps.setProperty(
-                ConsumerConfig.CLIENT_ID_CONFIG, clientIdPrefix + "-enumerator-admin-client");
-        return AdminClient.create(adminClientProps);
+                metadataClientProps.getProperty(PscSourceOptions.CLIENT_ID_PREFIX.key());
+        metadataClientProps.setProperty(
+                PscConfiguration.PSC_METADATA_CLIENT_ID, clientIdPrefix + "-enumerator-admin-client");
+        return new PscMetadataClient(PscConfigurationUtils.propertiesToPscConfiguration(metadataClientProps));
     }
 
     private OffsetsInitializer.PartitionOffsetsRetriever getOffsetsRetriever() {
-        String groupId = properties.getProperty(ConsumerConfig.GROUP_ID_CONFIG);
-        return new PartitionOffsetsRetrieverImpl(adminClient, groupId);
+        String groupId = properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        return new PartitionOffsetsRetrieverImpl(metadataClient, groupId);
     }
 
     /**
@@ -433,13 +431,13 @@ public class PscSourceEnumerator
      * @return the id of the subtask that owns the split.
      */
     @VisibleForTesting
-    static int getSplitOwner(TopicPartition tp, int numReaders) {
-        int startIndex = ((tp.topic().hashCode() * 31) & 0x7FFFFFFF) % numReaders;
+    static int getSplitOwner(TopicUriPartition tp, int numReaders) {
+        int startIndex = ((tp.getTopicUriAsString().hashCode() * 31) & 0x7FFFFFFF) % numReaders;
 
         // here, the assumption is that the id of Kafka partitions are always ascending
         // starting from 0, and therefore can be used directly as the offset clockwise from the
         // start index
-        return (startIndex + tp.partition()) % numReaders;
+        return (startIndex + tp.getPartition()) % numReaders;
     }
 
     @VisibleForTesting
@@ -454,19 +452,19 @@ public class PscSourceEnumerator
     /** A container class to hold the newly added partitions and removed partitions. */
     @VisibleForTesting
     static class PartitionChange {
-        private final Set<TopicPartition> newPartitions;
-        private final Set<TopicPartition> removedPartitions;
+        private final Set<TopicUriPartition> newPartitions;
+        private final Set<TopicUriPartition> removedPartitions;
 
-        PartitionChange(Set<TopicPartition> newPartitions, Set<TopicPartition> removedPartitions) {
+        PartitionChange(Set<TopicUriPartition> newPartitions, Set<TopicUriPartition> removedPartitions) {
             this.newPartitions = newPartitions;
             this.removedPartitions = removedPartitions;
         }
 
-        public Set<TopicPartition> getNewPartitions() {
+        public Set<TopicUriPartition> getNewPartitions() {
             return newPartitions;
         }
 
-        public Set<TopicPartition> getRemovedPartitions() {
+        public Set<TopicUriPartition> getRemovedPartitions() {
             return removedPartitions;
         }
 
@@ -476,12 +474,12 @@ public class PscSourceEnumerator
     }
 
     private static class PartitionSplitChange {
-        private final Set<KafkaPartitionSplit> newPartitionSplits;
-        private final Set<TopicPartition> removedPartitions;
+        private final Set<PscTopicUriPartitionSplit> newPartitionSplits;
+        private final Set<TopicUriPartition> removedPartitions;
 
         private PartitionSplitChange(
-                Set<KafkaPartitionSplit> newPartitionSplits,
-                Set<TopicPartition> removedPartitions) {
+                Set<PscTopicUriPartitionSplit> newPartitionSplits,
+                Set<TopicUriPartition> removedPartitions) {
             this.newPartitionSplits = Collections.unmodifiableSet(newPartitionSplits);
             this.removedPartitions = Collections.unmodifiableSet(removedPartitions);
         }
@@ -491,35 +489,39 @@ public class PscSourceEnumerator
     @VisibleForTesting
     public static class PartitionOffsetsRetrieverImpl
             implements OffsetsInitializer.PartitionOffsetsRetriever, AutoCloseable {
-        private final AdminClient adminClient;
+        private final PscMetadataClient metadataClient;
         private final String groupId;
 
-        public PartitionOffsetsRetrieverImpl(AdminClient adminClient, String groupId) {
-            this.adminClient = adminClient;
+        public PartitionOffsetsRetrieverImpl(PscMetadataClient adminClient, String groupId) {
+            this.metadataClient = adminClient;
             this.groupId = groupId;
         }
 
         @Override
-        public Map<TopicPartition, Long> committedOffsets(Collection<TopicPartition> partitions) {
-            ListConsumerGroupOffsetsOptions options =
-                    new ListConsumerGroupOffsetsOptions()
-                            .topicPartitions(new ArrayList<>(partitions));
+        public Map<TopicUriPartition, Long> committedOffsets(Collection<TopicUriPartition> partitions) {
+//            ListConsumerGroupOffsetsOptions options =
+//                    new ListConsumerGroupOffsetsOptions()
+//                            .topicPartitions(new ArrayList<>(partitions));
             try {
-                return adminClient
-                        .listConsumerGroupOffsets(groupId, options)
-                        .partitionsToOffsetAndMetadata()
-                        .thenApply(
-                                result -> {
-                                    Map<TopicPartition, Long> offsets = new HashMap<>();
-                                    result.forEach(
-                                            (tp, oam) -> {
-                                                if (oam != null) {
-                                                    offsets.put(tp, oam.offset());
-                                                }
-                                            });
-                                    return offsets;
-                                })
-                        .get();
+                return metadataClient
+                        .listOffsetsForConsumerGroup(clusterUri, groupId, partitions, Duration.ofMillis(Long.MAX_VALUE));
+
+//
+//                return metadataClient
+//                        .listConsumerGroupOffsets(groupId, options)
+//                        .partitionsToOffsetAndMetadata()
+//                        .thenApply(
+//                                result -> {
+//                                    Map<TopicPartition, Long> offsets = new HashMap<>();
+//                                    result.forEach(
+//                                            (tp, oam) -> {
+//                                                if (oam != null) {
+//                                                    offsets.put(tp, oam.offset());
+//                                                }
+//                                            });
+//                                    return offsets;
+//                                })
+//                        .get();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new FlinkRuntimeException(
@@ -538,29 +540,15 @@ public class PscSourceEnumerator
          * the beginning offset, end offset as well as the offset matching a timestamp in
          * partitions.
          *
-         * @see KafkaAdminClient#listOffsets(Map)
+         * @see PscMetadataClient#listOffsets(TopicUri, Map, Duration)
          * @param topicPartitionOffsets The mapping from partition to the OffsetSpec to look up.
          * @return The list offsets result.
          */
-        private Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> listOffsets(
-                Map<TopicPartition, OffsetSpec> topicPartitionOffsets) {
+        private Map<TopicUriPartition, Long> listOffsets(
+                Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicPartitionOffsets) {
             try {
-                return adminClient
-                        .listOffsets(topicPartitionOffsets)
-                        .all()
-                        .thenApply(
-                                result -> {
-                                    Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo>
-                                            offsets = new HashMap<>();
-                                    result.forEach(
-                                            (tp, listOffsetsResultInfo) -> {
-                                                if (listOffsetsResultInfo != null) {
-                                                    offsets.put(tp, listOffsetsResultInfo);
-                                                }
-                                            });
-                                    return offsets;
-                                })
-                        .get();
+                return metadataClient
+                        .listOffsets(clusterUri, topicPartitionOffsets, Duration.ofMillis(Long.MAX_VALUE));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new FlinkRuntimeException(
@@ -576,32 +564,28 @@ public class PscSourceEnumerator
             }
         }
 
-        private Map<TopicPartition, Long> listOffsets(
-                Collection<TopicPartition> partitions, OffsetSpec offsetSpec) {
+        private Map<TopicUriPartition, Long> listOffsets(
+                Collection<TopicUriPartition> partitions, PscMetadataClient.MetadataClientOption offsetSpec) {
             return listOffsets(
                             partitions.stream()
                                     .collect(
                                             Collectors.toMap(
-                                                    partition -> partition, __ -> offsetSpec)))
-                    .entrySet().stream()
-                    .collect(
-                            Collectors.toMap(
-                                    Map.Entry::getKey, entry -> entry.getValue().offset()));
+                                                    partition -> partition, __ -> offsetSpec)));
         }
 
         @Override
-        public Map<TopicPartition, Long> endOffsets(Collection<TopicPartition> partitions) {
-            return listOffsets(partitions, OffsetSpec.latest());
+        public Map<TopicUriPartition, Long> endOffsets(Collection<TopicUriPartition> partitions) {
+            return listOffsets(partitions, PscMetadataClient.MetadataClientOption.OFFSET_SPEC_LATEST);
         }
 
         @Override
-        public Map<TopicPartition, Long> beginningOffsets(Collection<TopicPartition> partitions) {
-            return listOffsets(partitions, OffsetSpec.earliest());
+        public Map<TopicUriPartition, Long> beginningOffsets(Collection<TopicUriPartition> partitions) {
+            return listOffsets(partitions, PscMetadataClient.MetadataClientOption.OFFSET_SPEC_EARLIEST);
         }
 
         @Override
-        public Map<TopicPartition, OffsetAndTimestamp> offsetsForTimes(
-                Map<TopicPartition, Long> timestampsToSearch) {
+        public Map<TopicUriPartition, Long> offsetsForTimes(
+                Map<TopicUriPartition, Long> timestampsToSearch) {
             return listOffsets(
                             timestampsToSearch.entrySet().stream()
                                     .collect(
@@ -623,7 +607,7 @@ public class PscSourceEnumerator
 
         @Override
         public void close() throws Exception {
-            adminClient.close(Duration.ZERO);
+            metadataClient.close();
         }
     }
 }

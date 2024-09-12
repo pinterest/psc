@@ -1,7 +1,6 @@
 package com.pinterest.psc.metadata.client.kafka;
 
 import com.pinterest.psc.common.BaseTopicUri;
-import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -27,6 +26,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -156,7 +156,7 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws IOException {
         if (kafkaAdminClient != null)
             kafkaAdminClient.close();
         logger.info("Closed PscKafkaMetadataClient");

@@ -18,9 +18,11 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
+import com.pinterest.psc.common.TopicRn;
+import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.flink.annotation.Internal;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.common.TopicPartition;
 
 import java.io.Serializable;
 import java.util.List;
@@ -43,24 +45,24 @@ import java.util.regex.Pattern;
 public interface PscSubscriber extends Serializable {
 
     /**
-     * Get a set of subscribed {@link TopicPartition}s.
+     * Get a set of subscribed {@link TopicUriPartition}s.
      *
-     * @param adminClient The admin client used to retrieve subscribed topic partitions.
-     * @return A set of subscribed {@link TopicPartition}s
+     * @param metadataClient The admin client used to retrieve subscribed topic partitions.
+     * @return A set of subscribed {@link TopicUriPartition}s
      */
-    Set<TopicPartition> getSubscribedTopicPartitions(AdminClient adminClient);
+    Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri);
 
     // ----------------- factory methods --------------
 
-    static PscSubscriber getTopicListSubscriber(List<String> topics) {
-        return new PscTopicUriListSubscriber(topics);
+    static PscSubscriber getTopicListSubscriber(List<TopicRn> topicRns) {
+        return new PscTopicUriListSubscriber(topicRns);
     }
 
-    static PscSubscriber getTopicPatternSubscriber(Pattern topicPattern) {
-        return new TopicUriPatternSubscriber(topicPattern);
+    static PscSubscriber getTopicPatternSubscriber(Pattern topicUriPattern) {
+        return new TopicUriPatternSubscriber(topicUriPattern);
     }
 
-    static PscSubscriber getPartitionSetSubscriber(Set<TopicPartition> partitions) {
+    static PscSubscriber getPartitionSetSubscriber(Set<TopicUriPartition> partitions) {
         return new TopicUriPartitionSetSubscriber(partitions);
     }
 }
