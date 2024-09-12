@@ -50,6 +50,11 @@ public abstract class PscBackendMetadataClient implements AutoCloseable {
             Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException;
 
+    public abstract Map<TopicUriPartition, Long> listOffsetsForTimestamps(
+            Map<TopicUriPartition, Long> topicUriPartitionsAndTimes,
+            Duration duration
+    ) throws ExecutionException, InterruptedException, TimeoutException;
+
     public abstract Map<TopicUriPartition, Long> listOffsetsForConsumerGroup(
             String consumerGroupId,
             Collection<TopicUriPartition> topicUriPartitions,

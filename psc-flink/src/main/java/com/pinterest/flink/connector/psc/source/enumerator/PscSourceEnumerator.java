@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator;
 
+import com.pinterest.flink.connector.psc.PscFlinkUtil;
 import com.pinterest.flink.connector.psc.source.PscSourceOptions;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriber;
@@ -27,6 +28,7 @@ import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -51,10 +53,11 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-/** The enumerator class for Kafka source. */
+/** The enumerator class for PSC source. */
 @Internal
 public class PscSourceEnumerator
         implements SplitEnumerator<PscTopicUriPartitionSplit, PscSourceEnumState> {
@@ -75,6 +78,11 @@ public class PscSourceEnumerator
      * ready.
      */
     private final Map<Integer, Set<PscTopicUriPartitionSplit>> pendingPartitionSplitAssignment;
+
+    /**
+     * The clusterUri for this source, used for PscMetadataClient operations
+     */
+    private final TopicUri clusterUri;
 
     /** The consumer group id used for this KafkaSource. */
     private final String consumerGroupId;
@@ -126,6 +134,11 @@ public class PscSourceEnumerator
                         PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS,
                         Long::parseLong);
         this.consumerGroupId = properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        try {
+            this.clusterUri = PscFlinkUtil.getAndValidateClusterUri(properties);
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Failed to get and validate clusterUri from properties", e);
+        }
     }
 
     /**
@@ -145,7 +158,11 @@ public class PscSourceEnumerator
      */
     @Override
     public void start() {
-        metadataClient = getPscMetadataClient();
+        try {
+            metadataClient = getPscMetadataClient();
+        } catch (ConfigurationException e) {
+            throw new RuntimeException("Failed to get PscMetadataClient", e);
+        }
         if (partitionDiscoveryIntervalMs > 0) {
             LOG.info(
                     "Starting the KafkaSourceEnumerator for consumer group {} "
@@ -409,7 +426,7 @@ public class PscSourceEnumerator
 
     private OffsetsInitializer.PartitionOffsetsRetriever getOffsetsRetriever() {
         String groupId = properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        return new PartitionOffsetsRetrieverImpl(metadataClient, groupId);
+        return new PartitionOffsetsRetrieverImpl(metadataClient, clusterUri, groupId);
     }
 
     /**
@@ -491,42 +508,24 @@ public class PscSourceEnumerator
             implements OffsetsInitializer.PartitionOffsetsRetriever, AutoCloseable {
         private final PscMetadataClient metadataClient;
         private final String groupId;
+        private final TopicUri clusterUri;
 
-        public PartitionOffsetsRetrieverImpl(PscMetadataClient adminClient, String groupId) {
-            this.metadataClient = adminClient;
+        public PartitionOffsetsRetrieverImpl(PscMetadataClient metadataClient, TopicUri clusterUri, String groupId) {
+            this.metadataClient = metadataClient;
+            this.clusterUri = clusterUri;
             this.groupId = groupId;
         }
 
         @Override
         public Map<TopicUriPartition, Long> committedOffsets(Collection<TopicUriPartition> partitions) {
-//            ListConsumerGroupOffsetsOptions options =
-//                    new ListConsumerGroupOffsetsOptions()
-//                            .topicPartitions(new ArrayList<>(partitions));
             try {
                 return metadataClient
                         .listOffsetsForConsumerGroup(clusterUri, groupId, partitions, Duration.ofMillis(Long.MAX_VALUE));
-
-//
-//                return metadataClient
-//                        .listConsumerGroupOffsets(groupId, options)
-//                        .partitionsToOffsetAndMetadata()
-//                        .thenApply(
-//                                result -> {
-//                                    Map<TopicPartition, Long> offsets = new HashMap<>();
-//                                    result.forEach(
-//                                            (tp, oam) -> {
-//                                                if (oam != null) {
-//                                                    offsets.put(tp, oam.offset());
-//                                                }
-//                                            });
-//                                    return offsets;
-//                                })
-//                        .get();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new FlinkRuntimeException(
                         "Interrupted while listing offsets for consumer group " + groupId, e);
-            } catch (ExecutionException e) {
+            } catch (ExecutionException | TimeoutException e) {
                 throw new FlinkRuntimeException(
                         "Failed to fetch committed offsets for consumer group "
                                 + groupId
@@ -555,10 +554,30 @@ public class PscSourceEnumerator
                         "Interrupted while listing offsets for topic partitions: "
                                 + topicPartitionOffsets,
                         e);
-            } catch (ExecutionException e) {
+            } catch (ExecutionException | TimeoutException e) {
                 throw new FlinkRuntimeException(
                         "Failed to list offsets for topic partitions: "
                                 + topicPartitionOffsets
+                                + " due to",
+                        e);
+            }
+        }
+
+        private Map<TopicUriPartition, Long> listOffsetsForTimestamps(
+                Map<TopicUriPartition, Long> topicUriPartitionsAndTimestamps) {
+            try {
+                return metadataClient
+                        .listOffsetsForTimestamps(clusterUri, topicUriPartitionsAndTimestamps, Duration.ofMillis(Long.MAX_VALUE));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new FlinkRuntimeException(
+                        "Interrupted while listing offsets for topic partitions: "
+                                + topicUriPartitionsAndTimestamps,
+                        e);
+            } catch (ExecutionException | TimeoutException e) {
+                throw new FlinkRuntimeException(
+                        "Failed to list offsets for topic partitions: "
+                                + topicUriPartitionsAndTimestamps
                                 + " due to",
                         e);
             }
@@ -586,23 +605,7 @@ public class PscSourceEnumerator
         @Override
         public Map<TopicUriPartition, Long> offsetsForTimes(
                 Map<TopicUriPartition, Long> timestampsToSearch) {
-            return listOffsets(
-                            timestampsToSearch.entrySet().stream()
-                                    .collect(
-                                            Collectors.toMap(
-                                                    Map.Entry::getKey,
-                                                    entry ->
-                                                            OffsetSpec.forTimestamp(
-                                                                    entry.getValue()))))
-                    .entrySet().stream()
-                    .collect(
-                            Collectors.toMap(
-                                    Map.Entry::getKey,
-                                    entry ->
-                                            new OffsetAndTimestamp(
-                                                    entry.getValue().offset(),
-                                                    entry.getValue().timestamp(),
-                                                    entry.getValue().leaderEpoch())));
+            return listOffsetsForTimestamps(timestampsToSearch);
         }
 
         @Override

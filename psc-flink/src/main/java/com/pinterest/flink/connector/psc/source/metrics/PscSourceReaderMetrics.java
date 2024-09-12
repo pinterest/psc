@@ -18,19 +18,20 @@
 
 package com.pinterest.flink.connector.psc.source.metrics;
 
+import com.pinterest.flink.connector.psc.MetricUtil;
+import com.pinterest.psc.common.PscUtils;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.consumer.PscConsumer;
+import com.pinterest.psc.exception.ClientException;
+import com.pinterest.psc.metrics.Metric;
+import com.pinterest.psc.metrics.MetricName;
 import org.apache.flink.annotation.PublicEvolving;
-import org.apache.flink.connector.kafka.MetricUtil;
-import org.apache.flink.connector.kafka.source.reader.KafkaSourceReader;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.groups.OperatorIOMetricGroup;
 import org.apache.flink.metrics.groups.SourceReaderMetricGroup;
 import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.metrics.groups.TaskIOMetricGroup;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.Metric;
-import org.apache.kafka.common.MetricName;
-import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +43,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Predicate;
 
 /**
- * A collection class for handling metrics in {@link KafkaSourceReader}.
+ * A collection class for handling metrics in {@link com.pinterest.flink.connector.psc.source.reader.PscSourceReader}.
  *
  * <p>All metrics of Kafka source reader are registered under group "KafkaSourceReader", which is a
  * child group of {@link org.apache.flink.metrics.groups.OperatorMetricGroup}. Metrics related to a
@@ -67,19 +68,14 @@ public class PscSourceReaderMetrics {
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceReaderMetrics.class);
 
     // Constants
-    public static final String KAFKA_SOURCE_READER_METRIC_GROUP = "KafkaSourceReader";
-    public static final String TOPIC_GROUP = "topic";
+    public static final String PSC_SOURCE_READER_METRIC_GROUP = "PscSourceReader";
+    public static final String TOPIC_URI_GROUP = "topicUri";
     public static final String PARTITION_GROUP = "partition";
     public static final String CURRENT_OFFSET_METRIC_GAUGE = "currentOffset";
     public static final String COMMITTED_OFFSET_METRIC_GAUGE = "committedOffset";
     public static final String COMMITS_SUCCEEDED_METRIC_COUNTER = "commitsSucceeded";
     public static final String COMMITS_FAILED_METRIC_COUNTER = "commitsFailed";
-    public static final String KAFKA_CONSUMER_METRIC_GROUP = "KafkaConsumer";
-
-    // Kafka raw metric names and group names
-    public static final String CONSUMER_FETCH_MANAGER_GROUP = "consumer-fetch-manager-metrics";
-    public static final String BYTES_CONSUMED_TOTAL = "bytes-consumed-total";
-    public static final String RECORDS_LAG = "records-lag";
+    public static final String PSC_CONSUMER_METRIC_GROUP = "PscConsumer";
 
     public static final long INITIAL_OFFSET = -1;
 
@@ -87,17 +83,17 @@ public class PscSourceReaderMetrics {
     private final SourceReaderMetricGroup sourceReaderMetricGroup;
 
     // Metric group for registering Kafka specific metrics
-    private final MetricGroup kafkaSourceReaderMetricGroup;
+    private final MetricGroup pscSourceReaderMetricGroup;
 
     // Successful / Failed commits counters
     private final Counter commitsSucceeded;
     private final Counter commitsFailed;
 
     // Map for tracking current consuming / committing offsets
-    private final Map<TopicPartition, Offset> offsets = new HashMap<>();
+    private final Map<TopicUriPartition, Offset> offsets = new HashMap<>();
 
     // Map for tracking records lag of topic partitions
-    @Nullable private ConcurrentMap<TopicPartition, Metric> recordsLagMetrics;
+    @Nullable private ConcurrentMap<TopicUriPartition, Metric> recordsLagMetrics;
 
     // Kafka raw metric for bytes consumed total
     @Nullable private Metric bytesConsumedTotalMetric;
@@ -107,63 +103,63 @@ public class PscSourceReaderMetrics {
 
     public PscSourceReaderMetrics(SourceReaderMetricGroup sourceReaderMetricGroup) {
         this.sourceReaderMetricGroup = sourceReaderMetricGroup;
-        this.kafkaSourceReaderMetricGroup =
-                sourceReaderMetricGroup.addGroup(KAFKA_SOURCE_READER_METRIC_GROUP);
+        this.pscSourceReaderMetricGroup =
+                sourceReaderMetricGroup.addGroup(PSC_SOURCE_READER_METRIC_GROUP);
         this.commitsSucceeded =
-                this.kafkaSourceReaderMetricGroup.counter(COMMITS_SUCCEEDED_METRIC_COUNTER);
+                this.pscSourceReaderMetricGroup.counter(COMMITS_SUCCEEDED_METRIC_COUNTER);
         this.commitsFailed =
-                this.kafkaSourceReaderMetricGroup.counter(COMMITS_FAILED_METRIC_COUNTER);
+                this.pscSourceReaderMetricGroup.counter(COMMITS_FAILED_METRIC_COUNTER);
     }
 
     /**
      * Register metrics of KafkaConsumer in Kafka metric group.
      *
-     * @param kafkaConsumer Kafka consumer used by partition split reader.
+     * @param pscConsumer Kafka consumer used by partition split reader.
      */
     @SuppressWarnings("Convert2MethodRef")
-    public void registerKafkaConsumerMetrics(KafkaConsumer<?, ?> kafkaConsumer) {
-        final Map<MetricName, ? extends Metric> kafkaConsumerMetrics = kafkaConsumer.metrics();
-        if (kafkaConsumerMetrics == null) {
+    public void registerPscConsumerMetrics(PscConsumer<?, ?> pscConsumer) throws ClientException {
+        final Map<MetricName, ? extends Metric> pscConsumerMetrics = pscConsumer.metrics();
+        if (pscConsumerMetrics == null) {
             LOG.warn("Consumer implementation does not support metrics");
             return;
         }
 
-        final MetricGroup kafkaConsumerMetricGroup =
-                kafkaSourceReaderMetricGroup.addGroup(KAFKA_CONSUMER_METRIC_GROUP);
+        final MetricGroup pscConsumerMetricGroup =
+                pscSourceReaderMetricGroup.addGroup(PSC_CONSUMER_METRIC_GROUP);
 
-        kafkaConsumerMetrics.forEach(
+        pscConsumerMetrics.forEach(
                 (name, metric) ->
-                        kafkaConsumerMetricGroup.gauge(name.name(), () -> metric.metricValue()));
+                        pscConsumerMetricGroup.gauge(name.name(), () -> metric.metricValue()));
     }
 
     /**
-     * Register metric groups for the given {@link TopicPartition}.
+     * Register metric groups for the given {@link TopicUriPartition}.
      *
      * @param tp Registering topic partition
      */
-    public void registerTopicPartition(TopicPartition tp) {
+    public void registerTopicUriPartition(TopicUriPartition tp) {
         offsets.put(tp, new Offset(INITIAL_OFFSET, INITIAL_OFFSET));
         registerOffsetMetricsForTopicPartition(tp);
     }
 
     /**
-     * Update current consuming offset of the given {@link TopicPartition}.
+     * Update current consuming offset of the given {@link TopicUriPartition}.
      *
      * @param tp Updating topic partition
      * @param offset Current consuming offset
      */
-    public void recordCurrentOffset(TopicPartition tp, long offset) {
+    public void recordCurrentOffset(TopicUriPartition tp, long offset) {
         checkTopicPartitionTracked(tp);
         offsets.get(tp).currentOffset = offset;
     }
 
     /**
-     * Update the latest committed offset of the given {@link TopicPartition}.
+     * Update the latest committed offset of the given {@link TopicUriPartition}.
      *
      * @param tp Updating topic partition
      * @param offset Committing offset
      */
-    public void recordCommittedOffset(TopicPartition tp, long offset) {
+    public void recordCommittedOffset(TopicUriPartition tp, long offset) {
         checkTopicPartitionTracked(tp);
         offsets.get(tp).committedOffset = offset;
     }
@@ -183,22 +179,10 @@ public class PscSourceReaderMetrics {
      *
      * @param consumer Kafka consumer
      */
-    public void registerNumBytesIn(KafkaConsumer<?, ?> consumer) {
-        try {
-            Predicate<Map.Entry<MetricName, ? extends Metric>> filter =
-                    (entry) ->
-                            entry.getKey().group().equals(CONSUMER_FETCH_MANAGER_GROUP)
-                                    && entry.getKey().name().equals(BYTES_CONSUMED_TOTAL)
-                                    && !entry.getKey().tags().containsKey("topic");
-            this.bytesConsumedTotalMetric = MetricUtil.getKafkaMetric(consumer.metrics(), filter);
-        } catch (IllegalStateException e) {
-            LOG.warn(
-                    String.format(
-                            "Error when getting Kafka consumer metric \"%s\". "
-                                    + "I/O metric \"%s\" will not be reported. ",
-                            BYTES_CONSUMED_TOTAL, MetricNames.IO_NUM_BYTES_IN),
-                    e);
-        }
+    public void registerNumBytesIn(PscConsumer<?, ?> consumer) throws ClientException {
+        Predicate<Map.Entry<MetricName, ? extends Metric>> filter =
+                KafkaSourceReaderMetricsUtil.createBytesConsumedFilter();
+        this.bytesConsumedTotalMetric = MetricUtil.getPscMetric(consumer.metrics(), filter);
     }
 
     /**
@@ -211,7 +195,7 @@ public class PscSourceReaderMetrics {
      * @param consumer Kafka consumer
      * @param tp Topic partition
      */
-    public void maybeAddRecordsLagMetric(KafkaConsumer<?, ?> consumer, TopicPartition tp) {
+    public void maybeAddRecordsLagMetric(PscConsumer<?, ?> consumer, TopicUriPartition tp) {
         // Lazily register pendingRecords
         if (recordsLagMetrics == null) {
             this.recordsLagMetrics = new ConcurrentHashMap<>();
@@ -226,7 +210,13 @@ public class PscSourceReaderMetrics {
                     });
         }
         recordsLagMetrics.computeIfAbsent(
-                tp, (ignored) -> getRecordsLagMetric(consumer.metrics(), tp));
+                tp, (ignored) -> {
+                    try {
+                        return getRecordsLagMetric(consumer.metrics(), tp);
+                    } catch (ClientException e) {
+                        throw new RuntimeException("Failed to get consumer metrics", e);
+                    }
+                });
     }
 
     /**
@@ -234,7 +224,7 @@ public class PscSourceReaderMetrics {
      *
      * @param tp Unassigned topic partition
      */
-    public void removeRecordsLagMetric(TopicPartition tp) {
+    public void removeRecordsLagMetric(TopicUriPartition tp) {
         if (recordsLagMetrics != null) {
             recordsLagMetrics.remove(tp);
         }
@@ -262,11 +252,11 @@ public class PscSourceReaderMetrics {
     }
 
     // -------- Helper functions --------
-    private void registerOffsetMetricsForTopicPartition(TopicPartition tp) {
+    private void registerOffsetMetricsForTopicPartition(TopicUriPartition tp) {
         final MetricGroup topicPartitionGroup =
-                this.kafkaSourceReaderMetricGroup
-                        .addGroup(TOPIC_GROUP, tp.topic())
-                        .addGroup(PARTITION_GROUP, String.valueOf(tp.partition()));
+                this.pscSourceReaderMetricGroup
+                        .addGroup(TOPIC_URI_GROUP, tp.getTopicUriAsString())
+                        .addGroup(PARTITION_GROUP, String.valueOf(tp.getPartition()));
         topicPartitionGroup.gauge(
                 CURRENT_OFFSET_METRIC_GAUGE,
                 () ->
@@ -279,7 +269,7 @@ public class PscSourceReaderMetrics {
                                 .committedOffset);
     }
 
-    private void checkTopicPartitionTracked(TopicPartition tp) {
+    private void checkTopicPartitionTracked(TopicUriPartition tp) {
         if (!offsets.containsKey(tp)) {
             throw new IllegalArgumentException(
                     String.format("TopicPartition %s is not tracked", tp));
@@ -287,33 +277,27 @@ public class PscSourceReaderMetrics {
     }
 
     private @Nullable Metric getRecordsLagMetric(
-            Map<MetricName, ? extends Metric> metrics, TopicPartition tp) {
-        try {
-            final String resolvedTopic = tp.topic().replace('.', '_');
-            final String resolvedPartition = String.valueOf(tp.partition());
-            Predicate<Map.Entry<MetricName, ? extends Metric>> filter =
-                    entry -> {
-                        final MetricName metricName = entry.getKey();
-                        final Map<String, String> tags = metricName.tags();
-
-                        return metricName.group().equals(CONSUMER_FETCH_MANAGER_GROUP)
-                                && metricName.name().equals(RECORDS_LAG)
-                                && tags.containsKey("topic")
-                                && tags.get("topic").equals(resolvedTopic)
-                                && tags.containsKey("partition")
-                                && tags.get("partition").equals(resolvedPartition);
-                    };
-            return MetricUtil.getKafkaMetric(metrics, filter);
-        } catch (IllegalStateException e) {
-            LOG.warn(
-                    String.format(
-                            "Error when getting Kafka consumer metric \"%s\" "
-                                    + "for partition \"%s\". "
-                                    + "Metric \"%s\" may not be reported correctly. ",
-                            RECORDS_LAG, tp, MetricNames.PENDING_RECORDS),
-                    e);
-            return null;
+            Map<MetricName, ? extends Metric> metrics, TopicUriPartition tp) {
+        Predicate<Map.Entry<MetricName, ? extends Metric>> filter;
+        String backendType = getBackendFromTags(metrics);
+        switch (backendType) {
+            case PscUtils.BACKEND_TYPE_KAFKA:
+                filter = KafkaSourceReaderMetricsUtil.createRecordLagFilter(tp);
+                break;
+            default:
+                LOG.warn(
+                        String.format(
+                                "Unsupported backend type \"%s\". "
+                                        + "Metric \"%s\" may not be reported correctly. ",
+                                backendType, MetricNames.PENDING_RECORDS));
+                return null;
         }
+        return MetricUtil.getPscMetric(metrics, filter);
+    }
+
+    private static String getBackendFromTags(Map<MetricName, ? extends Metric> metrics) {
+        // sample the first entry to get the backend type
+        return metrics.keySet().iterator().next().tags().get("backend");
     }
 
     private static class Offset {

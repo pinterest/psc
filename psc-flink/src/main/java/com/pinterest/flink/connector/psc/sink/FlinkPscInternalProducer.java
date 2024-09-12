@@ -17,7 +17,7 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
-import com.pinterest.psc.common.BaseTopicUri;
+import com.pinterest.flink.connector.psc.PscFlinkUtil;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
@@ -32,6 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Properties;
 import java.util.concurrent.Future;
@@ -47,7 +48,6 @@ import static org.apache.flink.util.Preconditions.checkState;
 class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkPscInternalProducer.class);
-    private static final String CLUSTER_URI_CONFIG = "psc.producer.cluster.uri";
     @Nullable private String transactionalId;
     private volatile boolean inTransaction;
     private volatile boolean closed;
@@ -56,17 +56,10 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         super(PscConfigurationUtils.propertiesToPscConfiguration(withTransactionalId(properties, transactionalId)));
         if (transactionalId != null) {
             // Producer is transactional, so the backend producer should be immediately initialized given the ClusterUri in the properties
-            TopicUri clusterUri = validateClusterUriForTransactionalProducer(properties);
+            TopicUri clusterUri = PscFlinkUtil.getAndValidateClusterUri(properties);
             getBackendProducerForTopicUri(clusterUri);
         }
         this.transactionalId = transactionalId;
-    }
-
-    private static TopicUri validateClusterUriForTransactionalProducer(Properties properties) throws TopicUriSyntaxException {
-        if (!properties.containsKey(CLUSTER_URI_CONFIG)) {
-            throw new IllegalArgumentException("Cluster URI is required for transactional producer");
-        }
-        return BaseTopicUri.validate(properties.getProperty(CLUSTER_URI_CONFIG));
     }
 
     private static Properties withTransactionalId(
@@ -115,30 +108,22 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     }
 
     @Override
-    public void close() {
+    public void close() throws IOException {
         closed = true;
         if (inTransaction) {
             // This is state is most likely reached in case of a failure.
             // If this producer is still in transaction, it should be committing.
             // However, at this point, we cannot decide that and we shouldn't prolong cancellation.
             // So hard kill this producer with all resources.
-            try {
-                super.close(Duration.ZERO);
-            } catch (ProducerException e) {
-                throw new RuntimeException("Failed to close PscProducer", e);
-            }
+            super.close();
         } else {
             // If this is outside of a transaction, we should be able to cleanly shutdown.
-            try {
-                super.close(Duration.ofHours(1));
-            } catch (ProducerException e) {
-                throw new RuntimeException("Failed to close PscProducer", e);
-            }
+            super.close(Duration.ofHours(1));
         }
     }
 
     @Override
-    public void close(Duration timeout) throws ProducerException {
+    public void close(Duration timeout) throws IOException {
         closed = true;
         super.close(timeout);
     }

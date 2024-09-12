@@ -111,7 +111,14 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
             topicPartitionOffsets.put(
                     new TopicPartition(topicUriPartition.getTopicUri().getTopic(), topicUriPartition.getPartition()), offsetSpec);
         }
-        ListOffsetsResult listOffsetsResult = kafkaAdminClient.listOffsets(topicPartitionOffsets);
+        return listOffsetsInternal(topicPartitionOffsets, duration);
+    }
+
+    private Map<TopicUriPartition, Long> listOffsetsInternal(
+            Map<TopicPartition, OffsetSpec> topicPartitionOffsetSpecMap,
+            Duration duration
+    ) throws ExecutionException, InterruptedException, TimeoutException {
+        ListOffsetsResult listOffsetsResult = kafkaAdminClient.listOffsets(topicPartitionOffsetSpecMap);
         Map<TopicUriPartition, Long> result = new HashMap<>();
         listOffsetsResult.all().get(duration.toMillis(), TimeUnit.MILLISECONDS).entrySet().forEach(e -> {
             TopicPartition tp = e.getKey();
@@ -123,6 +130,21 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
             );
         });
         return result;
+    }
+
+    @Override
+    public Map<TopicUriPartition, Long> listOffsetsForTimestamps(
+            Map<TopicUriPartition, Long> topicUriPartitionsAndTimes,
+            Duration duration
+    ) throws ExecutionException, InterruptedException, TimeoutException {
+        Map<TopicPartition, OffsetSpec> topicPartitionTimes = new HashMap<>();
+        for (Map.Entry<TopicUriPartition, Long> entry : topicUriPartitionsAndTimes.entrySet()) {
+            TopicUriPartition topicUriPartition = entry.getKey();
+            Long time = entry.getValue();
+            topicPartitionTimes.put(
+                    new TopicPartition(topicUriPartition.getTopicUri().getTopic(), topicUriPartition.getPartition()), OffsetSpec.forTimestamp(time));
+        }
+        return listOffsetsInternal(topicPartitionTimes, duration);
     }
 
     @Override

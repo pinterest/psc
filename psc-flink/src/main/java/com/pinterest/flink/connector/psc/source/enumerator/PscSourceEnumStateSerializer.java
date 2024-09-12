@@ -18,13 +18,12 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator;
 
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplitSerializer;
+import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.connector.base.source.utils.SerdeUtils;
-import org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumState;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplitSerializer;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
-import org.apache.kafka.common.TopicPartition;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -38,11 +37,11 @@ import java.util.Set;
 
 /**
  * The {@link SimpleVersionedSerializer Serializer} for the enumerator
- * state of Kafka source.
+ * state of PSC source.
  */
 @Internal
 public class PscSourceEnumStateSerializer
-        implements SimpleVersionedSerializer<KafkaSourceEnumState> {
+        implements SimpleVersionedSerializer<PscSourceEnumState> {
 
     private static final int VERSION_0 = 0;
     private static final int VERSION_1 = 1;
@@ -55,28 +54,28 @@ public class PscSourceEnumStateSerializer
     }
 
     @Override
-    public byte[] serialize(KafkaSourceEnumState enumState) throws IOException {
+    public byte[] serialize(PscSourceEnumState enumState) throws IOException {
         return serializeTopicPartitions(enumState.assignedPartitions());
     }
 
     @Override
-    public KafkaSourceEnumState deserialize(int version, byte[] serialized) throws IOException {
+    public PscSourceEnumState deserialize(int version, byte[] serialized) throws IOException {
         if (version == CURRENT_VERSION) {
-            final Set<TopicPartition> assignedPartitions = deserializeTopicPartitions(serialized);
-            return new KafkaSourceEnumState(assignedPartitions);
+            final Set<TopicUriPartition> assignedPartitions = deserializeTopicPartitions(serialized);
+            return new PscSourceEnumState(assignedPartitions);
         }
 
         // Backward compatibility
         if (version == VERSION_0) {
-            Map<Integer, Set<KafkaPartitionSplit>> currentPartitionAssignment =
+            Map<Integer, Set<PscTopicUriPartitionSplit>> currentPartitionAssignment =
                     SerdeUtils.deserializeSplitAssignments(
-                            serialized, new KafkaPartitionSplitSerializer(), HashSet::new);
-            Set<TopicPartition> currentAssignedSplits = new HashSet<>();
+                            serialized, new PscTopicUriPartitionSplitSerializer(), HashSet::new);
+            Set<TopicUriPartition> currentAssignedSplits = new HashSet<>();
             currentPartitionAssignment.forEach(
                     (reader, splits) ->
                             splits.forEach(
-                                    split -> currentAssignedSplits.add(split.getTopicPartition())));
-            return new KafkaSourceEnumState(currentAssignedSplits);
+                                    split -> currentAssignedSplits.add(split.getTopicUriPartition())));
+            return new PscSourceEnumState(currentAssignedSplits);
         }
 
         throw new IOException(
@@ -86,15 +85,15 @@ public class PscSourceEnumStateSerializer
                         version, CURRENT_VERSION));
     }
 
-    private static byte[] serializeTopicPartitions(Collection<TopicPartition> topicPartitions)
+    private static byte[] serializeTopicPartitions(Collection<TopicUriPartition> topicUriPartitions)
             throws IOException {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(baos)) {
 
-            out.writeInt(topicPartitions.size());
-            for (TopicPartition tp : topicPartitions) {
-                out.writeUTF(tp.topic());
-                out.writeInt(tp.partition());
+            out.writeInt(topicUriPartitions.size());
+            for (TopicUriPartition tup : topicUriPartitions) {
+                out.writeUTF(tup.getTopicUriAsString());
+                out.writeInt(tup.getPartition());
             }
             out.flush();
 
@@ -102,17 +101,17 @@ public class PscSourceEnumStateSerializer
         }
     }
 
-    private static Set<TopicPartition> deserializeTopicPartitions(byte[] serializedTopicPartitions)
+    private static Set<TopicUriPartition> deserializeTopicPartitions(byte[] serializedTopicPartitions)
             throws IOException {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serializedTopicPartitions);
                 DataInputStream in = new DataInputStream(bais)) {
 
             final int numPartitions = in.readInt();
-            Set<TopicPartition> topicPartitions = new HashSet<>(numPartitions);
+            Set<TopicUriPartition> topicPartitions = new HashSet<>(numPartitions);
             for (int i = 0; i < numPartitions; i++) {
-                final String topic = in.readUTF();
+                final String topicUriString = in.readUTF();
                 final int partition = in.readInt();
-                topicPartitions.add(new TopicPartition(topic, partition));
+                topicPartitions.add(new TopicUriPartition(topicUriString, partition));
             }
             if (in.available() > 0) {
                 throw new IOException("Unexpected trailing bytes in serialized topic partitions");

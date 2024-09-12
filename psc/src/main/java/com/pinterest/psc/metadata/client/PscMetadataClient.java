@@ -137,6 +137,11 @@ public class PscMetadataClient implements AutoCloseable {
         return backendMetadataClient.listOffsetsForConsumerGroup(consumerGroup, topicUriPartitions, duration);
     }
 
+    public Map<TopicUriPartition, Long> listOffsetsForTimestamps(TopicUri clusterUri, Map<TopicUriPartition, Long> topicUriPartitionsAndTimes, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
+        PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
+        return backendMetadataClient.listOffsetsForTimestamps(topicUriPartitionsAndTimes, duration);
+    }
+
     @VisibleForTesting
     protected PscBackendMetadataClient getBackendMetadataClient(TopicUri clusterUri) {
         String topicUriPrefix = clusterUri.getTopicUriPrefix();

@@ -87,7 +87,7 @@ public interface OffsetsInitializer extends Serializable {
         Map<TopicUriPartition, Long> beginningOffsets(Collection<TopicUriPartition> partitions);
 
         /** List offsets matching a timestamp for the specified partitions. */
-        Map<TopicUriPartition, MessageId> offsetsForTimes(
+        Map<TopicUriPartition, Long> offsetsForTimes(
                 Map<TopicUriPartition, Long> timestampsToSearch);
     }
 
