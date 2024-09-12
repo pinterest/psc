@@ -18,40 +18,39 @@
 
 package com.pinterest.flink.connector.psc.source.reader;
 
+import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplitState;
+import com.pinterest.psc.consumer.PscConsumerMessage;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.connector.source.SourceOutput;
 import org.apache.flink.connector.base.source.reader.RecordEmitter;
-import org.apache.flink.connector.kafka.source.reader.KafkaSourceReader;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplitState;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.io.IOException;
 
-/** The {@link RecordEmitter} implementation for {@link KafkaSourceReader}. */
+/** The {@link RecordEmitter} implementation for {@link PscSourceReader}. */
 @Internal
 public class PscRecordEmitter<T>
-        implements RecordEmitter<ConsumerRecord<byte[], byte[]>, T, KafkaPartitionSplitState> {
+        implements RecordEmitter<PscConsumerMessage<byte[], byte[]>, T, PscTopicUriPartitionSplitState> {
 
-    private final KafkaRecordDeserializationSchema<T> deserializationSchema;
+    private final PscRecordDeserializationSchema<T> deserializationSchema;
     private final SourceOutputWrapper<T> sourceOutputWrapper = new SourceOutputWrapper<>();
 
-    public PscRecordEmitter(KafkaRecordDeserializationSchema<T> deserializationSchema) {
+    public PscRecordEmitter(PscRecordDeserializationSchema<T> deserializationSchema) {
         this.deserializationSchema = deserializationSchema;
     }
 
     @Override
     public void emitRecord(
-            ConsumerRecord<byte[], byte[]> consumerRecord,
+            PscConsumerMessage<byte[], byte[]> consumerMessage,
             SourceOutput<T> output,
-            KafkaPartitionSplitState splitState)
+            PscTopicUriPartitionSplitState splitState)
             throws Exception {
         try {
             sourceOutputWrapper.setSourceOutput(output);
-            sourceOutputWrapper.setTimestamp(consumerRecord.timestamp());
-            deserializationSchema.deserialize(consumerRecord, sourceOutputWrapper);
-            splitState.setCurrentOffset(consumerRecord.offset() + 1);
+            sourceOutputWrapper.setTimestamp(consumerMessage.getPublishTimestamp());
+            deserializationSchema.deserialize(consumerMessage, sourceOutputWrapper);
+            splitState.setCurrentOffset(consumerMessage.getMessageId().getOffset() + 1);
         } catch (Exception e) {
             throw new IOException("Failed to deserialize consumer record due to", e);
         }

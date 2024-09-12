@@ -18,6 +18,14 @@
 
 package com.pinterest.flink.connector.psc.source.reader;
 
+import com.pinterest.flink.connector.psc.source.PscSourceOptions;
+import com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics;
+import com.pinterest.flink.connector.psc.source.reader.fetcher.PscSourceFetcherManager;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplitState;
+import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.consumer.PscConsumerMessage;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.connector.source.SourceReaderContext;
@@ -26,21 +34,16 @@ import org.apache.flink.connector.base.source.reader.RecordEmitter;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.SingleThreadMultiplexSourceReaderBase;
 import org.apache.flink.connector.base.source.reader.synchronization.FutureCompletingBlockingQueue;
-import org.apache.flink.connector.kafka.source.KafkaSourceOptions;
-import org.apache.flink.connector.kafka.source.metrics.KafkaSourceReaderMetrics;
-import org.apache.flink.connector.kafka.source.reader.fetcher.KafkaSourceFetcherManager;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplitState;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,30 +53,30 @@ import java.util.concurrent.ConcurrentMap;
 @Internal
 public class PscSourceReader<T>
         extends SingleThreadMultiplexSourceReaderBase<
-                ConsumerRecord<byte[], byte[]>, T, KafkaPartitionSplit, KafkaPartitionSplitState> {
+        PscConsumerMessage<byte[], byte[]>, T, PscTopicUriPartitionSplit, PscTopicUriPartitionSplitState> {
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceReader.class);
     // These maps need to be concurrent because it will be accessed by both the main thread
     // and the split fetcher thread in the callback.
-    private final SortedMap<Long, Map<TopicPartition, OffsetAndMetadata>> offsetsToCommit;
-    private final ConcurrentMap<TopicPartition, OffsetAndMetadata> offsetsOfFinishedSplits;
-    private final KafkaSourceReaderMetrics kafkaSourceReaderMetrics;
+    private final SortedMap<Long, Map<TopicUriPartition, MessageId>> offsetsToCommit;
+    private final ConcurrentMap<TopicUriPartition, MessageId> offsetsOfFinishedSplits;
+    private final PscSourceReaderMetrics pscSourceReaderMetrics;
     private final boolean commitOffsetsOnCheckpoint;
 
     public PscSourceReader(
-            FutureCompletingBlockingQueue<RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>>>
+            FutureCompletingBlockingQueue<RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>>>
                     elementsQueue,
-            KafkaSourceFetcherManager kafkaSourceFetcherManager,
-            RecordEmitter<ConsumerRecord<byte[], byte[]>, T, KafkaPartitionSplitState>
+            PscSourceFetcherManager pscSourceFetcherManager,
+            RecordEmitter<PscConsumerMessage<byte[], byte[]>, T, PscTopicUriPartitionSplitState>
                     recordEmitter,
             Configuration config,
             SourceReaderContext context,
-            KafkaSourceReaderMetrics kafkaSourceReaderMetrics) {
-        super(elementsQueue, kafkaSourceFetcherManager, recordEmitter, config, context);
+            PscSourceReaderMetrics pscSourceReaderMetrics) {
+        super(elementsQueue, pscSourceFetcherManager, recordEmitter, config, context);
         this.offsetsToCommit = Collections.synchronizedSortedMap(new TreeMap<>());
         this.offsetsOfFinishedSplits = new ConcurrentHashMap<>();
-        this.kafkaSourceReaderMetrics = kafkaSourceReaderMetrics;
+        this.pscSourceReaderMetrics = pscSourceReaderMetrics;
         this.commitOffsetsOnCheckpoint =
-                config.get(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT);
+                config.get(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT);
         if (!commitOffsetsOnCheckpoint) {
             LOG.warn(
                     "Offset commit on checkpoint is disabled. "
@@ -82,20 +85,20 @@ public class PscSourceReader<T>
     }
 
     @Override
-    protected void onSplitFinished(Map<String, KafkaPartitionSplitState> finishedSplitIds) {
+    protected void onSplitFinished(Map<String, PscTopicUriPartitionSplitState> finishedSplitIds) {
         finishedSplitIds.forEach(
                 (ignored, splitState) -> {
                     if (splitState.getCurrentOffset() >= 0) {
                         offsetsOfFinishedSplits.put(
-                                splitState.getTopicPartition(),
-                                new OffsetAndMetadata(splitState.getCurrentOffset()));
+                                splitState.getTopicUriPartition(),
+                                new MessageId(splitState.getTopicUriPartition(), splitState.getCurrentOffset()));
                     }
                 });
     }
 
     @Override
-    public List<KafkaPartitionSplit> snapshotState(long checkpointId) {
-        List<KafkaPartitionSplit> splits = super.snapshotState(checkpointId);
+    public List<PscTopicUriPartitionSplit> snapshotState(long checkpointId) {
+        List<PscTopicUriPartitionSplit> splits = super.snapshotState(checkpointId);
         if (!commitOffsetsOnCheckpoint) {
             return splits;
         }
@@ -103,16 +106,16 @@ public class PscSourceReader<T>
         if (splits.isEmpty() && offsetsOfFinishedSplits.isEmpty()) {
             offsetsToCommit.put(checkpointId, Collections.emptyMap());
         } else {
-            Map<TopicPartition, OffsetAndMetadata> offsetsMap =
+            Map<TopicUriPartition, MessageId> offsetsMap =
                     offsetsToCommit.computeIfAbsent(checkpointId, id -> new HashMap<>());
             // Put the offsets of the active splits.
-            for (KafkaPartitionSplit split : splits) {
+            for (PscTopicUriPartitionSplit split : splits) {
                 // If the checkpoint is triggered before the partition starting offsets
                 // is retrieved, do not commit the offsets for those partitions.
                 if (split.getStartingOffset() >= 0) {
                     offsetsMap.put(
-                            split.getTopicPartition(),
-                            new OffsetAndMetadata(split.getStartingOffset()));
+                            split.getTopicUriPartition(),
+                            new MessageId(split.getTopicUriPartition(), split.getStartingOffset()));
                 }
             }
             // Put offsets of all the finished splits.
@@ -128,7 +131,7 @@ public class PscSourceReader<T>
             return;
         }
 
-        Map<TopicPartition, OffsetAndMetadata> committedPartitions =
+        Map<TopicUriPartition, MessageId> committedPartitions =
                 offsetsToCommit.get(checkpointId);
         if (committedPartitions == null) {
             LOG.debug(
@@ -137,14 +140,14 @@ public class PscSourceReader<T>
             return;
         }
 
-        ((KafkaSourceFetcherManager) splitFetcherManager)
+        ((PscSourceFetcherManager) splitFetcherManager)
                 .commitOffsets(
-                        committedPartitions,
+                        committedPartitions.values(),
                         (ignored, e) -> {
                             // The offset commit here is needed by the external monitoring. It won't
                             // break Flink job's correctness if we fail to commit the offset here.
                             if (e != null) {
-                                kafkaSourceReaderMetrics.recordFailedCommit();
+                                pscSourceReaderMetrics.recordFailedCommit();
                                 LOG.warn(
                                         "Failed to commit consumer offsets for checkpoint {}",
                                         checkpointId,
@@ -153,13 +156,13 @@ public class PscSourceReader<T>
                                 LOG.debug(
                                         "Successfully committed offsets for checkpoint {}",
                                         checkpointId);
-                                kafkaSourceReaderMetrics.recordSucceededCommit();
+                                pscSourceReaderMetrics.recordSucceededCommit();
                                 // If the finished topic partition has been committed, we remove it
                                 // from the offsets of the finished splits map.
                                 committedPartitions.forEach(
                                         (tp, offset) ->
-                                                kafkaSourceReaderMetrics.recordCommittedOffset(
-                                                        tp, offset.offset()));
+                                                pscSourceReaderMetrics.recordCommittedOffset(
+                                                        tp, offset.getOffset()));
                                 offsetsOfFinishedSplits
                                         .entrySet()
                                         .removeIf(
@@ -175,19 +178,19 @@ public class PscSourceReader<T>
     }
 
     @Override
-    protected KafkaPartitionSplitState initializedState(KafkaPartitionSplit split) {
-        return new KafkaPartitionSplitState(split);
+    protected PscTopicUriPartitionSplitState initializedState(PscTopicUriPartitionSplit split) {
+        return new PscTopicUriPartitionSplitState(split);
     }
 
     @Override
-    protected KafkaPartitionSplit toSplitType(String splitId, KafkaPartitionSplitState splitState) {
-        return splitState.toKafkaPartitionSplit();
+    protected PscTopicUriPartitionSplit toSplitType(String splitId, PscTopicUriPartitionSplitState splitState) {
+        return splitState.toPscTopicUriPartitionSplit();
     }
 
     // ------------------------
 
     @VisibleForTesting
-    SortedMap<Long, Map<TopicPartition, OffsetAndMetadata>> getOffsetsToCommit() {
+    SortedMap<Long, Map<TopicUriPartition, MessageId>> getOffsetsToCommit() {
         return offsetsToCommit;
     }
 

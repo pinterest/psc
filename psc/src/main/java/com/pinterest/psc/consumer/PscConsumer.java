@@ -1604,6 +1604,44 @@ public class PscConsumer<K, V> implements AutoCloseable {
         }
     }
 
+    // TODO: unit test this
+    public Collection<MessageId> committed(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException, ConfigurationException {
+        acquireAndEnsureOpen();
+        try {
+            // maintain a map of backend consumer to topicUriPartitions
+            Map<PscBackendConsumer<K, V>, Collection<TopicUriPartition>> tupToBackendConsumerMap = new HashMap<>();
+            for (TopicUriPartition topicUriPartition: topicUriPartitions) {
+                topicUriPartition = validateTopicUriPartition(topicUriPartition);
+                Map<String, PscBackendConsumerCreator> creator = creatorManager.getBackendCreators();
+                TopicUri topicUri = topicUriPartition.getTopicUri();
+                if (creator.containsKey(topicUri.getBackend())) {
+                    PscBackendConsumer<K, V> backendConsumer = creator.get(topicUri.getBackend()).getConsumer(
+                            environment,
+                            pscConfigurationInternal,
+                            consumerInterceptors,
+                            topicUri,
+                            wakeups.get() >= 0,
+                            false
+                    );
+                    tupToBackendConsumerMap.computeIfAbsent(backendConsumer, k -> new HashSet<>());
+                    tupToBackendConsumerMap.get(backendConsumer).add(topicUriPartition);
+                } else {
+                    throw new ConsumerException("[PSC] Cannot process topicUri: " + topicUriPartition.getTopicUriAsString());
+                }
+            }
+
+            Collection<MessageId> messageIds = new ArrayList<>();
+            for (Map.Entry<PscBackendConsumer<K, V>, Collection<TopicUriPartition>> entry : tupToBackendConsumerMap.entrySet()) {
+                Collection<MessageId> subset = entry.getKey().committed(entry.getValue());
+                messageIds.addAll(subset);
+            }
+
+            return messageIds;
+        } finally {
+            release();
+        }
+    }
+
     /**
      * Returns the log start offset of the request topic URI partitions. The contract for the returned offsets depends on
      * the backend-specific implementation. For example, for a Kafka backend, the start offset is the offset of the

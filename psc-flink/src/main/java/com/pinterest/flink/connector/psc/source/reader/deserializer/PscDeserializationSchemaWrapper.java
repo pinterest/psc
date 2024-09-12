@@ -18,40 +18,39 @@
 
 package com.pinterest.flink.connector.psc.source.reader.deserializer;
 
+import com.pinterest.flink.streaming.connectors.psc.PscDeserializationSchema;
+import com.pinterest.psc.consumer.PscConsumerMessage;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
-import org.apache.flink.streaming.connectors.kafka.KafkaDeserializationSchema;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.io.IOException;
 
 /**
  * A wrapper class that wraps a {@link
- * KafkaDeserializationSchema} to deserialize {@link
- * ConsumerRecord ConsumerRecords}.
+ * PscDeserializationSchema} to deserialize {@link
+ * PscConsumerMessage messages}.
  *
  * @param <T> the type of the deserialized records.
  */
-class PscDeserializationSchemaWrapper<T> implements KafkaRecordDeserializationSchema<T> {
+class PscDeserializationSchemaWrapper<T> implements PscRecordDeserializationSchema<T> {
     private static final long serialVersionUID = 1L;
-    private final KafkaDeserializationSchema<T> kafkaDeserializationSchema;
+    private final PscDeserializationSchema<T> pscDeserializationSchema;
 
-    PscDeserializationSchemaWrapper(KafkaDeserializationSchema<T> kafkaDeserializationSchema) {
-        this.kafkaDeserializationSchema = kafkaDeserializationSchema;
+    PscDeserializationSchemaWrapper(PscDeserializationSchema<T> pscDeserializationSchema) {
+        this.pscDeserializationSchema = pscDeserializationSchema;
     }
 
     @Override
     public void open(DeserializationSchema.InitializationContext context) throws Exception {
-        kafkaDeserializationSchema.open(context);
+        pscDeserializationSchema.open(context);
     }
 
     @Override
-    public void deserialize(ConsumerRecord<byte[], byte[]> message, Collector<T> out)
+    public void deserialize(PscConsumerMessage<byte[], byte[]> message, Collector<T> out)
             throws IOException {
         try {
-            kafkaDeserializationSchema.deserialize(message, out);
+            pscDeserializationSchema.deserialize(message, out);
         } catch (Exception exception) {
             throw new IOException(
                     String.format("Failed to deserialize consumer record %s.", message), exception);
@@ -60,6 +59,6 @@ class PscDeserializationSchemaWrapper<T> implements KafkaRecordDeserializationSc
 
     @Override
     public TypeInformation<T> getProducedType() {
-        return kafkaDeserializationSchema.getProducedType();
+        return pscDeserializationSchema.getProducedType();
     }
 }

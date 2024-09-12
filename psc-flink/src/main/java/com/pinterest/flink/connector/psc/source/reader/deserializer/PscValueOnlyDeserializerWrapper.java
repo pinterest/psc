@@ -18,24 +18,24 @@
 
 package com.pinterest.flink.connector.psc.source.reader.deserializer;
 
+import com.pinterest.psc.common.PscPlugin;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.exception.consumer.DeserializerException;
+import com.pinterest.psc.serde.Deserializer;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.InstantiationUtil;
 import org.apache.flink.util.TemporaryClassLoaderContext;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.Configurable;
-import org.apache.kafka.common.serialization.Deserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Map;
 
 /** A package private class to wrap {@link Deserializer}. */
-class PscValueOnlyDeserializerWrapper<T> implements KafkaRecordDeserializationSchema<T> {
+class PscValueOnlyDeserializerWrapper<T> implements PscRecordDeserializationSchema<T> {
 
     private static final long serialVersionUID = 5409547407386004054L;
 
@@ -44,12 +44,12 @@ class PscValueOnlyDeserializerWrapper<T> implements KafkaRecordDeserializationSc
 
     private final Class<? extends Deserializer<T>> deserializerClass;
 
-    private final Map<String, String> config;
+    private final PscConfiguration config;
 
     private transient Deserializer<T> deserializer;
 
     PscValueOnlyDeserializerWrapper(
-            Class<? extends Deserializer<T>> deserializerClass, Map<String, String> config) {
+            Class<? extends Deserializer<T>> deserializerClass, PscConfiguration config) {
         this.deserializerClass = deserializerClass;
         this.config = config;
     }
@@ -67,8 +67,8 @@ class PscValueOnlyDeserializerWrapper<T> implements KafkaRecordDeserializationSc
                                     Deserializer.class,
                                     getClass().getClassLoader());
 
-            if (deserializer instanceof Configurable) {
-                ((Configurable) deserializer).configure(config);
+            if (deserializer != null) {
+                ((PscPlugin) deserializer).configure(config);
             } else {
                 // Always be false since this Deserializer is only used for value.
                 deserializer.configure(config, false);
@@ -80,21 +80,21 @@ class PscValueOnlyDeserializerWrapper<T> implements KafkaRecordDeserializationSc
     }
 
     @Override
-    public void deserialize(ConsumerRecord<byte[], byte[]> record, Collector<T> collector)
-            throws IOException {
+    public void deserialize(PscConsumerMessage<byte[], byte[]> message, Collector<T> collector)
+            throws IOException, DeserializerException {
         if (deserializer == null) {
             throw new IllegalStateException(
                     "The deserializer has not been created. Make sure the open() method has been "
                             + "invoked.");
         }
 
-        T value = deserializer.deserialize(record.topic(), record.value());
+        T value = deserializer.deserialize(message.getValue());
         LOG.trace(
                 "Deserialized [partition: {}-{}, offset: {}, timestamp: {}, value: {}]",
-                record.topic(),
-                record.partition(),
-                record.offset(),
-                record.timestamp(),
+                message.getMessageId().getTopicUriPartition().getTopicUriAsString(),
+                message.getMessageId().getTopicUriPartition().getPartition(),
+                message.getMessageId().getOffset(),
+                message.getMessageId().getTimestamp(),
                 value);
         collector.collect(value);
     }

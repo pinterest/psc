@@ -18,21 +18,20 @@
 
 package com.pinterest.flink.connector.psc.source.reader.deserializer;
 
+import com.pinterest.psc.consumer.PscConsumerMessage;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import java.io.IOException;
 
 /**
  * A class that wraps a {@link DeserializationSchema} as the value deserializer for a {@link
- * ConsumerRecord}.
+ * PscConsumerMessage}.
  *
  * @param <T> the return type of the deserialization.
  */
-class PscValueOnlyDeserializationSchemaWrapper<T> implements KafkaRecordDeserializationSchema<T> {
+class PscValueOnlyDeserializationSchemaWrapper<T> implements PscRecordDeserializationSchema<T> {
     private static final long serialVersionUID = 1L;
     private final DeserializationSchema<T> deserializationSchema;
 
@@ -46,9 +45,9 @@ class PscValueOnlyDeserializationSchemaWrapper<T> implements KafkaRecordDeserial
     }
 
     @Override
-    public void deserialize(ConsumerRecord<byte[], byte[]> message, Collector<T> out)
+    public void deserialize(PscConsumerMessage<byte[], byte[]> message, Collector<T> out)
             throws IOException {
-        deserializationSchema.deserialize(message.value(), out);
+        deserializationSchema.deserialize(message.getValue(), out);
     }
 
     @Override

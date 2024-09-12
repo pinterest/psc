@@ -4,7 +4,9 @@ import com.pinterest.psc.common.CloseableIterator;
 import com.pinterest.psc.common.TopicUriPartition;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 public abstract class PscConsumerPollMessageIterator<K, V> implements
@@ -40,6 +42,14 @@ public abstract class PscConsumerPollMessageIterator<K, V> implements
 
             }
         };
+    }
+
+    public List<PscConsumerMessage<K, V>> asList() {
+        List<PscConsumerMessage<K, V>> list = new ArrayList<>();
+        while (hasNext()) {
+            list.add(next());
+        }
+        return list;
     }
 
     /**

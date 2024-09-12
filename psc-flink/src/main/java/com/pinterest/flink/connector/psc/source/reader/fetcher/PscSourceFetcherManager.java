@@ -18,6 +18,13 @@
 
 package com.pinterest.flink.connector.psc.source.reader.fetcher;
 
+import com.pinterest.flink.connector.psc.source.reader.PscTopicUriPartitionSplitReader;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.consumer.OffsetCommitCallback;
+import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.exception.consumer.ConsumerException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.SourceReaderBase;
@@ -26,29 +33,22 @@ import org.apache.flink.connector.base.source.reader.fetcher.SplitFetcher;
 import org.apache.flink.connector.base.source.reader.fetcher.SplitFetcherTask;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitReader;
 import org.apache.flink.connector.base.source.reader.synchronization.FutureCompletingBlockingQueue;
-import org.apache.flink.connector.kafka.source.reader.KafkaPartitionSplitReader;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.consumer.OffsetCommitCallback;
-import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
  * The SplitFetcherManager for Kafka source. This class is needed to help commit the offsets to
  * Kafka using the KafkaConsumer inside the {@link
- * KafkaPartitionSplitReader}.
+ * PscTopicUriPartitionSplitReader}.
  */
 @Internal
 public class PscSourceFetcherManager
-        extends SingleThreadFetcherManager<ConsumerRecord<byte[], byte[]>, KafkaPartitionSplit> {
+        extends SingleThreadFetcherManager<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit> {
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceFetcherManager.class);
 
     /**
@@ -62,21 +62,21 @@ public class PscSourceFetcherManager
      * @param splitFinishedHook Hook for handling finished splits in split fetchers.
      */
     public PscSourceFetcherManager(
-            FutureCompletingBlockingQueue<RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>>>
+            FutureCompletingBlockingQueue<RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>>>
                     elementsQueue,
-            Supplier<SplitReader<ConsumerRecord<byte[], byte[]>, KafkaPartitionSplit>>
+            Supplier<SplitReader<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit>>
                     splitReaderSupplier,
             Consumer<Collection<String>> splitFinishedHook) {
         super(elementsQueue, splitReaderSupplier, splitFinishedHook);
     }
 
     public void commitOffsets(
-            Map<TopicPartition, OffsetAndMetadata> offsetsToCommit, OffsetCommitCallback callback) {
+            Collection<MessageId> offsetsToCommit, OffsetCommitCallback callback) {
         LOG.debug("Committing offsets {}", offsetsToCommit);
         if (offsetsToCommit.isEmpty()) {
             return;
         }
-        SplitFetcher<ConsumerRecord<byte[], byte[]>, KafkaPartitionSplit> splitFetcher =
+        SplitFetcher<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit> splitFetcher =
                 fetchers.get(0);
         if (splitFetcher != null) {
             // The fetcher thread is still running. This should be the majority of the cases.
@@ -89,17 +89,21 @@ public class PscSourceFetcherManager
     }
 
     private void enqueueOffsetsCommitTask(
-            SplitFetcher<ConsumerRecord<byte[], byte[]>, KafkaPartitionSplit> splitFetcher,
-            Map<TopicPartition, OffsetAndMetadata> offsetsToCommit,
+            SplitFetcher<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit> splitFetcher,
+            Collection<MessageId> offsetsToCommit,
             OffsetCommitCallback callback) {
-        KafkaPartitionSplitReader kafkaReader =
-                (KafkaPartitionSplitReader) splitFetcher.getSplitReader();
+        PscTopicUriPartitionSplitReader pscReader =
+                (PscTopicUriPartitionSplitReader) splitFetcher.getSplitReader();
 
         splitFetcher.enqueueTask(
                 new SplitFetcherTask() {
                     @Override
                     public boolean run() throws IOException {
-                        kafkaReader.notifyCheckpointComplete(offsetsToCommit, callback);
+                        try {
+                            pscReader.notifyCheckpointComplete(offsetsToCommit, callback);
+                        } catch (ConfigurationException | ConsumerException e) {
+                            throw new RuntimeException("Notify checkpoint complete failed", e);
+                        }
                         return true;
                     }
 

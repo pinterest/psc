@@ -18,6 +18,21 @@
 
 package com.pinterest.flink.connector.psc.source.reader;
 
+import com.pinterest.flink.connector.psc.source.PscSourceOptions;
+import com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.consumer.OffsetCommitCallback;
+import com.pinterest.psc.consumer.PscConsumer;
+import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
+import com.pinterest.psc.exception.ClientException;
+import com.pinterest.psc.exception.consumer.ConsumerException;
+import com.pinterest.psc.exception.consumer.WakeupException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.connector.source.SourceReaderContext;
@@ -25,19 +40,8 @@ import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitReader;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsAddition;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
-import org.apache.flink.connector.kafka.source.KafkaSourceOptions;
-import org.apache.flink.connector.kafka.source.metrics.KafkaSourceReaderMetrics;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.Preconditions;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.consumer.OffsetCommitCallback;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,16 +64,16 @@ import java.util.stream.Collectors;
 /** A {@link SplitReader} implementation that reads records from Kafka partitions. */
 @Internal
 public class PscTopicUriPartitionSplitReader
-        implements SplitReader<ConsumerRecord<byte[], byte[]>, KafkaPartitionSplit> {
+        implements SplitReader<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit> {
     private static final Logger LOG = LoggerFactory.getLogger(PscTopicUriPartitionSplitReader.class);
     private static final long POLL_TIMEOUT = 10000L;
 
-    private final KafkaConsumer<byte[], byte[]> consumer;
-    private final Map<TopicPartition, Long> stoppingOffsets;
+    private final PscConsumer<byte[], byte[]> consumer;
+    private final Map<TopicUriPartition, Long> stoppingOffsets;
     private final String groupId;
     private final int subtaskId;
 
-    private final KafkaSourceReaderMetrics kafkaSourceReaderMetrics;
+    private final PscSourceReaderMetrics pscSourceReaderMetrics;
 
     // Tracking empty splits that has not been added to finished splits in fetch()
     private final Set<String> emptySplits = new HashSet<>();
@@ -77,81 +81,85 @@ public class PscTopicUriPartitionSplitReader
     public PscTopicUriPartitionSplitReader(
             Properties props,
             SourceReaderContext context,
-            KafkaSourceReaderMetrics kafkaSourceReaderMetrics) {
+            PscSourceReaderMetrics pscSourceReaderMetrics) throws ConfigurationException, ClientException {
         this.subtaskId = context.getIndexOfSubtask();
-        this.kafkaSourceReaderMetrics = kafkaSourceReaderMetrics;
+        this.pscSourceReaderMetrics = pscSourceReaderMetrics;
         Properties consumerProps = new Properties();
         consumerProps.putAll(props);
-        consumerProps.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, createConsumerClientId(props));
-        this.consumer = new KafkaConsumer<>(consumerProps);
+        consumerProps.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, createConsumerClientId(props));
+        this.consumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(consumerProps));
         this.stoppingOffsets = new HashMap<>();
-        this.groupId = consumerProps.getProperty(ConsumerConfig.GROUP_ID_CONFIG);
+        this.groupId = consumerProps.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
 
         // Metric registration
-        maybeRegisterKafkaConsumerMetrics(props, kafkaSourceReaderMetrics, consumer);
-        this.kafkaSourceReaderMetrics.registerNumBytesIn(consumer);
+        maybeRegisterKafkaConsumerMetrics(props, pscSourceReaderMetrics, consumer);
+        this.pscSourceReaderMetrics.registerNumBytesIn(consumer);
     }
 
     @Override
-    public RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>> fetch() throws IOException {
-        ConsumerRecords<byte[], byte[]> consumerRecords;
+    public RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> fetch() throws IOException {
+        PscConsumerPollMessageIterator<byte[], byte[]> consumerMessageIterator;
         try {
-            consumerRecords = consumer.poll(Duration.ofMillis(POLL_TIMEOUT));
-        } catch (WakeupException | IllegalStateException e) {
+            consumerMessageIterator = consumer.poll(Duration.ofMillis(POLL_TIMEOUT));
+        } catch (ConsumerException e) {
             // IllegalStateException will be thrown if the consumer is not assigned any partitions.
             // This happens if all assigned partitions are invalid or empty (starting offset >=
             // stopping offset). We just mark empty partitions as finished and return an empty
             // record container, and this consumer will be closed by SplitFetcherManager.
-            KafkaPartitionSplitRecords recordsBySplits =
-                    new KafkaPartitionSplitRecords(
-                            ConsumerRecords.empty(), kafkaSourceReaderMetrics);
+            PscPartitionSplitRecords recordsBySplits =
+                    new PscPartitionSplitRecords(
+                            PscConsumerPollMessageIterator.emptyIterator(), pscSourceReaderMetrics);
             markEmptySplitsAsFinished(recordsBySplits);
             return recordsBySplits;
         }
-        KafkaPartitionSplitRecords recordsBySplits =
-                new KafkaPartitionSplitRecords(consumerRecords, kafkaSourceReaderMetrics);
-        List<TopicPartition> finishedPartitions = new ArrayList<>();
-        for (TopicPartition tp : consumerRecords.partitions()) {
+        PscPartitionSplitRecords recordsBySplits =
+                new PscPartitionSplitRecords(consumerMessageIterator, pscSourceReaderMetrics);
+        List<TopicUriPartition> finishedPartitions = new ArrayList<>();
+        for (TopicUriPartition tp : consumerMessageIterator.getTopicUriPartitions()) {
             long stoppingOffset = getStoppingOffset(tp);
-            final List<ConsumerRecord<byte[], byte[]>> recordsFromPartition =
-                    consumerRecords.records(tp);
+            final List<PscConsumerMessage<byte[], byte[]>> recordsFromPartition =
+                    consumerMessageIterator.iteratorFor(tp).asList();
 
             if (recordsFromPartition.size() > 0) {
-                final ConsumerRecord<byte[], byte[]> lastRecord =
+                final PscConsumerMessage<byte[], byte[]> lastRecord =
                         recordsFromPartition.get(recordsFromPartition.size() - 1);
 
                 // After processing a record with offset of "stoppingOffset - 1", the split reader
                 // should not continue fetching because the record with stoppingOffset may not
                 // exist. Keep polling will just block forever.
-                if (lastRecord.offset() >= stoppingOffset - 1) {
+                if (lastRecord.getMessageId().getOffset() >= stoppingOffset - 1) {
                     recordsBySplits.setPartitionStoppingOffset(tp, stoppingOffset);
                     finishSplitAtRecord(
                             tp,
                             stoppingOffset,
-                            lastRecord.offset(),
+                            lastRecord.getMessageId().getOffset(),
                             finishedPartitions,
                             recordsBySplits);
                 }
             }
             // Track this partition's record lag if it never appears before
-            kafkaSourceReaderMetrics.maybeAddRecordsLagMetric(consumer, tp);
+            pscSourceReaderMetrics.maybeAddRecordsLagMetric(consumer, tp);
         }
 
         markEmptySplitsAsFinished(recordsBySplits);
 
         // Unassign the partitions that has finished.
         if (!finishedPartitions.isEmpty()) {
-            finishedPartitions.forEach(kafkaSourceReaderMetrics::removeRecordsLagMetric);
-            unassignPartitions(finishedPartitions);
+            finishedPartitions.forEach(pscSourceReaderMetrics::removeRecordsLagMetric);
+            try {
+                unassignPartitions(finishedPartitions);
+            } catch (ConsumerException | ConfigurationException e) {
+                throw new RuntimeException("Failed to unassign partitions", e);
+            }
         }
 
         // Update numBytesIn
-        kafkaSourceReaderMetrics.updateNumBytesInCounter();
+        pscSourceReaderMetrics.updateNumBytesInCounter();
 
         return recordsBySplits;
     }
 
-    private void markEmptySplitsAsFinished(KafkaPartitionSplitRecords recordsBySplits) {
+    private void markEmptySplitsAsFinished(PscPartitionSplitRecords recordsBySplits) {
         // Some splits are discovered as empty when handling split additions. These splits should be
         // added to finished splits to clean up states in split fetcher and source reader.
         if (!emptySplits.isEmpty()) {
@@ -161,7 +169,7 @@ public class PscTopicUriPartitionSplitReader
     }
 
     @Override
-    public void handleSplitsChanges(SplitsChange<KafkaPartitionSplit> splitsChange) {
+    public void handleSplitsChanges(SplitsChange<PscTopicUriPartitionSplit> splitsChange) {
         // Get all the partition assignments and stopping offsets.
         if (!(splitsChange instanceof SplitsAddition)) {
             throw new UnsupportedOperationException(
@@ -171,21 +179,21 @@ public class PscTopicUriPartitionSplitReader
         }
 
         // Assignment.
-        List<TopicPartition> newPartitionAssignments = new ArrayList<>();
+        List<TopicUriPartition> newPartitionAssignments = new ArrayList<>();
         // Starting offsets.
-        Map<TopicPartition, Long> partitionsStartingFromSpecifiedOffsets = new HashMap<>();
-        List<TopicPartition> partitionsStartingFromEarliest = new ArrayList<>();
-        List<TopicPartition> partitionsStartingFromLatest = new ArrayList<>();
+        Map<TopicUriPartition, Long> partitionsStartingFromSpecifiedOffsets = new HashMap<>();
+        List<TopicUriPartition> partitionsStartingFromEarliest = new ArrayList<>();
+        List<TopicUriPartition> partitionsStartingFromLatest = new ArrayList<>();
         // Stopping offsets.
-        List<TopicPartition> partitionsStoppingAtLatest = new ArrayList<>();
-        Set<TopicPartition> partitionsStoppingAtCommitted = new HashSet<>();
+        List<TopicUriPartition> partitionsStoppingAtLatest = new ArrayList<>();
+        Set<TopicUriPartition> partitionsStoppingAtCommitted = new HashSet<>();
 
         // Parse the starting and stopping offsets.
         splitsChange
                 .splits()
                 .forEach(
                         s -> {
-                            newPartitionAssignments.add(s.getTopicPartition());
+                            newPartitionAssignments.add(s.getTopicUriPartition());
                             parseStartingOffsets(
                                     s,
                                     partitionsStartingFromEarliest,
@@ -194,23 +202,31 @@ public class PscTopicUriPartitionSplitReader
                             parseStoppingOffsets(
                                     s, partitionsStoppingAtLatest, partitionsStoppingAtCommitted);
                             // Track the new topic partition in metrics
-                            kafkaSourceReaderMetrics.registerTopicPartition(s.getTopicPartition());
+                            pscSourceReaderMetrics.registerTopicUriPartition(s.getTopicUriPartition());
                         });
 
         // Assign new partitions.
-        newPartitionAssignments.addAll(consumer.assignment());
-        consumer.assign(newPartitionAssignments);
+        try {
+            newPartitionAssignments.addAll(consumer.assignment());
+            consumer.assign(newPartitionAssignments);
+        } catch (ConsumerException | ConfigurationException e) {
+            throw new RuntimeException("Failed to assign PscConsumer", e);
+        }
 
-        // Seek on the newly assigned partitions to their stating offsets.
-        seekToStartingOffsets(
-                partitionsStartingFromEarliest,
-                partitionsStartingFromLatest,
-                partitionsStartingFromSpecifiedOffsets);
-        // Setup the stopping offsets.
-        acquireAndSetStoppingOffsets(partitionsStoppingAtLatest, partitionsStoppingAtCommitted);
+        try {
+            // Seek on the newly assigned partitions to their stating offsets.
+            seekToStartingOffsets(
+                    partitionsStartingFromEarliest,
+                    partitionsStartingFromLatest,
+                    partitionsStartingFromSpecifiedOffsets);
+            // Setup the stopping offsets.
+            acquireAndSetStoppingOffsets(partitionsStoppingAtLatest, partitionsStoppingAtCommitted);
 
-        // After acquiring the starting and stopping offsets, remove the empty splits if necessary.
-        removeEmptySplits();
+            // After acquiring the starting and stopping offsets, remove the empty splits if necessary.
+            removeEmptySplits();
+        } catch (ConfigurationException | ConsumerException e) {
+            throw new RuntimeException("Failed to handle split changes", e);
+        }
 
         maybeLogSplitChangesHandlingResult(splitsChange);
     }
@@ -228,30 +244,30 @@ public class PscTopicUriPartitionSplitReader
     // ---------------
 
     public void notifyCheckpointComplete(
-            Map<TopicPartition, OffsetAndMetadata> offsetsToCommit,
-            OffsetCommitCallback offsetCommitCallback) {
+            Collection<MessageId> offsetsToCommit,
+            OffsetCommitCallback offsetCommitCallback) throws ConfigurationException, ConsumerException {
         consumer.commitAsync(offsetsToCommit, offsetCommitCallback);
     }
 
     @VisibleForTesting
-    KafkaConsumer<byte[], byte[]> consumer() {
+    PscConsumer<byte[], byte[]> consumer() {
         return consumer;
     }
 
     // --------------- private helper method ----------------------
 
     private void parseStartingOffsets(
-            KafkaPartitionSplit split,
-            List<TopicPartition> partitionsStartingFromEarliest,
-            List<TopicPartition> partitionsStartingFromLatest,
-            Map<TopicPartition, Long> partitionsStartingFromSpecifiedOffsets) {
-        TopicPartition tp = split.getTopicPartition();
+            PscTopicUriPartitionSplit split,
+            List<TopicUriPartition> partitionsStartingFromEarliest,
+            List<TopicUriPartition> partitionsStartingFromLatest,
+            Map<TopicUriPartition, Long> partitionsStartingFromSpecifiedOffsets) {
+        TopicUriPartition tp = split.getTopicUriPartition();
         // Parse starting offsets.
-        if (split.getStartingOffset() == KafkaPartitionSplit.EARLIEST_OFFSET) {
+        if (split.getStartingOffset() == PscTopicUriPartitionSplit.EARLIEST_OFFSET) {
             partitionsStartingFromEarliest.add(tp);
-        } else if (split.getStartingOffset() == KafkaPartitionSplit.LATEST_OFFSET) {
+        } else if (split.getStartingOffset() == PscTopicUriPartitionSplit.LATEST_OFFSET) {
             partitionsStartingFromLatest.add(tp);
-        } else if (split.getStartingOffset() == KafkaPartitionSplit.COMMITTED_OFFSET) {
+        } else if (split.getStartingOffset() == PscTopicUriPartitionSplit.COMMITTED_OFFSET) {
             // Do nothing here, the consumer will first try to get the committed offsets of
             // these partitions by default.
         } else {
@@ -260,18 +276,18 @@ public class PscTopicUriPartitionSplitReader
     }
 
     private void parseStoppingOffsets(
-            KafkaPartitionSplit split,
-            List<TopicPartition> partitionsStoppingAtLatest,
-            Set<TopicPartition> partitionsStoppingAtCommitted) {
-        TopicPartition tp = split.getTopicPartition();
+            PscTopicUriPartitionSplit split,
+            List<TopicUriPartition> partitionsStoppingAtLatest,
+            Set<TopicUriPartition> partitionsStoppingAtCommitted) {
+        TopicUriPartition tp = split.getTopicUriPartition();
         split.getStoppingOffset()
                 .ifPresent(
                         stoppingOffset -> {
                             if (stoppingOffset >= 0) {
                                 stoppingOffsets.put(tp, stoppingOffset);
-                            } else if (stoppingOffset == KafkaPartitionSplit.LATEST_OFFSET) {
+                            } else if (stoppingOffset == PscTopicUriPartitionSplit.LATEST_OFFSET) {
                                 partitionsStoppingAtLatest.add(tp);
-                            } else if (stoppingOffset == KafkaPartitionSplit.COMMITTED_OFFSET) {
+                            } else if (stoppingOffset == PscTopicUriPartitionSplit.COMMITTED_OFFSET) {
                                 partitionsStoppingAtCommitted.add(tp);
                             } else {
                                 // This should not happen.
@@ -284,9 +300,9 @@ public class PscTopicUriPartitionSplitReader
     }
 
     private void seekToStartingOffsets(
-            List<TopicPartition> partitionsStartingFromEarliest,
-            List<TopicPartition> partitionsStartingFromLatest,
-            Map<TopicPartition, Long> partitionsStartingFromSpecifiedOffsets) {
+            List<TopicUriPartition> partitionsStartingFromEarliest,
+            List<TopicUriPartition> partitionsStartingFromLatest,
+            Map<TopicUriPartition, Long> partitionsStartingFromSpecifiedOffsets) throws ConsumerException {
 
         if (!partitionsStartingFromEarliest.isEmpty()) {
             LOG.trace("Seeking starting offsets to beginning: {}", partitionsStartingFromEarliest);
@@ -302,38 +318,57 @@ public class PscTopicUriPartitionSplitReader
             LOG.trace(
                     "Seeking starting offsets to specified offsets: {}",
                     partitionsStartingFromSpecifiedOffsets);
-            partitionsStartingFromSpecifiedOffsets.forEach(consumer::seek);
+            partitionsStartingFromSpecifiedOffsets.forEach((tup, offset) -> {
+                try {
+                    consumer.seekToOffset(tup, offset);
+                } catch (ConsumerException e) {
+                    throw new RuntimeException(String.format("Failed to seek to offset for TopicUriPartition=%s, offset=%s", tup, offset), e);
+                }
+            });
         }
     }
 
     private void acquireAndSetStoppingOffsets(
-            List<TopicPartition> partitionsStoppingAtLatest,
-            Set<TopicPartition> partitionsStoppingAtCommitted) {
-        Map<TopicPartition, Long> endOffset = consumer.endOffsets(partitionsStoppingAtLatest);
+            List<TopicUriPartition> partitionsStoppingAtLatest,
+            Set<TopicUriPartition> partitionsStoppingAtCommitted) throws ConfigurationException, ConsumerException {
+        Map<TopicUriPartition, Long> endOffset = consumer.endOffsets(partitionsStoppingAtLatest);
         stoppingOffsets.putAll(endOffset);
         if (!partitionsStoppingAtCommitted.isEmpty()) {
             retryOnWakeup(
-                            () -> consumer.committed(partitionsStoppingAtCommitted),
+                            () -> {
+                                try {
+                                    return consumer.committed(partitionsStoppingAtCommitted);
+                                } catch (ConsumerException | ConfigurationException e) {
+                                    throw new RuntimeException("Failed to get committed offsets for " + partitionsStoppingAtCommitted, e);
+                                }
+                            },
                             "getting committed offset as stopping offsets")
                     .forEach(
-                            (tp, offsetAndMetadata) -> {
+                            (messageId) -> {
                                 Preconditions.checkNotNull(
-                                        offsetAndMetadata,
+                                        messageId,
                                         String.format(
                                                 "Partition %s should stop at committed offset. "
                                                         + "But there is no committed offset of this partition for group %s",
-                                                tp, groupId));
-                                stoppingOffsets.put(tp, offsetAndMetadata.offset());
+                                                messageId.getTopicUriPartition().getPartition(), groupId)
+                                );
+                                stoppingOffsets.put(messageId.getTopicUriPartition(), messageId.getOffset());
                             });
         }
     }
 
-    private void removeEmptySplits() {
-        List<TopicPartition> emptyPartitions = new ArrayList<>();
+    private void removeEmptySplits() throws ConsumerException, ConfigurationException {
+        List<TopicUriPartition> emptyPartitions = new ArrayList<>();
         // If none of the partitions have any records,
-        for (TopicPartition tp : consumer.assignment()) {
+        for (TopicUriPartition tp : consumer.assignment()) {
             if (retryOnWakeup(
-                            () -> consumer.position(tp),
+                            () -> {
+                                try {
+                                    return consumer.position(tp);
+                                } catch (ConsumerException e) {
+                                    throw new RuntimeException("Failed to get position", e);
+                                }
+                            },
                             "getting starting offset to check if split is empty")
                     >= getStoppingOffset(tp)) {
                 emptyPartitions.add(tp);
@@ -346,7 +381,7 @@ public class PscTopicUriPartitionSplitReader
             // Add empty partitions to empty split set for later cleanup in fetch()
             emptySplits.addAll(
                     emptyPartitions.stream()
-                            .map(KafkaPartitionSplit::toSplitId)
+                            .map(PscTopicUriPartitionSplit::toSplitId)
                             .collect(Collectors.toSet()));
             // Un-assign partitions from Kafka consumer
             unassignPartitions(emptyPartitions);
@@ -354,65 +389,71 @@ public class PscTopicUriPartitionSplitReader
     }
 
     private void maybeLogSplitChangesHandlingResult(
-            SplitsChange<KafkaPartitionSplit> splitsChange) {
+            SplitsChange<PscTopicUriPartitionSplit> splitsChange) {
         if (LOG.isDebugEnabled()) {
             StringJoiner splitsInfo = new StringJoiner(",");
-            for (KafkaPartitionSplit split : splitsChange.splits()) {
+            for (PscTopicUriPartitionSplit split : splitsChange.splits()) {
                 long startingOffset =
                         retryOnWakeup(
-                                () -> consumer.position(split.getTopicPartition()),
+                                () -> {
+                                    try {
+                                        return consumer.position(split.getTopicUriPartition());
+                                    } catch (ConsumerException e) {
+                                        throw new RuntimeException("Failed to get position for " + split.getTopicUriPartition(), e);
+                                    }
+                                },
                                 "logging starting position");
-                long stoppingOffset = getStoppingOffset(split.getTopicPartition());
+                long stoppingOffset = getStoppingOffset(split.getTopicUriPartition());
                 splitsInfo.add(
                         String.format(
                                 "[%s, start:%d, stop: %d]",
-                                split.getTopicPartition(), startingOffset, stoppingOffset));
+                                split.getTopicUriPartition(), startingOffset, stoppingOffset));
             }
             LOG.debug("SplitsChange handling result: {}", splitsInfo);
         }
     }
 
-    private void unassignPartitions(Collection<TopicPartition> partitionsToUnassign) {
-        Collection<TopicPartition> newAssignment = new HashSet<>(consumer.assignment());
+    private void unassignPartitions(Collection<TopicUriPartition> partitionsToUnassign) throws ConsumerException, ConfigurationException {
+        Collection<TopicUriPartition> newAssignment = new HashSet<>(consumer.assignment());
         newAssignment.removeAll(partitionsToUnassign);
         consumer.assign(newAssignment);
     }
 
     private String createConsumerClientId(Properties props) {
-        String prefix = props.getProperty(KafkaSourceOptions.CLIENT_ID_PREFIX.key());
+        String prefix = props.getProperty(PscSourceOptions.CLIENT_ID_PREFIX.key());
         return prefix + "-" + subtaskId;
     }
 
     private void finishSplitAtRecord(
-            TopicPartition tp,
+            TopicUriPartition tp,
             long stoppingOffset,
             long currentOffset,
-            List<TopicPartition> finishedPartitions,
-            KafkaPartitionSplitRecords recordsBySplits) {
+            List<TopicUriPartition> finishedPartitions,
+            PscPartitionSplitRecords recordsBySplits) {
         LOG.debug(
                 "{} has reached stopping offset {}, current offset is {}",
                 tp,
                 stoppingOffset,
                 currentOffset);
         finishedPartitions.add(tp);
-        recordsBySplits.addFinishedSplit(KafkaPartitionSplit.toSplitId(tp));
+        recordsBySplits.addFinishedSplit(PscTopicUriPartitionSplit.toSplitId(tp));
     }
 
-    private long getStoppingOffset(TopicPartition tp) {
+    private long getStoppingOffset(TopicUriPartition tp) {
         return stoppingOffsets.getOrDefault(tp, Long.MAX_VALUE);
     }
 
     private void maybeRegisterKafkaConsumerMetrics(
             Properties props,
-            KafkaSourceReaderMetrics kafkaSourceReaderMetrics,
-            KafkaConsumer<?, ?> consumer) {
+            PscSourceReaderMetrics pscSourceReaderMetrics,
+            PscConsumer<?, ?> consumer) throws ClientException {
         final Boolean needToRegister =
-                KafkaSourceOptions.getOption(
+                PscSourceOptions.getOption(
                         props,
-                        KafkaSourceOptions.REGISTER_KAFKA_CONSUMER_METRICS,
+                        PscSourceOptions.REGISTER_KAFKA_CONSUMER_METRICS,
                         Boolean::parseBoolean);
         if (needToRegister) {
-            kafkaSourceReaderMetrics.registerKafkaConsumerMetrics(consumer);
+            pscSourceReaderMetrics.registerPscConsumerMetrics(consumer);
         }
     }
 
@@ -422,51 +463,52 @@ public class PscTopicUriPartitionSplitReader
      * <p>This helper function handles a race condition as below:
      *
      * <ol>
-     *   <li>Fetcher thread finishes a {@link KafkaConsumer#poll(Duration)} call
+     *   <li>Fetcher thread finishes a {@link PscConsumer#poll(Duration)} call
      *   <li>Task thread assigns new splits so invokes {@link #wakeUp()}, then the wakeup is
      *       recorded and held by the consumer
      *   <li>Later fetcher thread invokes {@link #handleSplitsChanges(SplitsChange)}, and
-     *       interactions with consumer will throw {@link WakeupException} because of the previously
+     *       interactions with consumer will throw {@link com.pinterest.psc.exception.consumer.WakeupException} because of the previously
      *       held wakeup in the consumer
      * </ol>
      *
-     * <p>Under this case we need to catch the {@link WakeupException} and retry the operation.
+     * <p>Under this case we need to catch the {@link } and retry the operation.
      */
     private <V> V retryOnWakeup(Supplier<V> consumerCall, String description) {
-        try {
-            return consumerCall.get();
-        } catch (WakeupException we) {
-            LOG.info(
-                    "Caught WakeupException while executing Kafka consumer call for {}. Will retry the consumer call.",
-                    description);
-            return consumerCall.get();
-        }
+        return consumerCall.get();
+//        try {
+//            return consumerCall.get();
+//        } catch (WakeupException we) {
+//            LOG.info(
+//                    "Caught WakeupException while executing Kafka consumer call for {}. Will retry the consumer call.",
+//                    description);
+//            return consumerCall.get();
+//        }
     }
 
     // ---------------- private helper class ------------------------
 
-    private static class KafkaPartitionSplitRecords
-            implements RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>> {
+    private static class PscPartitionSplitRecords
+            implements RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> {
 
         private final Set<String> finishedSplits = new HashSet<>();
-        private final Map<TopicPartition, Long> stoppingOffsets = new HashMap<>();
-        private final ConsumerRecords<byte[], byte[]> consumerRecords;
-        private final KafkaSourceReaderMetrics metrics;
-        private final Iterator<TopicPartition> splitIterator;
-        private Iterator<ConsumerRecord<byte[], byte[]>> recordIterator;
-        private TopicPartition currentTopicPartition;
+        private final Map<TopicUriPartition, Long> stoppingOffsets = new HashMap<>();
+        private final PscConsumerPollMessageIterator<byte[], byte[]> consumerMessageIterator;
+        private final PscSourceReaderMetrics metrics;
+        private final Iterator<TopicUriPartition> splitIterator;
+        private Iterator<PscConsumerMessage<byte[], byte[]>> recordIterator;
+        private TopicUriPartition currentTopicPartition;
         private Long currentSplitStoppingOffset;
 
-        private KafkaPartitionSplitRecords(
-                ConsumerRecords<byte[], byte[]> consumerRecords, KafkaSourceReaderMetrics metrics) {
-            this.consumerRecords = consumerRecords;
-            this.splitIterator = consumerRecords.partitions().iterator();
+        private PscPartitionSplitRecords(
+                PscConsumerPollMessageIterator<byte[], byte[]> consumerMessageIterator, PscSourceReaderMetrics metrics) {
+            this.consumerMessageIterator = consumerMessageIterator;
+            this.splitIterator = consumerMessageIterator.getTopicUriPartitions().iterator();
             this.metrics = metrics;
         }
 
         private void setPartitionStoppingOffset(
-                TopicPartition topicPartition, long stoppingOffset) {
-            stoppingOffsets.put(topicPartition, stoppingOffset);
+                TopicUriPartition topicUriPartition, long stoppingOffset) {
+            stoppingOffsets.put(topicUriPartition, stoppingOffset);
         }
 
         private void addFinishedSplit(String splitId) {
@@ -478,7 +520,7 @@ public class PscTopicUriPartitionSplitReader
         public String nextSplit() {
             if (splitIterator.hasNext()) {
                 currentTopicPartition = splitIterator.next();
-                recordIterator = consumerRecords.records(currentTopicPartition).iterator();
+                recordIterator = consumerMessageIterator.iteratorFor(currentTopicPartition);
                 currentSplitStoppingOffset =
                         stoppingOffsets.getOrDefault(currentTopicPartition, Long.MAX_VALUE);
                 return currentTopicPartition.toString();
@@ -492,17 +534,17 @@ public class PscTopicUriPartitionSplitReader
 
         @Nullable
         @Override
-        public ConsumerRecord<byte[], byte[]> nextRecordFromSplit() {
+        public PscConsumerMessage<byte[], byte[]> nextRecordFromSplit() {
             Preconditions.checkNotNull(
                     currentTopicPartition,
                     "Make sure nextSplit() did not return null before "
                             + "iterate over the records split.");
             if (recordIterator.hasNext()) {
-                final ConsumerRecord<byte[], byte[]> record = recordIterator.next();
+                final PscConsumerMessage<byte[], byte[]> message = recordIterator.next();
                 // Only emit records before stopping offset
-                if (record.offset() < currentSplitStoppingOffset) {
-                    metrics.recordCurrentOffset(currentTopicPartition, record.offset());
-                    return record;
+                if (message.getMessageId().getOffset() < currentSplitStoppingOffset) {
+                    metrics.recordCurrentOffset(currentTopicPartition, message.getMessageId().getOffset());
+                    return message;
                 }
             }
             return null;
