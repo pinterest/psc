@@ -54,11 +54,12 @@ public interface PscSubscriber extends Serializable {
 
     // ----------------- factory methods --------------
 
-    static PscSubscriber getTopicListSubscriber(List<TopicRn> topicRns) {
+    static PscSubscriber getTopicRnListSubscriber(List<TopicRn> topicRns) {
         return new PscTopicUriListSubscriber(topicRns);
     }
 
     static PscSubscriber getTopicPatternSubscriber(Pattern topicUriPattern) {
+        // TODO: should this be topic pattern or topic uri pattern?
         return new TopicUriPatternSubscriber(topicUriPattern);
     }
 

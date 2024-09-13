@@ -18,19 +18,20 @@
 
 package com.pinterest.flink.connector.psc.source;
 
+import com.pinterest.flink.connector.psc.PscFlinkUtil;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppingOffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializerValidator;
+import com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriber;
+import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.common.TopicRn;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.serde.ByteArrayDeserializer;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.connector.source.Boundedness;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.KafkaSourceOptions;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.NoStoppingOffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializerValidator;
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -90,15 +91,17 @@ import static org.apache.flink.util.Preconditions.checkState;
 @PublicEvolving
 public class PscSourceBuilder<OUT> {
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceBuilder.class);
-    private static final String[] REQUIRED_CONFIGS = {ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG};
+    private static final String[] REQUIRED_CONFIGS = {
+            PscFlinkUtil.CLUSTER_URI_CONFIG,
+    };
     // The subscriber specifies the partitions to subscribe to.
-    private KafkaSubscriber subscriber;
+    private PscSubscriber subscriber;
     // Users can specify the starting / stopping offset initializer.
     private OffsetsInitializer startingOffsetsInitializer;
     private OffsetsInitializer stoppingOffsetsInitializer;
     // Boundedness
     private Boundedness boundedness;
-    private KafkaRecordDeserializationSchema<OUT> deserializationSchema;
+    private PscRecordDeserializationSchema<OUT> deserializationSchema;
     // The configurations.
     protected Properties props;
 
@@ -112,63 +115,63 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * Sets the bootstrap servers for the KafkaConsumer of the KafkaSource.
+     * Sets the clusterUri for the PscConsumer of the PscSource.
      *
-     * @param bootstrapServers the bootstrap servers of the Kafka cluster.
-     * @return this KafkaSourceBuilder.
+     * @param clusterUri the clusterUri of the PubSub cluster.
+     * @return this PscSourceBuilder.
      */
-    public PscSourceBuilder<OUT> setBootstrapServers(String bootstrapServers) {
-        return setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+    public PscSourceBuilder<OUT> setClusterUri(String clusterUri) {
+        return setProperty(PscFlinkUtil.CLUSTER_URI_CONFIG, clusterUri);
     }
 
     /**
-     * Sets the consumer group id of the KafkaSource.
+     * Sets the consumer group id of the PscSource.
      *
-     * @param groupId the group id of the KafkaSource.
-     * @return this KafkaSourceBuilder.
+     * @param groupId the group id of the PscSource.
+     * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setGroupId(String groupId) {
-        return setProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        return setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, groupId);
     }
 
     /**
-     * Set a list of topics the KafkaSource should consume from. All the topics in the list should
-     * have existed in the Kafka cluster. Otherwise an exception will be thrown. To allow some of
+     * Set a list of topicRns the PscSource should consume from. All the topics in the list should
+     * have existed in the PubSub cluster. Otherwise an exception will be thrown. To allow some of
      * the topics to be created lazily, please use {@link #setTopicPattern(Pattern)} instead.
      *
-     * @param topics the list of topics to consume from.
-     * @return this KafkaSourceBuilder.
+     * @param topics the list of topicRns to consume from.
+     * @return this PscSourceBuilder.
      * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Collection)
      */
-    public PscSourceBuilder<OUT> setTopics(List<String> topics) {
+    public PscSourceBuilder<OUT> setTopicRns(List<TopicRn> topics) {
         ensureSubscriberIsNull("topics");
-        subscriber = KafkaSubscriber.getTopicListSubscriber(topics);
+        subscriber = PscSubscriber.getTopicRnListSubscriber(topics);
         return this;
     }
 
     /**
-     * Set a list of topics the KafkaSource should consume from. All the topics in the list should
-     * have existed in the Kafka cluster. Otherwise an exception will be thrown. To allow some of
+     * Set a list of topicRns the PscSource should consume from. All the topics in the list should
+     * have existed in the PubSub cluster. Otherwise an exception will be thrown. To allow some of
      * the topics to be created lazily, please use {@link #setTopicPattern(Pattern)} instead.
      *
-     * @param topics the list of topics to consume from.
-     * @return this KafkaSourceBuilder.
+     * @param topicRns the list of topicRns to consume from.
+     * @return this PscSourceBuilder.
      * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Collection)
      */
-    public PscSourceBuilder<OUT> setTopics(String... topics) {
-        return setTopics(Arrays.asList(topics));
+    public PscSourceBuilder<OUT> setTopicRns(TopicRn... topicRns) {
+        return setTopicRns(Arrays.asList(topicRns));
     }
 
     /**
      * Set a topic pattern to consume from use the java {@link Pattern}.
      *
      * @param topicPattern the pattern of the topic name to consume from.
-     * @return this KafkaSourceBuilder.
+     * @return this PscSourceBuilder.
      * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Pattern)
      */
     public PscSourceBuilder<OUT> setTopicPattern(Pattern topicPattern) {
         ensureSubscriberIsNull("topic pattern");
-        subscriber = KafkaSubscriber.getTopicPatternSubscriber(topicPattern);
+        subscriber = PscSubscriber.getTopicPatternSubscriber(topicPattern);
         return this;
     }
 
@@ -179,9 +182,9 @@ public class PscSourceBuilder<OUT> {
      * @return this KafkaSourceBuilder.
      * @see org.apache.kafka.clients.consumer.KafkaConsumer#assign(Collection)
      */
-    public PscSourceBuilder<OUT> setPartitions(Set<TopicPartition> partitions) {
+    public PscSourceBuilder<OUT> setPartitions(Set<TopicUriPartition> partitions) {
         ensureSubscriberIsNull("partitions");
-        subscriber = KafkaSubscriber.getPartitionSetSubscriber(partitions);
+        subscriber = PscSubscriber.getPartitionSetSubscriber(partitions);
         return this;
     }
 
@@ -199,15 +202,14 @@ public class PscSourceBuilder<OUT> {
      *   <li>{@link OffsetsInitializer#committedOffsets()} - starting from the committed offsets of
      *       the consumer group.
      *   <li>{@link
-     *       OffsetsInitializer#committedOffsets(org.apache.kafka.clients.consumer.OffsetResetStrategy)}
+     *       OffsetsInitializer#committedOffsets(String)}
      *       - starting from the committed offsets of the consumer group. If there is no committed
-     *       offsets, starting from the offsets specified by the {@link
-     *       org.apache.kafka.clients.consumer.OffsetResetStrategy OffsetResetStrategy}.
+     *       offsets, starting from the offsets specified by the offset reset strategy.
      *   <li>{@link OffsetsInitializer#offsets(Map)} - starting from the specified offsets for each
      *       partition.
      *   <li>{@link OffsetsInitializer#timestamp(long)} - starting from the specified timestamp for
      *       each partition. Note that the guarantee here is that all the records in Kafka whose
-     *       {@link org.apache.kafka.clients.consumer.ConsumerRecord#timestamp()} is greater than
+     *       {@link MessageId#getOffset()} is greater than
      *       the given starting timestamp will be consumed. However, it is possible that some
      *       consumer records whose timestamp is smaller than the given starting timestamp are also
      *       consumed.
@@ -224,14 +226,14 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * By default the KafkaSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
+     * By default the PscSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
      * and thus never stops until the Flink job fails or is canceled. To let the KafkaSource run as
      * a streaming source but still stops at some point, one can set an {@link OffsetsInitializer}
      * to specify the stopping offsets for each partition. When all the partitions have reached
-     * their stopping offsets, the KafkaSource will then exit.
+     * their stopping offsets, the PscSource will then exit.
      *
      * <p>This method is different from {@link #setBounded(OffsetsInitializer)} that after setting
-     * the stopping offsets with this method, {@link org.apache.flink.connector.kafka.source.KafkaSource#getBoundedness()} will still return
+     * the stopping offsets with this method, {@link PscSource#getBoundedness()} will still return
      * {@link Boundedness#CONTINUOUS_UNBOUNDED} even though it will stop at the stopping offsets
      * specified by the stopping offsets {@link OffsetsInitializer}.
      *
@@ -247,7 +249,7 @@ public class PscSourceBuilder<OUT> {
      *       partition.
      *   <li>{@link OffsetsInitializer#timestamp(long)} - stops at the specified timestamp for each
      *       partition. The guarantee of setting the stopping timestamp is that no Kafka records
-     *       whose {@link org.apache.kafka.clients.consumer.ConsumerRecord#timestamp()} is greater
+     *       whose {@link MessageId#getTimestamp()} is greater
      *       than the given stopping timestamp will be consumed. However, it is possible that some
      *       records whose timestamp is smaller than the specified stopping timestamp are not
      *       consumed.
@@ -265,14 +267,14 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * By default the KafkaSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
+     * By default the PscSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
      * and thus never stops until the Flink job fails or is canceled. To let the KafkaSource run in
      * {@link Boundedness#BOUNDED} manner and stops at some point, one can set an {@link
      * OffsetsInitializer} to specify the stopping offsets for each partition. When all the
-     * partitions have reached their stopping offsets, the KafkaSource will then exit.
+     * partitions have reached their stopping offsets, the PscSource will then exit.
      *
      * <p>This method is different from {@link #setUnbounded(OffsetsInitializer)} that after setting
-     * the stopping offsets with this method, {@link org.apache.flink.connector.kafka.source.KafkaSource#getBoundedness()} will return
+     * the stopping offsets with this method, {@link PscSource#getBoundedness()} will return
      * {@link Boundedness#BOUNDED} instead of {@link Boundedness#CONTINUOUS_UNBOUNDED}.
      *
      * <p>The following {@link OffsetsInitializer} are commonly used and provided out of the box.
@@ -287,7 +289,7 @@ public class PscSourceBuilder<OUT> {
      *       partition.
      *   <li>{@link OffsetsInitializer#timestamp(long)} - stops at the specified timestamp for each
      *       partition. The guarantee of setting the stopping timestamp is that no Kafka records
-     *       whose {@link org.apache.kafka.clients.consumer.ConsumerRecord#timestamp()} is greater
+     *       whose {@link MessageId#getTimestamp()} is greater
      *       than the given stopping timestamp will be consumed. However, it is possible that some
      *       records whose timestamp is smaller than the specified stopping timestamp are not
      *       consumed.
@@ -305,7 +307,7 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * Sets the {@link KafkaRecordDeserializationSchema deserializer} of the {@link
+     * Sets the {@link PscRecordDeserializationSchema deserializer} of the {@link
      * org.apache.kafka.clients.consumer.ConsumerRecord ConsumerRecord} for KafkaSource.
      *
      * @param recordDeserializer the deserializer for Kafka {@link
@@ -313,13 +315,13 @@ public class PscSourceBuilder<OUT> {
      * @return this KafkaSourceBuilder.
      */
     public PscSourceBuilder<OUT> setDeserializer(
-            KafkaRecordDeserializationSchema<OUT> recordDeserializer) {
+            PscRecordDeserializationSchema<OUT> recordDeserializer) {
         this.deserializationSchema = recordDeserializer;
         return this;
     }
 
     /**
-     * Sets the {@link KafkaRecordDeserializationSchema deserializer} of the {@link
+     * Sets the {@link PscRecordDeserializationSchema deserializer} of the {@link
      * org.apache.kafka.clients.consumer.ConsumerRecord ConsumerRecord} for KafkaSource. The given
      * {@link DeserializationSchema} will be used to deserialize the value of ConsumerRecord. The
      * other information (e.g. key) in a ConsumerRecord will be ignored.
@@ -330,7 +332,7 @@ public class PscSourceBuilder<OUT> {
     public PscSourceBuilder<OUT> setValueOnlyDeserializer(
             DeserializationSchema<OUT> deserializationSchema) {
         this.deserializationSchema =
-                KafkaRecordDeserializationSchema.valueOnly(deserializationSchema);
+                PscRecordDeserializationSchema.valueOnly(deserializationSchema);
         return this;
     }
 
@@ -341,19 +343,19 @@ public class PscSourceBuilder<OUT> {
      * @return this KafkaSourceBuilder.
      */
     public PscSourceBuilder<OUT> setClientIdPrefix(String prefix) {
-        return setProperty(KafkaSourceOptions.CLIENT_ID_PREFIX.key(), prefix);
+        return setProperty(PscSourceOptions.CLIENT_ID_PREFIX.key(), prefix);
     }
 
     /**
      * Set an arbitrary property for the KafkaSource and KafkaConsumer. The valid keys can be found
-     * in {@link ConsumerConfig} and {@link KafkaSourceOptions}.
+     * in {@link PscConfiguration} and {@link PscSourceOptions}.
      *
      * <p>Note that the following keys will be overridden by the builder when the KafkaSource is
      * created.
      *
      * <ul>
-     *   <li><code>key.deserializer</code> is always set to {@link ByteArrayDeserializer}.
-     *   <li><code>value.deserializer</code> is always set to {@link ByteArrayDeserializer}.
+     *   <li><code>key.deserializer</code> is always set to {@link com.pinterest.psc.serde.ByteArrayDeserializer}.
+     *   <li><code>value.deserializer</code> is always set to {@link com.pinterest.psc.serde.ByteArrayDeserializer}.
      *   <li><code>auto.offset.reset.strategy</code> is overridden by {@link
      *       OffsetsInitializer#getAutoOffsetResetStrategy()} for the starting offsets, which is by
      *       default {@link OffsetsInitializer#earliest()}.
@@ -371,15 +373,15 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * Set arbitrary properties for the KafkaSource and KafkaConsumer. The valid keys can be found
-     * in {@link ConsumerConfig} and {@link KafkaSourceOptions}.
+     * Set arbitrary properties for the PscSource and PscConsumer. The valid keys can be found
+     * in {@link PscConfiguration} and {@link PscSourceOptions}.
      *
      * <p>Note that the following keys will be overridden by the builder when the KafkaSource is
      * created.
      *
      * <ul>
-     *   <li><code>key.deserializer</code> is always set to {@link ByteArrayDeserializer}.
-     *   <li><code>value.deserializer</code> is always set to {@link ByteArrayDeserializer}.
+     *   <li><code>key.deserializer</code> is always set to {@link com.pinterest.psc.serde.ByteArrayDeserializer}.
+     *   <li><code>value.deserializer</code> is always set to {@link com.pinterest.psc.serde.ByteArrayDeserializer}.
      *   <li><code>auto.offset.reset.strategy</code> is overridden by {@link
      *       OffsetsInitializer#getAutoOffsetResetStrategy()} for the starting offsets, which is by
      *       default {@link OffsetsInitializer#earliest()}.
@@ -402,10 +404,10 @@ public class PscSourceBuilder<OUT> {
      *
      * @return a KafkaSource with the settings made for this builder.
      */
-    public org.apache.flink.connector.kafka.source.KafkaSource<OUT> build() {
+    public PscSource<OUT> build() {
         sanityCheck();
         parseAndSetRequiredProperties();
-        return new KafkaSource<>(
+        return new PscSource<>(
                 subscriber,
                 startingOffsetsInitializer,
                 stoppingOffsetsInitializer,
@@ -427,38 +429,38 @@ public class PscSourceBuilder<OUT> {
 
     private void parseAndSetRequiredProperties() {
         maybeOverride(
-                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER,
                 ByteArrayDeserializer.class.getName(),
                 true);
         maybeOverride(
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER,
                 ByteArrayDeserializer.class.getName(),
                 true);
-        if (!props.containsKey(ConsumerConfig.GROUP_ID_CONFIG)) {
+        if (!props.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID)) {
             LOG.warn(
                     "Offset commit on checkpoint is disabled because {} is not specified",
-                    ConsumerConfig.GROUP_ID_CONFIG);
-            maybeOverride(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key(), "false", false);
+                    PscConfiguration.PSC_CONSUMER_GROUP_ID);
+            maybeOverride(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key(), "false", false);
         }
-        maybeOverride(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false", false);
+        maybeOverride(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false", false);
         maybeOverride(
-                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
-                startingOffsetsInitializer.getAutoOffsetResetStrategy().name().toLowerCase(),
+                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
+                startingOffsetsInitializer.getAutoOffsetResetStrategy().toLowerCase(),
                 true);
 
         // If the source is bounded, do not run periodic partition discovery.
         maybeOverride(
-                KafkaSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
+                PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
                 "-1",
                 boundedness == Boundedness.BOUNDED);
 
         // If the client id prefix is not set, reuse the consumer group id as the client id prefix,
         // or generate a random string if consumer group id is not specified.
         maybeOverride(
-                KafkaSourceOptions.CLIENT_ID_PREFIX.key(),
-                props.containsKey(ConsumerConfig.GROUP_ID_CONFIG)
-                        ? props.getProperty(ConsumerConfig.GROUP_ID_CONFIG)
-                        : "KafkaSource-" + new Random().nextLong(),
+                PscSourceOptions.CLIENT_ID_PREFIX.key(),
+                props.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID)
+                        ? props.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID)
+                        : "PscSource-" + new Random().nextLong(),
                 false);
     }
 
@@ -495,10 +497,10 @@ public class PscSourceBuilder<OUT> {
         checkNotNull(deserializationSchema, "Deserialization schema is required but not provided.");
         // Check consumer group ID
         checkState(
-                props.containsKey(ConsumerConfig.GROUP_ID_CONFIG) || !offsetCommitEnabledManually(),
+                props.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID) || !offsetCommitEnabledManually(),
                 String.format(
                         "Property %s is required when offset commit is enabled",
-                        ConsumerConfig.GROUP_ID_CONFIG));
+                        PscConfiguration.PSC_CONSUMER_GROUP_ID));
         // Check offsets initializers
         if (startingOffsetsInitializer instanceof OffsetsInitializerValidator) {
             ((OffsetsInitializerValidator) startingOffsetsInitializer).validate(props);
@@ -510,14 +512,14 @@ public class PscSourceBuilder<OUT> {
 
     private boolean offsetCommitEnabledManually() {
         boolean autoCommit =
-                props.containsKey(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG)
+                props.containsKey(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED)
                         && Boolean.parseBoolean(
-                                props.getProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG));
+                                props.getProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED));
         boolean commitOnCheckpoint =
-                props.containsKey(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key())
+                props.containsKey(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key())
                         && Boolean.parseBoolean(
                                 props.getProperty(
-                                        KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key()));
+                                        PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key()));
         return autoCommit || commitOnCheckpoint;
     }
 }

@@ -61,7 +61,7 @@ import java.util.StringJoiner;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-/** A {@link SplitReader} implementation that reads records from Kafka partitions. */
+/** A {@link SplitReader} implementation that reads records from PSC TopicUriPartitions. */
 @Internal
 public class PscTopicUriPartitionSplitReader
         implements SplitReader<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit> {
@@ -450,7 +450,7 @@ public class PscTopicUriPartitionSplitReader
         final Boolean needToRegister =
                 PscSourceOptions.getOption(
                         props,
-                        PscSourceOptions.REGISTER_KAFKA_CONSUMER_METRICS,
+                        PscSourceOptions.REGISTER_PSC_CONSUMER_METRICS,
                         Boolean::parseBoolean);
         if (needToRegister) {
             pscSourceReaderMetrics.registerPscConsumerMetrics(consumer);

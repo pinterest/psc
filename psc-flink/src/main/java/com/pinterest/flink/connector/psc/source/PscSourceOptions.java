@@ -33,22 +33,22 @@ public class PscSourceOptions {
             ConfigOptions.key("client.id.prefix")
                     .stringType()
                     .noDefaultValue()
-                    .withDescription("The prefix to use for the Kafka consumers.");
+                    .withDescription("The prefix to use for the PSC consumers.");
 
     public static final ConfigOption<Long> PARTITION_DISCOVERY_INTERVAL_MS =
             ConfigOptions.key("partition.discovery.interval.ms")
                     .longType()
                     .noDefaultValue()
                     .withDescription(
-                            "The interval in milliseconds for the Kafka source to discover "
+                            "The interval in milliseconds for the PSC source to discover "
                                     + "the new partitions. A non-positive value disables the partition discovery.");
 
-    public static final ConfigOption<Boolean> REGISTER_KAFKA_CONSUMER_METRICS =
+    public static final ConfigOption<Boolean> REGISTER_PSC_CONSUMER_METRICS =
             ConfigOptions.key("register.consumer.metrics")
                     .booleanType()
                     .defaultValue(true)
                     .withDescription(
-                            "Whether to register metrics of KafkaConsumer into Flink metric group");
+                            "Whether to register metrics of PscConsumer into Flink metric group");
 
     public static final ConfigOption<Boolean> COMMIT_OFFSETS_ON_CHECKPOINT =
             ConfigOptions.key("commit.offsets.on.checkpoint")
