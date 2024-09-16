@@ -11,11 +11,10 @@
     <artifactId>psc-flink</artifactId>
     <properties>
         <flink.version>1.15.1</flink.version>
-        <flink.old.version>1.11.1</flink.old.version>
         <kafka.version>2.8.1</kafka.version>
         <zookeeper.version>3.4.10</zookeeper.version>
         <curator.version>2.12.0</curator.version>
-        <scala.version>2.11.12</scala.version>
+        <scala.version>2.12.7</scala.version>
         <scala.binary.version>2.12</scala.binary.version>
         <powermock.version>2.0.0-RC.4</powermock.version>
         <hamcrest.version>1.3</hamcrest.version>
@@ -41,10 +40,10 @@
             <artifactId>flink-connector-kafka</artifactId>
             <version>${flink.version}</version>
             <exclusions>
-                <exclusion>
-                    <groupId>org.apache.flink</groupId>
-                    <artifactId>force-shading</artifactId>
-                </exclusion>
+<!--                <exclusion>-->
+<!--                    <groupId>org.apache.flink</groupId>-->
+<!--                    <artifactId>force-shading</artifactId>-->
+<!--                </exclusion>-->
                 <exclusion>
                     <groupId>org.apache.kafka</groupId>
                     <artifactId>kafka-clients</artifactId>
@@ -53,19 +52,19 @@
             <scope>provided</scope>
         </dependency>
 
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>force-shading</artifactId>
-            <version>${flink.old.version}</version>
-            <scope>provided</scope>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>org.apache.flink</groupId>-->
+<!--            <artifactId>force-shading</artifactId>-->
+<!--            <version>${flink.version}</version>-->
+<!--            <scope>provided</scope>-->
+<!--        </dependency>-->
 
         <!-- Table ecosystem -->
         <!-- Projects depending on this project won't depend on flink-table-*. -->
         <dependency>
             <groupId>org.apache.flink</groupId>
-            <artifactId>flink-table-api-java-bridge_${scala.binary.version}</artifactId>
-            <version>${flink.old.version}</version>
+            <artifactId>flink-table-api-java-bridge</artifactId>
+            <version>${flink.version}</version>
             <scope>provided</scope>
             <optional>true</optional>
             <exclusions>
@@ -86,20 +85,6 @@
             <version>${flink.version}</version>
             <scope>provided</scope>
             <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-table-planner-blink_${scala.binary.version}</artifactId>
-            <version>${flink.old.version}</version>
-            <scope>provided</scope>
-            <optional>true</optional>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.flink</groupId>
-                    <artifactId>flink-table-common</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <dependency>
@@ -239,8 +224,15 @@
 
         <dependency>
             <groupId>org.apache.flink</groupId>
-            <artifactId>flink-test-utils_2.11</artifactId>
-            <version>${flink.old.version}</version>
+            <artifactId>flink-connector-test-utils</artifactId>
+            <version>${flink.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-test-utils</artifactId>
+            <version>${flink.version}</version>
             <scope>test</scope>
             <exclusions>
                 <exclusion>
@@ -304,21 +296,7 @@
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-planner_${scala.binary.version}</artifactId>
-            <version>${flink.old.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.flink</groupId>
-                    <artifactId>flink-table-common</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-table-planner-blink_${scala.binary.version}</artifactId>
-            <version>${flink.old.version}</version>
+            <version>${flink.version}</version>
             <type>test-jar</type>
             <scope>test</scope>
             <exclusions>
@@ -370,6 +348,20 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <type>jar</type>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <version>1.16.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>1.16.2</version>
             <scope>test</scope>
         </dependency>
 

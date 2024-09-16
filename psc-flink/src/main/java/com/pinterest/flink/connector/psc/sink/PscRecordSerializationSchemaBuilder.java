@@ -102,7 +102,7 @@ public class PscRecordSerializationSchemaBuilder<IN> {
      * @param topicUri
      * @return {@code this}
      */
-    public PscRecordSerializationSchemaBuilder<IN> setTopic(String topicUri) {
+    public PscRecordSerializationSchemaBuilder<IN> setTopicUriString(String topicUri) {
         checkState(this.topicUriSelector == null, "Topic selector already set.");
         checkNotNull(topicUri);
         this.topicUriSelector = new CachingTopicSelector<>((e) -> topicUri);
