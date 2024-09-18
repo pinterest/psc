@@ -18,19 +18,19 @@
 
 package com.pinterest.flink.connector.psc.source.reader.deserializer;
 
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
+import com.pinterest.flink.streaming.util.serialization.psc.JSONKeyValueDeserializationSchema;
+import com.pinterest.psc.common.PscPlugin;
+import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.exception.consumer.DeserializerException;
+import com.pinterest.psc.serde.StringDeserializer;
+import com.pinterest.psc.serde.StringSerializer;
 import org.apache.flink.connector.testutils.source.deserialization.TestingDeserializationContext;
 import org.apache.flink.formats.json.JsonNodeDeserializationSchema;
 import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableMap;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonProcessingException;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node.ObjectNode;
-import org.apache.flink.streaming.util.serialization.JSONKeyValueDeserializationSchema;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.Configurable;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
@@ -46,7 +46,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Unit tests for KafkaRecordDeserializationSchema. */
+/** Unit tests for PscRecordDeserializationSchema. */
 public class PscRecordDeserializationSchemaTest {
 
     private static Map<String, ?> configurableConfiguration;
@@ -61,10 +61,10 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testKafkaDeserializationSchemaWrapper() throws IOException {
-        final ConsumerRecord<byte[], byte[]> consumerRecord = getConsumerRecord();
-        KafkaRecordDeserializationSchema<ObjectNode> schema =
-                KafkaRecordDeserializationSchema.of(new JSONKeyValueDeserializationSchema(true));
+    public void testKafkaDeserializationSchemaWrapper() throws IOException, DeserializerException {
+        final PscConsumerMessage<byte[], byte[]> consumerRecord = getPscConsumerMessage();
+        PscRecordDeserializationSchema<ObjectNode> schema =
+                PscRecordDeserializationSchema.of(new JSONKeyValueDeserializationSchema(true));
         SimpleCollector<ObjectNode> collector = new SimpleCollector<>();
         schema.deserialize(consumerRecord, collector);
 
@@ -79,10 +79,10 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testKafkaValueDeserializationSchemaWrapper() throws IOException {
-        final ConsumerRecord<byte[], byte[]> consumerRecord = getConsumerRecord();
-        KafkaRecordDeserializationSchema<ObjectNode> schema =
-                KafkaRecordDeserializationSchema.valueOnly(new JsonNodeDeserializationSchema());
+    public void testKafkaValueDeserializationSchemaWrapper() throws IOException, DeserializerException {
+        final PscConsumerMessage<byte[], byte[]> consumerRecord = getPscConsumerMessage();
+        PscRecordDeserializationSchema<ObjectNode> schema =
+                PscRecordDeserializationSchema.valueOnly(new JsonNodeDeserializationSchema());
         SimpleCollector<ObjectNode> collector = new SimpleCollector<>();
         schema.deserialize(consumerRecord, collector);
 
@@ -98,10 +98,10 @@ public class PscRecordDeserializationSchemaTest {
     public void testKafkaValueDeserializerWrapper() throws Exception {
         final String topic = "Topic";
         byte[] value = new StringSerializer().serialize(topic, "world");
-        final ConsumerRecord<byte[], byte[]> consumerRecord =
-                new ConsumerRecord<>(topic, 0, 0L, null, value);
-        KafkaRecordDeserializationSchema<String> schema =
-                KafkaRecordDeserializationSchema.valueOnly(StringDeserializer.class);
+        final PscConsumerMessage<byte[], byte[]> consumerRecord =
+                new PscConsumerMessage<>(topic, 0, 0L, null, value);
+        PscRecordDeserializationSchema<String> schema =
+                PscRecordDeserializationSchema.valueOnly(StringDeserializer.class);
         schema.open(new TestingDeserializationContext());
 
         SimpleCollector<String> collector = new SimpleCollector<>();
@@ -114,8 +114,8 @@ public class PscRecordDeserializationSchemaTest {
     @Test
     public void testKafkaValueDeserializerWrapperWithoutConfigurable() throws Exception {
         final Map<String, String> config = ImmutableMap.of("simpleKey", "simpleValue");
-        KafkaRecordDeserializationSchema<String> schema =
-                KafkaRecordDeserializationSchema.valueOnly(SimpleStringSerializer.class, config);
+        PscRecordDeserializationSchema<String> schema =
+                PscRecordDeserializationSchema.valueOnly(SimpleStringSerializer.class, config);
         schema.open(new TestingDeserializationContext());
         Assertions.assertEquals(configuration, config);
         assertFalse(isKeyDeserializer);
@@ -125,8 +125,8 @@ public class PscRecordDeserializationSchemaTest {
     @Test
     public void testKafkaValueDeserializerWrapperWithConfigurable() throws Exception {
         final Map<String, String> config = ImmutableMap.of("configKey", "configValue");
-        KafkaRecordDeserializationSchema<String> schema =
-                KafkaRecordDeserializationSchema.valueOnly(
+        PscRecordDeserializationSchema<String> schema =
+                PscRecordDeserializationSchema.valueOnly(
                         ConfigurableStringSerializer.class, config);
         schema.open(new TestingDeserializationContext());
         Assertions.assertEquals(configurableConfiguration, config);
@@ -134,7 +134,7 @@ public class PscRecordDeserializationSchemaTest {
         assertTrue(configuration.isEmpty());
     }
 
-    private ConsumerRecord<byte[], byte[]> getConsumerRecord() throws JsonProcessingException {
+    private PscConsumerMessage<byte[], byte[]> getPscConsumerMessage() throws JsonProcessingException {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode initialKey = mapper.createObjectNode();
         initialKey.put("index", 4);
@@ -144,7 +144,7 @@ public class PscRecordDeserializationSchemaTest {
         initialValue.put("word", "world");
         byte[] serializedValue = mapper.writeValueAsBytes(initialValue);
 
-        return new ConsumerRecord<>("topic#1", 3, 4L, serializedKey, serializedValue);
+        return new PscConsumerMessage<>("topic#1", 3, 4L, serializedKey, serializedValue);
     }
 
     private static class SimpleCollector<T> implements Collector<T> {
@@ -164,14 +164,14 @@ public class PscRecordDeserializationSchemaTest {
 
     /**
      * Serializer based on Kafka's serialization stack. This is the special case that implements
-     * {@link Configurable}
+     * {@link PscPlugin}
      *
      * <p>This class must be public to make it instantiable by the tests.
      */
     public static class ConfigurableStringSerializer extends StringDeserializer
-            implements Configurable {
+            implements PscPlugin {
         @Override
-        public void configure(Map<String, ?> configs) {
+        public void configure(Map<String, String> configs, boolean isKey) {
             configurableConfiguration = configs;
         }
     }
@@ -183,7 +183,7 @@ public class PscRecordDeserializationSchemaTest {
      */
     public static class SimpleStringSerializer extends StringDeserializer {
         @Override
-        public void configure(Map<String, ?> configs, boolean isKey) {
+        public void configure(Map<String, String> configs, boolean isKey) {
             configuration = configs;
             isKeyDeserializer = isKey;
         }

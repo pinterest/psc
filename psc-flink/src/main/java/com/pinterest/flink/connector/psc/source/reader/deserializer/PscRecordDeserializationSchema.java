@@ -126,4 +126,13 @@ public interface PscRecordDeserializationSchema<T> extends Serializable, ResultT
             Class<D> valueDeserializerClass, PscConfiguration config) {
         return new PscValueOnlyDeserializerWrapper<>(valueDeserializerClass, config);
     }
+
+    static <V, D extends Deserializer<V>> PscRecordDeserializationSchema<V> valueOnly(
+            Class<D> valueDeserializerClass, Map<String, String> config) {
+        PscConfiguration pscConfiguration = new PscConfiguration();
+        for (Map.Entry<String, String> entry : config.entrySet()) {
+            pscConfiguration.setProperty(entry.getKey(), entry.getValue());
+        }
+        return valueOnly(valueDeserializerClass, pscConfiguration);
+    }
 }

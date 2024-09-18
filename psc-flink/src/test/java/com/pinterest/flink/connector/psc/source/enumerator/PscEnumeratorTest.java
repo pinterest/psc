@@ -18,24 +18,22 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator;
 
+import com.pinterest.flink.connector.psc.source.PscSourceOptions;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppingOffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriber;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.serde.StringDeserializer;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.ReaderInfo;
 import org.apache.flink.api.connector.source.mocks.MockSplitEnumeratorContext;
-import org.apache.flink.connector.kafka.source.KafkaSourceOptions;
-import org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumState;
-import org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumerator;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.NoStoppingOffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.flink.connector.kafka.testutils.KafkaSourceTestEnv;
 import org.apache.flink.mock.Whitebox;
 
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -57,7 +55,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-/** Unit tests for {@link KafkaSourceEnumerator}. */
+/** Unit tests for {@link PscSourceEnumerator}. */
 public class PscEnumeratorTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String DYNAMIC_TOPIC_NAME = "dynamic_topic";
@@ -78,21 +76,21 @@ public class PscEnumeratorTest {
 
     @BeforeClass
     public static void setup() throws Throwable {
-        KafkaSourceTestEnv.setup();
-        KafkaSourceTestEnv.setupTopic(TOPIC1, true, true, KafkaSourceTestEnv::getRecordsForTopic);
-        KafkaSourceTestEnv.setupTopic(TOPIC2, true, true, KafkaSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setup();
+        PscSourceTestEnv.setupTopic(TOPIC1, true, true, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setupTopic(TOPIC2, true, true, PscSourceTestEnv::getRecordsForTopic);
     }
 
     @AfterClass
     public static void tearDown() throws Exception {
-        KafkaSourceTestEnv.tearDown();
+        PscSourceTestEnv.tearDown();
     }
 
     @Test
     public void testStartWithDiscoverPartitionsOnce() throws Exception {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(context, DISABLE_PERIODIC_PARTITION_DISCOVERY)) {
 
             // Start the enumerator and it should schedule a one time task to discover and assign
@@ -108,9 +106,9 @@ public class PscEnumeratorTest {
 
     @Test
     public void testStartWithPeriodicPartitionDiscovery() throws Exception {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(context, ENABLE_PERIODIC_PARTITION_DISCOVERY)) {
 
             // Start the enumerator and it should schedule a one time task to discover and assign
@@ -126,9 +124,9 @@ public class PscEnumeratorTest {
 
     @Test
     public void testDiscoverPartitionsTriggersAssignments() throws Throwable {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(context, DISABLE_PERIODIC_PARTITION_DISCOVERY)) {
 
             // Start the enumerator and it should schedule a one time task to discover and assign
@@ -151,9 +149,9 @@ public class PscEnumeratorTest {
 
     @Test
     public void testReaderRegistrationTriggersAssignments() throws Throwable {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(context, DISABLE_PERIODIC_PARTITION_DISCOVERY)) {
 
             // Start the enumerator and it should schedule a one time task to discover and assign
@@ -174,14 +172,14 @@ public class PscEnumeratorTest {
 
     @Test(timeout = 30000L)
     public void testDiscoverPartitionsPeriodically() throws Throwable {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(
                                 context,
                                 ENABLE_PERIODIC_PARTITION_DISCOVERY,
                                 INCLUDE_DYNAMIC_TOPIC);
-                AdminClient adminClient = KafkaSourceTestEnv.getAdminClient()) {
+                AdminClient adminClient = PscSourceTestEnv.getAdminClient()) {
 
             startEnumeratorAndRegisterReaders(context, enumerator);
 
@@ -218,7 +216,7 @@ public class PscEnumeratorTest {
                     Collections.singleton(DYNAMIC_TOPIC_NAME),
                     3);
         } finally {
-            try (AdminClient adminClient = KafkaSourceTestEnv.getAdminClient()) {
+            try (AdminClient adminClient = PscSourceTestEnv.getAdminClient()) {
                 adminClient.deleteTopics(Collections.singleton(DYNAMIC_TOPIC_NAME)).all().get();
             } catch (Exception e) {
                 // Let it go.
@@ -228,9 +226,9 @@ public class PscEnumeratorTest {
 
     @Test
     public void testAddSplitsBack() throws Throwable {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(context, ENABLE_PERIODIC_PARTITION_DISCOVERY)) {
 
             startEnumeratorAndRegisterReaders(context, enumerator);
@@ -254,19 +252,19 @@ public class PscEnumeratorTest {
 
     @Test
     public void testWorkWithPreexistingAssignments() throws Throwable {
-        Set<TopicPartition> preexistingAssignments;
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context1 =
+        Set<TopicUriPartition> preexistingAssignments;
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context1 =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(context1, ENABLE_PERIODIC_PARTITION_DISCOVERY)) {
             startEnumeratorAndRegisterReaders(context1, enumerator);
             preexistingAssignments =
                     asEnumState(context1.getSplitsAssignmentSequence().get(0).assignment());
         }
 
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context2 =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context2 =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(
                                 context2,
                                 ENABLE_PERIODIC_PARTITION_DISCOVERY,
@@ -290,12 +288,12 @@ public class PscEnumeratorTest {
         Properties properties = new Properties();
         String clientIdPrefix = "test-prefix";
         Integer defaultTimeoutMs = 99999;
-        properties.setProperty(KafkaSourceOptions.CLIENT_ID_PREFIX.key(), clientIdPrefix);
+        properties.setProperty(PscSourceOptions.CLIENT_ID_PREFIX.key(), clientIdPrefix);
         properties.setProperty(
-                ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, String.valueOf(defaultTimeoutMs));
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+                PscConfiguration.PSC_CONSUMER_POLL_TIMEOUT_MS, String.valueOf(defaultTimeoutMs));
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(
                                 context,
                                 ENABLE_PERIODIC_PARTITION_DISCOVERY,
@@ -321,13 +319,13 @@ public class PscEnumeratorTest {
 
     @Test
     public void testSnapshotState() throws Throwable {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator = createEnumerator(context, false)) {
+                PscSourceEnumerator enumerator = createEnumerator(context, false)) {
             enumerator.start();
 
             // No reader is registered, so the state should be empty
-            final KafkaSourceEnumState state1 = enumerator.snapshotState(1L);
+            final PscSourceEnumState state1 = enumerator.snapshotState(1L);
             assertTrue(state1.assignedPartitions().isEmpty());
 
             registerReader(context, enumerator, READER0);
@@ -335,7 +333,7 @@ public class PscEnumeratorTest {
             runOneTimePartitionDiscovery(context);
 
             // The state should contain splits assigned to READER0 and READER1
-            final KafkaSourceEnumState state2 = enumerator.snapshotState(1L);
+            final PscSourceEnumState state2 = enumerator.snapshotState(1L);
             verifySplitAssignmentWithPartitions(
                     getExpectedAssignments(
                             new HashSet<>(Arrays.asList(READER0, READER1)), PRE_EXISTING_TOPICS),
@@ -345,9 +343,9 @@ public class PscEnumeratorTest {
 
     @Test
     public void testPartitionChangeChecking() throws Throwable {
-        try (MockSplitEnumeratorContext<KafkaPartitionSplit> context =
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
                         new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
-                KafkaSourceEnumerator enumerator =
+                PscSourceEnumerator enumerator =
                         createEnumerator(context, DISABLE_PERIODIC_PARTITION_DISCOVERY)) {
             enumerator.start();
             runOneTimePartitionDiscovery(context);
@@ -358,21 +356,21 @@ public class PscEnumeratorTest {
             // All partitions of TOPIC1 and TOPIC2 should have been discovered now
 
             // Check partition change using only DYNAMIC_TOPIC_NAME-0
-            TopicPartition newPartition = new TopicPartition(DYNAMIC_TOPIC_NAME, 0);
-            Set<TopicPartition> fetchedPartitions = new HashSet<>();
+            TopicUriPartition newPartition = new TopicUriPartition(DYNAMIC_TOPIC_NAME, 0);
+            Set<TopicUriPartition> fetchedPartitions = new HashSet<>();
             fetchedPartitions.add(newPartition);
-            final KafkaSourceEnumerator.PartitionChange partitionChange =
+            final PscSourceEnumerator.PartitionChange partitionChange =
                     enumerator.getPartitionChange(fetchedPartitions);
 
             // Since enumerator never met DYNAMIC_TOPIC_NAME-0, it should be mark as a new partition
-            Set<TopicPartition> expectedNewPartitions = Collections.singleton(newPartition);
+            Set<TopicUriPartition> expectedNewPartitions = Collections.singleton(newPartition);
 
             // All existing topics are not in the fetchedPartitions, so they should be marked as
             // removed
-            Set<TopicPartition> expectedRemovedPartitions = new HashSet<>();
-            for (int i = 0; i < KafkaSourceTestEnv.NUM_PARTITIONS; i++) {
-                expectedRemovedPartitions.add(new TopicPartition(TOPIC1, i));
-                expectedRemovedPartitions.add(new TopicPartition(TOPIC2, i));
+            Set<TopicUriPartition> expectedRemovedPartitions = new HashSet<>();
+            for (int i = 0; i < PscSourceTestEnv.NUM_PARTITIONS; i++) {
+                expectedRemovedPartitions.add(new TopicUriPartition(TOPIC1, i));
+                expectedRemovedPartitions.add(new TopicUriPartition(TOPIC2, i));
             }
 
             assertEquals(expectedNewPartitions, partitionChange.getNewPartitions());
@@ -383,8 +381,8 @@ public class PscEnumeratorTest {
     // -------------- some common startup sequence ---------------
 
     private void startEnumeratorAndRegisterReaders(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> context,
-            KafkaSourceEnumerator enumerator)
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context,
+            PscSourceEnumerator enumerator)
             throws Throwable {
         // Start the enumerator and it should schedule a one time task to discover and assign
         // partitions.
@@ -407,15 +405,15 @@ public class PscEnumeratorTest {
 
     // ----------------------------------------
 
-    private KafkaSourceEnumerator createEnumerator(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> enumContext,
+    private PscSourceEnumerator createEnumerator(
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext,
             boolean enablePeriodicPartitionDiscovery) {
         return createEnumerator(
                 enumContext, enablePeriodicPartitionDiscovery, EXCLUDE_DYNAMIC_TOPIC);
     }
 
-    private KafkaSourceEnumerator createEnumerator(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> enumContext,
+    private PscSourceEnumerator createEnumerator(
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext,
             boolean enablePeriodicPartitionDiscovery,
             boolean includeDynamicTopic) {
         List<String> topics = new ArrayList<>(PRE_EXISTING_TOPICS);
@@ -434,31 +432,31 @@ public class PscEnumeratorTest {
      * Create the enumerator. For the purpose of the tests in this class we don't care about the
      * subscriber and offsets initializer, so just use arbitrary settings.
      */
-    private KafkaSourceEnumerator createEnumerator(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> enumContext,
+    private PscSourceEnumerator createEnumerator(
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext,
             boolean enablePeriodicPartitionDiscovery,
             Collection<String> topicsToSubscribe,
-            Set<TopicPartition> assignedPartitions,
+            Set<TopicUriPartition> assignedPartitions,
             Properties overrideProperties) {
         // Use a TopicPatternSubscriber so that no exception if a subscribed topic hasn't been
         // created yet.
         StringJoiner topicNameJoiner = new StringJoiner("|");
         topicsToSubscribe.forEach(topicNameJoiner::add);
         Pattern topicPattern = Pattern.compile(topicNameJoiner.toString());
-        KafkaSubscriber subscriber = KafkaSubscriber.getTopicPatternSubscriber(topicPattern);
+        PscSubscriber subscriber = PscSubscriber.getTopicPatternSubscriber(topicPattern);
 
         OffsetsInitializer startingOffsetsInitializer = OffsetsInitializer.earliest();
         OffsetsInitializer stoppingOffsetsInitializer = new NoStoppingOffsetsInitializer();
 
         Properties props =
-                new Properties(KafkaSourceTestEnv.getConsumerProperties(StringDeserializer.class));
-        KafkaSourceEnumerator.deepCopyProperties(overrideProperties, props);
+                new Properties(PscSourceTestEnv.getConsumerProperties(StringDeserializer.class));
+        PscSourceEnumerator.deepCopyProperties(overrideProperties, props);
         String partitionDiscoverInterval = enablePeriodicPartitionDiscovery ? "1" : "-1";
         props.setProperty(
-                KafkaSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
+                PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
                 partitionDiscoverInterval);
 
-        return new KafkaSourceEnumerator(
+        return new PscSourceEnumerator(
                 subscriber,
                 startingOffsetsInitializer,
                 stoppingOffsetsInitializer,
@@ -471,15 +469,15 @@ public class PscEnumeratorTest {
     // ---------------------
 
     private void registerReader(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> context,
-            KafkaSourceEnumerator enumerator,
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context,
+            PscSourceEnumerator enumerator,
             int reader) {
         context.registerReader(new ReaderInfo(reader, "location 0"));
         enumerator.addReader(reader);
     }
 
     private void verifyLastReadersAssignments(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> context,
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context,
             Collection<Integer> readers,
             Set<String> topics,
             int expectedAssignmentSeqSize) {
@@ -491,40 +489,40 @@ public class PscEnumeratorTest {
     }
 
     private void verifyAssignments(
-            Map<Integer, Set<TopicPartition>> expectedAssignments,
-            Map<Integer, List<KafkaPartitionSplit>> actualAssignments) {
+            Map<Integer, Set<TopicUriPartition>> expectedAssignments,
+            Map<Integer, List<PscTopicUriPartitionSplit>> actualAssignments) {
         actualAssignments.forEach(
                 (reader, splits) -> {
-                    Set<TopicPartition> expectedAssignmentsForReader =
+                    Set<TopicUriPartition> expectedAssignmentsForReader =
                             expectedAssignments.get(reader);
                     assertNotNull(expectedAssignmentsForReader);
                     assertEquals(expectedAssignmentsForReader.size(), splits.size());
-                    for (KafkaPartitionSplit split : splits) {
+                    for (PscTopicUriPartitionSplit split : splits) {
                         assertTrue(
-                                expectedAssignmentsForReader.contains(split.getTopicPartition()));
+                                expectedAssignmentsForReader.contains(split.getTopicUriPartition()));
                     }
                 });
     }
 
-    private Map<Integer, Set<TopicPartition>> getExpectedAssignments(
+    private Map<Integer, Set<TopicUriPartition>> getExpectedAssignments(
             Set<Integer> readers, Set<String> topics) {
-        Map<Integer, Set<TopicPartition>> expectedAssignments = new HashMap<>();
-        Set<TopicPartition> allPartitions = new HashSet<>();
+        Map<Integer, Set<TopicUriPartition>> expectedAssignments = new HashMap<>();
+        Set<TopicUriPartition> allPartitions = new HashSet<>();
 
         if (topics.contains(DYNAMIC_TOPIC_NAME)) {
             for (int i = 0; i < NUM_PARTITIONS_DYNAMIC_TOPIC; i++) {
-                allPartitions.add(new TopicPartition(DYNAMIC_TOPIC_NAME, i));
+                allPartitions.add(new TopicUriPartition(DYNAMIC_TOPIC_NAME, i));
             }
         }
 
-        for (TopicPartition tp : KafkaSourceTestEnv.getPartitionsForTopics(PRE_EXISTING_TOPICS)) {
-            if (topics.contains(tp.topic())) {
+        for (TopicUriPartition tp : PscSourceTestEnv.getPartitionsForTopics(PRE_EXISTING_TOPICS)) {
+            if (topics.contains(tp.getTopicUriAsString())) {
                 allPartitions.add(tp);
             }
         }
 
-        for (TopicPartition tp : allPartitions) {
-            int ownerReader = KafkaSourceEnumerator.getSplitOwner(tp, NUM_SUBTASKS);
+        for (TopicUriPartition tp : allPartitions) {
+            int ownerReader = PscSourceEnumerator.getSplitOwner(tp, NUM_SUBTASKS);
             if (readers.contains(ownerReader)) {
                 expectedAssignments.computeIfAbsent(ownerReader, r -> new HashSet<>()).add(tp);
             }
@@ -533,25 +531,25 @@ public class PscEnumeratorTest {
     }
 
     private void verifySplitAssignmentWithPartitions(
-            Map<Integer, Set<TopicPartition>> expectedAssignment,
-            Set<TopicPartition> actualTopicPartitions) {
-        final Set<TopicPartition> allTopicPartitionsFromAssignment = new HashSet<>();
+            Map<Integer, Set<TopicUriPartition>> expectedAssignment,
+            Set<TopicUriPartition> actualTopicUriPartitions) {
+        final Set<TopicUriPartition> allTopicUriPartitionsFromAssignment = new HashSet<>();
         expectedAssignment.forEach(
                 (reader, topicPartitions) ->
-                        allTopicPartitionsFromAssignment.addAll(topicPartitions));
-        assertEquals(allTopicPartitionsFromAssignment, actualTopicPartitions);
+                        allTopicUriPartitionsFromAssignment.addAll(topicPartitions));
+        assertEquals(allTopicUriPartitionsFromAssignment, actualTopicUriPartitions);
     }
 
-    private Set<TopicPartition> asEnumState(Map<Integer, List<KafkaPartitionSplit>> assignments) {
-        Set<TopicPartition> enumState = new HashSet<>();
+    private Set<TopicUriPartition> asEnumState(Map<Integer, List<PscTopicUriPartitionSplit>> assignments) {
+        Set<TopicUriPartition> enumState = new HashSet<>();
         assignments.forEach(
                 (reader, assignment) ->
-                        assignment.forEach(split -> enumState.add(split.getTopicPartition())));
+                        assignment.forEach(split -> enumState.add(split.getTopicUriPartition())));
         return enumState;
     }
 
     private void runOneTimePartitionDiscovery(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> context) throws Throwable {
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context) throws Throwable {
         // Fetch potential topic descriptions
         context.runNextOneTimeCallable();
         // Initialize offsets for discovered partitions
@@ -561,7 +559,7 @@ public class PscEnumeratorTest {
     }
 
     private void runPeriodicPartitionDiscovery(
-            MockSplitEnumeratorContext<KafkaPartitionSplit> context) throws Throwable {
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context) throws Throwable {
         // Fetch potential topic descriptions
         context.runPeriodicCallable(PARTITION_DISCOVERY_CALLABLE_INDEX);
         // Initialize offsets for discovered partitions
@@ -573,7 +571,7 @@ public class PscEnumeratorTest {
     // -------------- private class ----------------
 
     private static class BlockingClosingContext
-            extends MockSplitEnumeratorContext<KafkaPartitionSplit> {
+            extends MockSplitEnumeratorContext<PscTopicUriPartitionSplit> {
 
         public BlockingClosingContext(int parallelism) {
             super(parallelism);

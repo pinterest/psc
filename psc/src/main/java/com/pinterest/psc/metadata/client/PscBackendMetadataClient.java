@@ -1,7 +1,6 @@
 package com.pinterest.psc.metadata.client;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.ServiceDiscoveryConfig;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;

@@ -18,7 +18,6 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
-import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
@@ -54,7 +53,7 @@ public interface PscSubscriber extends Serializable {
 
     // ----------------- factory methods --------------
 
-    static PscSubscriber getTopicRnListSubscriber(List<String> topicUris) {
+    static PscSubscriber getTopicUriListSubscriber(List<String> topicUris) {
         return new PscTopicUriListSubscriber(topicUris);
     }
 

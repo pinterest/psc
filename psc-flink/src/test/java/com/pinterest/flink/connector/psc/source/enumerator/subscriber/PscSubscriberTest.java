@@ -18,13 +18,11 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
-import org.apache.flink.connector.kafka.source.enumerator.subscriber.KafkaSubscriber;
-import org.apache.flink.connector.kafka.testutils.KafkaSourceTestEnv;
+import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.util.ExceptionUtils;
 
 import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -37,54 +35,54 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/** Unit tests for {@link KafkaSubscriber}. */
+/** Unit tests for {@link PscSubscriber}. */
 public class PscSubscriberTest {
     private static final String TOPIC1 = "topic1";
     private static final String TOPIC2 = "pattern-topic";
-    private static final TopicPartition NON_EXISTING_TOPIC = new TopicPartition("removed", 0);
+    private static final TopicUriPartition NON_EXISTING_TOPIC = new TopicUriPartition("removed", 0);
     private static AdminClient adminClient;
 
     @BeforeClass
     public static void setup() throws Throwable {
-        KafkaSourceTestEnv.setup();
-        KafkaSourceTestEnv.createTestTopic(TOPIC1);
-        KafkaSourceTestEnv.createTestTopic(TOPIC2);
-        adminClient = KafkaSourceTestEnv.getAdminClient();
+        PscSourceTestEnv.setup();
+        PscSourceTestEnv.createTestTopic(TOPIC1);
+        PscSourceTestEnv.createTestTopic(TOPIC2);
+        adminClient = PscSourceTestEnv.getAdminClient();
     }
 
     @AfterClass
     public static void tearDown() throws Exception {
         adminClient.close();
-        KafkaSourceTestEnv.tearDown();
+        PscSourceTestEnv.tearDown();
     }
 
     @Test
     public void testTopicListSubscriber() {
         List<String> topics = Arrays.asList(TOPIC1, TOPIC2);
-        KafkaSubscriber subscriber =
-                KafkaSubscriber.getTopicListSubscriber(Arrays.asList(TOPIC1, TOPIC2));
-        final Set<TopicPartition> subscribedPartitions =
-                subscriber.getSubscribedTopicPartitions(adminClient);
+        PscSubscriber subscriber =
+                PscSubscriber.getTopicUriListSubscriber(Arrays.asList(TOPIC1, TOPIC2));
+        final Set<TopicUriPartition> subscribedPartitions =
+                subscriber.getSubscribedTopicUriPartitions(adminClient);
 
-        final Set<TopicPartition> expectedSubscribedPartitions =
-                new HashSet<>(KafkaSourceTestEnv.getPartitionsForTopics(topics));
+        final Set<TopicUriPartition> expectedSubscribedPartitions =
+                new HashSet<>(PscSourceTestEnv.getPartitionsForTopics(topics));
 
         assertEquals(expectedSubscribedPartitions, subscribedPartitions);
     }
 
     @Test
     public void testNonExistingTopic() {
-        final KafkaSubscriber subscriber =
-                KafkaSubscriber.getTopicListSubscriber(
-                        Collections.singletonList(NON_EXISTING_TOPIC.topic()));
+        final PscSubscriber subscriber =
+                PscSubscriber.getTopicUriListSubscriber(
+                        Collections.singletonList(NON_EXISTING_TOPIC.getTopicUriAsString()));
 
         Throwable t =
                 assertThrows(
                         RuntimeException.class,
-                        () -> subscriber.getSubscribedTopicPartitions(adminClient));
+                        () -> subscriber.getSubscribedTopicUriPartitions(adminClient));
 
         assertTrue(
                 "Exception should be caused by UnknownTopicOrPartitionException",
@@ -94,14 +92,14 @@ public class PscSubscriberTest {
 
     @Test
     public void testTopicPatternSubscriber() {
-        KafkaSubscriber subscriber =
-                KafkaSubscriber.getTopicPatternSubscriber(Pattern.compile("pattern.*"));
-        final Set<TopicPartition> subscribedPartitions =
-                subscriber.getSubscribedTopicPartitions(adminClient);
+        PscSubscriber subscriber =
+                PscSubscriber.getTopicPatternSubscriber(Pattern.compile("pattern.*"));
+        final Set<TopicUriPartition> subscribedPartitions =
+                subscriber.getSubscribedTopicUriPartitions(adminClient);
 
-        final Set<TopicPartition> expectedSubscribedPartitions =
+        final Set<TopicUriPartition> expectedSubscribedPartitions =
                 new HashSet<>(
-                        KafkaSourceTestEnv.getPartitionsForTopics(Collections.singleton(TOPIC2)));
+                        PscSourceTestEnv.getPartitionsForTopics(Collections.singleton(TOPIC2)));
 
         assertEquals(expectedSubscribedPartitions, subscribedPartitions);
     }
@@ -109,29 +107,29 @@ public class PscSubscriberTest {
     @Test
     public void testPartitionSetSubscriber() {
         List<String> topics = Arrays.asList(TOPIC1, TOPIC2);
-        Set<TopicPartition> partitions =
-                new HashSet<>(KafkaSourceTestEnv.getPartitionsForTopics(topics));
-        partitions.remove(new TopicPartition(TOPIC1, 1));
+        Set<TopicUriPartition> partitions =
+                new HashSet<>(PscSourceTestEnv.getPartitionsForTopics(topics));
+        partitions.remove(new TopicUriPartition(TOPIC1, 1));
 
-        KafkaSubscriber subscriber = KafkaSubscriber.getPartitionSetSubscriber(partitions);
+        PscSubscriber subscriber = PscSubscriber.getPartitionSetSubscriber(partitions);
 
-        final Set<TopicPartition> subscribedPartitions =
-                subscriber.getSubscribedTopicPartitions(adminClient);
+        final Set<TopicUriPartition> subscribedPartitions =
+                subscriber.getSubscribedTopicUriPartitions(adminClient);
 
         assertEquals(partitions, subscribedPartitions);
     }
 
     @Test
     public void testNonExistingPartition() {
-        TopicPartition nonExistingPartition = new TopicPartition(TOPIC1, Integer.MAX_VALUE);
-        final KafkaSubscriber subscriber =
-                KafkaSubscriber.getPartitionSetSubscriber(
+        TopicUriPartition nonExistingPartition = new TopicUriPartition(TOPIC1, Integer.MAX_VALUE);
+        final PscSubscriber subscriber =
+                PscSubscriber.getPartitionSetSubscriber(
                         Collections.singleton(nonExistingPartition));
 
         Throwable t =
                 assertThrows(
                         RuntimeException.class,
-                        () -> subscriber.getSubscribedTopicPartitions(adminClient));
+                        () -> subscriber.getSubscribedTopicUriPartitions(adminClient));
 
         assertEquals(
                 String.format(

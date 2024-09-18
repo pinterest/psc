@@ -18,6 +18,16 @@
 
 package com.pinterest.flink.connector.psc.source;
 
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.connector.psc.testutils.PscSourceExternalContextFactory;
+import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.exception.consumer.DeserializerException;
+import com.pinterest.psc.producer.PscProducerMessage;
+import com.pinterest.psc.serde.Deserializer;
+import com.pinterest.psc.serde.IntegerDeserializer;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.accumulators.ListAccumulator;
 import org.apache.flink.api.common.eventtime.Watermark;
@@ -27,11 +37,6 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
-import org.apache.flink.connector.kafka.testutils.KafkaSourceExternalContextFactory;
-import org.apache.flink.connector.kafka.testutils.KafkaSourceTestEnv;
 import org.apache.flink.connector.testframe.environment.MiniClusterTestEnvironment;
 import org.apache.flink.connector.testframe.external.DefaultContainerizedExternalSystem;
 import org.apache.flink.connector.testframe.junit.annotations.TestContext;
@@ -51,11 +56,6 @@ import org.apache.flink.util.CloseableIterator;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.DockerImageVersions;
 
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.Deserializer;
-import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
@@ -79,12 +79,12 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.apache.flink.connector.kafka.testutils.KafkaSourceExternalContext.SplitMappingMode.PARTITION;
-import static org.apache.flink.connector.kafka.testutils.KafkaSourceExternalContext.SplitMappingMode.TOPIC;
+import static com.pinterest.flink.connector.psc.testutils.PscSourceExternalContext.SplitMappingMode.PARTITION;
+import static com.pinterest.flink.connector.psc.testutils.PscSourceExternalContext.SplitMappingMode.TOPIC;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** Unite test class for {@link KafkaSource}. */
+/** Unite test class for {@link PscSource}. */
 public class PscSourceITCase {
     private static final String TOPIC1 = "topic1";
     private static final String TOPIC2 = "topic2";
@@ -94,16 +94,16 @@ public class PscSourceITCase {
     class KafkaSpecificTests {
         @BeforeAll
         public void setup() throws Throwable {
-            KafkaSourceTestEnv.setup();
-            KafkaSourceTestEnv.setupTopic(
-                    TOPIC1, true, true, KafkaSourceTestEnv::getRecordsForTopicWithoutTimestamp);
-            KafkaSourceTestEnv.setupTopic(
-                    TOPIC2, true, true, KafkaSourceTestEnv::getRecordsForTopicWithoutTimestamp);
+            PscSourceTestEnv.setup();
+            PscSourceTestEnv.setupTopic(
+                    TOPIC1, true, true, PscSourceTestEnv::getRecordsForTopicWithoutTimestamp);
+            PscSourceTestEnv.setupTopic(
+                    TOPIC2, true, true, PscSourceTestEnv::getRecordsForTopicWithoutTimestamp);
         }
 
         @AfterAll
         public void tearDown() throws Exception {
-            KafkaSourceTestEnv.tearDown();
+            PscSourceTestEnv.tearDown();
         }
 
         @ParameterizedTest(name = "Object reuse in deserializer = {arguments}")
@@ -112,20 +112,20 @@ public class PscSourceITCase {
             final String topic =
                     "testTimestamp-" + ThreadLocalRandom.current().nextLong(0, Long.MAX_VALUE);
             final long currentTimestamp = System.currentTimeMillis();
-            KafkaSourceTestEnv.createTestTopic(topic, 1, 1);
-            KafkaSourceTestEnv.produceToKafka(
+            PscSourceTestEnv.createTestTopic(topic, 1, 1);
+            PscSourceTestEnv.produceMessages(
                     Arrays.asList(
-                            new ProducerRecord<>(topic, 0, currentTimestamp + 1L, "key0", 0),
-                            new ProducerRecord<>(topic, 0, currentTimestamp + 2L, "key1", 1),
-                            new ProducerRecord<>(topic, 0, currentTimestamp + 3L, "key2", 2)));
+                            new PscProducerMessage<>(topic, 0, "key0", 0,currentTimestamp + 1L),
+                            new PscProducerMessage<>(topic, 0, "key1", 1, currentTimestamp + 2L),
+                            new PscProducerMessage<>(topic, 0, "key2", 2, currentTimestamp + 3L)));
 
-            KafkaSource<PartitionAndValue> source =
-                    KafkaSource.<PartitionAndValue>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
+            PscSource<PartitionAndValue> source =
+                    PscSource.<PartitionAndValue>builder()
+//                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testTimestampAndWatermark")
-                            .setTopics(topic)
+                            .setTopicUris(topic)
                             .setDeserializer(
-                                    new TestingKafkaRecordDeserializationSchema(enableObjectReuse))
+                                    new TestingPscRecordDeserializationSchema(enableObjectReuse))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
                             .build();
@@ -152,13 +152,13 @@ public class PscSourceITCase {
         @ParameterizedTest(name = "Object reuse in deserializer = {arguments}")
         @ValueSource(booleans = {false, true})
         public void testBasicRead(boolean enableObjectReuse) throws Exception {
-            KafkaSource<PartitionAndValue> source =
-                    KafkaSource.<PartitionAndValue>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
+            PscSource<PartitionAndValue> source =
+                    PscSource.<PartitionAndValue>builder()
+//                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testBasicRead")
-                            .setTopics(Arrays.asList(TOPIC1, TOPIC2))
+                            .setTopicUris(Arrays.asList(TOPIC1, TOPIC2))
                             .setDeserializer(
-                                    new TestingKafkaRecordDeserializationSchema(enableObjectReuse))
+                                    new TestingPscRecordDeserializationSchema(enableObjectReuse))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
                             .build();
@@ -172,13 +172,13 @@ public class PscSourceITCase {
 
         @Test
         public void testValueOnlyDeserializer() throws Exception {
-            KafkaSource<Integer> source =
-                    KafkaSource.<Integer>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
+            PscSource<Integer> source =
+                    PscSource.<Integer>builder()
+//                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testValueOnlyDeserializer")
-                            .setTopics(Arrays.asList(TOPIC1, TOPIC2))
+                            .setTopicUris(Arrays.asList(TOPIC1, TOPIC2))
                             .setDeserializer(
-                                    KafkaRecordDeserializationSchema.valueOnly(
+                                    PscRecordDeserializationSchema.valueOnly(
                                             IntegerDeserializer.class))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
@@ -202,10 +202,10 @@ public class PscSourceITCase {
                 // e.g. Values in partition 5 should be {5, 6, 7, 8, 9}
                 int expectedSum = 0;
                 for (int partition = 0;
-                        partition < KafkaSourceTestEnv.NUM_PARTITIONS;
+                        partition < PscSourceTestEnv.NUM_PARTITIONS;
                         partition++) {
                     for (int value = partition;
-                            value < KafkaSourceTestEnv.NUM_RECORDS_PER_PARTITION;
+                            value < PscSourceTestEnv.NUM_RECORDS_PER_PARTITION;
                             value++) {
                         expectedSum += value;
                     }
@@ -221,13 +221,13 @@ public class PscSourceITCase {
         @ParameterizedTest(name = "Object reuse in deserializer = {arguments}")
         @ValueSource(booleans = {false, true})
         public void testRedundantParallelism(boolean enableObjectReuse) throws Exception {
-            KafkaSource<PartitionAndValue> source =
-                    KafkaSource.<PartitionAndValue>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
+            PscSource<PartitionAndValue> source =
+                    PscSource.<PartitionAndValue>builder()
+//                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testRedundantParallelism")
-                            .setTopics(Collections.singletonList(TOPIC1))
+                            .setTopicUris(Collections.singletonList(TOPIC1))
                             .setDeserializer(
-                                    new TestingKafkaRecordDeserializationSchema(enableObjectReuse))
+                                    new TestingPscRecordDeserializationSchema(enableObjectReuse))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
                             .build();
@@ -237,7 +237,7 @@ public class PscSourceITCase {
             // Here we use (NUM_PARTITION + 1) as the parallelism, so one SourceReader will not be
             // assigned with any splits. The redundant SourceReader should also be signaled with a
             // NoMoreSplitsEvent and eventually spins to FINISHED state.
-            env.setParallelism(KafkaSourceTestEnv.NUM_PARTITIONS + 1);
+            env.setParallelism(PscSourceTestEnv.NUM_PARTITIONS + 1);
             DataStream<PartitionAndValue> stream =
                     env.fromSource(
                             source, WatermarkStrategy.noWatermarks(), "testRedundantParallelism");
@@ -247,12 +247,12 @@ public class PscSourceITCase {
         @ParameterizedTest(name = "Object reuse in deserializer = {arguments}")
         @ValueSource(booleans = {false, true})
         public void testBasicReadWithoutGroupId(boolean enableObjectReuse) throws Exception {
-            KafkaSource<PartitionAndValue> source =
-                    KafkaSource.<PartitionAndValue>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
-                            .setTopics(Arrays.asList(TOPIC1, TOPIC2))
+            PscSource<PartitionAndValue> source =
+                    PscSource.<PartitionAndValue>builder()
+//                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
+                            .setTopicUris(Arrays.asList(TOPIC1, TOPIC2))
                             .setDeserializer(
-                                    new TestingKafkaRecordDeserializationSchema(enableObjectReuse))
+                                    new TestingPscRecordDeserializationSchema(enableObjectReuse))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
                             .build();
@@ -270,22 +270,22 @@ public class PscSourceITCase {
         @Test
         public void testPerPartitionWatermark() throws Throwable {
             String watermarkTopic = "watermarkTestTopic-" + UUID.randomUUID();
-            KafkaSourceTestEnv.createTestTopic(watermarkTopic, 2, 1);
-            List<ProducerRecord<String, Integer>> records =
+            PscSourceTestEnv.createTestTopic(watermarkTopic, 2, 1);
+            List<PscProducerMessage<String, Integer>> records =
                     Arrays.asList(
-                            new ProducerRecord<>(watermarkTopic, 0, 100L, null, 100),
-                            new ProducerRecord<>(watermarkTopic, 0, 200L, null, 200),
-                            new ProducerRecord<>(watermarkTopic, 0, 300L, null, 300),
-                            new ProducerRecord<>(watermarkTopic, 1, 150L, null, 150),
-                            new ProducerRecord<>(watermarkTopic, 1, 250L, null, 250),
-                            new ProducerRecord<>(watermarkTopic, 1, 350L, null, 350));
-            KafkaSourceTestEnv.produceToKafka(records);
-            KafkaSource<PartitionAndValue> source =
-                    KafkaSource.<PartitionAndValue>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
-                            .setTopics(watermarkTopic)
+                            new PscProducerMessage<>(watermarkTopic, 0, null, 100, 100L),
+                            new PscProducerMessage<>(watermarkTopic, 0, null, 200, 200L),
+                            new PscProducerMessage<>(watermarkTopic, 0, null, 300, 300L),
+                            new PscProducerMessage<>(watermarkTopic, 1, null, 150, 150L),
+                            new PscProducerMessage<>(watermarkTopic, 1, null, 250, 250L),
+                            new PscProducerMessage<>(watermarkTopic, 1, null, 350, 350L));
+            PscSourceTestEnv.produceMessages(records);
+            PscSource<PartitionAndValue> source =
+                    PscSource.<PartitionAndValue>builder()
+//                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
+                            .setTopicUris(watermarkTopic)
                             .setGroupId("watermark-test")
-                            .setDeserializer(new TestingKafkaRecordDeserializationSchema(false))
+                            .setDeserializer(new TestingPscRecordDeserializationSchema(false))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
                             .build();
@@ -317,13 +317,13 @@ public class PscSourceITCase {
         @Test
         public void testConsumingEmptyTopic() throws Throwable {
             String emptyTopic = "emptyTopic-" + UUID.randomUUID();
-            KafkaSourceTestEnv.createTestTopic(emptyTopic, 3, 1);
-            KafkaSource<PartitionAndValue> source =
-                    KafkaSource.<PartitionAndValue>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
-                            .setTopics(emptyTopic)
+            PscSourceTestEnv.createTestTopic(emptyTopic, 3, 1);
+            PscSource<PartitionAndValue> source =
+                    PscSource.<PartitionAndValue>builder()
+//                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
+                            .setTopicUris(emptyTopic)
                             .setGroupId("empty-topic-test")
-                            .setDeserializer(new TestingKafkaRecordDeserializationSchema(false))
+                            .setDeserializer(new TestingPscRecordDeserializationSchema(false))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
                             .build();
@@ -342,24 +342,24 @@ public class PscSourceITCase {
         @Test
         public void testConsumingTopicWithEmptyPartitions() throws Throwable {
             String topicWithEmptyPartitions = "topicWithEmptyPartitions-" + UUID.randomUUID();
-            KafkaSourceTestEnv.createTestTopic(
-                    topicWithEmptyPartitions, KafkaSourceTestEnv.NUM_PARTITIONS, 1);
-            List<ProducerRecord<String, Integer>> records =
-                    KafkaSourceTestEnv.getRecordsForTopicWithoutTimestamp(topicWithEmptyPartitions);
+            PscSourceTestEnv.createTestTopic(
+                    topicWithEmptyPartitions, PscSourceTestEnv.NUM_PARTITIONS, 1);
+            List<PscProducerMessage<String, Integer>> records =
+                    PscSourceTestEnv.getRecordsForTopicWithoutTimestamp(topicWithEmptyPartitions);
             // Only keep records in partition 5
             int partitionWithRecords = 5;
-            records.removeIf(record -> record.partition() != partitionWithRecords);
-            KafkaSourceTestEnv.produceToKafka(records);
-            KafkaSourceTestEnv.setupEarliestOffsets(
+            records.removeIf(record -> record.getPartition() != partitionWithRecords);
+            PscSourceTestEnv.produceMessages(records);
+            PscSourceTestEnv.setupEarliestOffsets(
                     Collections.singletonList(
-                            new TopicPartition(topicWithEmptyPartitions, partitionWithRecords)));
+                            new TopicUriPartition(topicWithEmptyPartitions, partitionWithRecords)));
 
-            KafkaSource<PartitionAndValue> source =
-                    KafkaSource.<PartitionAndValue>builder()
-                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
-                            .setTopics(topicWithEmptyPartitions)
+            PscSource<PartitionAndValue> source =
+                    PscSource.<PartitionAndValue>builder()
+//                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
+                            .setTopicUris(topicWithEmptyPartitions)
                             .setGroupId("topic-with-empty-partition-test")
-                            .setDeserializer(new TestingKafkaRecordDeserializationSchema(false))
+                            .setDeserializer(new TestingPscRecordDeserializationSchema(false))
                             .setStartingOffsets(OffsetsInitializer.earliest())
                             .setBounded(OffsetsInitializer.latest())
                             .build();
@@ -398,14 +398,14 @@ public class PscSourceITCase {
         // kinds of external contexts.
         @SuppressWarnings("unused")
         @TestContext
-        KafkaSourceExternalContextFactory singleTopic =
-                new KafkaSourceExternalContextFactory(
+        PscSourceExternalContextFactory singleTopic =
+                new PscSourceExternalContextFactory(
                         kafka.getContainer(), Collections.emptyList(), PARTITION);
 
         @SuppressWarnings("unused")
         @TestContext
-        KafkaSourceExternalContextFactory multipleTopic =
-                new KafkaSourceExternalContextFactory(
+        PscSourceExternalContextFactory multipleTopic =
+                new PscSourceExternalContextFactory(
                         kafka.getContainer(), Collections.emptyList(), TOPIC);
     }
 
@@ -418,40 +418,40 @@ public class PscSourceITCase {
 
         public PartitionAndValue() {}
 
-        private PartitionAndValue(TopicPartition tp, int value) {
+        private PartitionAndValue(TopicUriPartition tp, int value) {
             this.tp = tp.toString();
             this.value = value;
         }
     }
 
-    private static class TestingKafkaRecordDeserializationSchema
-            implements KafkaRecordDeserializationSchema<PartitionAndValue> {
+    private static class TestingPscRecordDeserializationSchema
+            implements PscRecordDeserializationSchema<PartitionAndValue> {
         private static final long serialVersionUID = -3765473065594331694L;
         private transient Deserializer<Integer> deserializer;
         private final boolean enableObjectReuse;
         private final PartitionAndValue reuse = new PartitionAndValue();
 
-        public TestingKafkaRecordDeserializationSchema(boolean enableObjectReuse) {
+        public TestingPscRecordDeserializationSchema(boolean enableObjectReuse) {
             this.enableObjectReuse = enableObjectReuse;
         }
 
         @Override
         public void deserialize(
-                ConsumerRecord<byte[], byte[]> record, Collector<PartitionAndValue> collector)
-                throws IOException {
+                PscConsumerMessage<byte[], byte[]> record, Collector<PartitionAndValue> collector)
+                throws IOException, DeserializerException {
             if (deserializer == null) {
                 deserializer = new IntegerDeserializer();
             }
 
             if (enableObjectReuse) {
-                reuse.tp = new TopicPartition(record.topic(), record.partition()).toString();
-                reuse.value = deserializer.deserialize(record.topic(), record.value());
+                reuse.tp = record.getMessageId().getTopicUriPartition().toString();
+                reuse.value = deserializer.deserialize(record.getValue());
                 collector.collect(reuse);
             } else {
                 collector.collect(
                         new PartitionAndValue(
-                                new TopicPartition(record.topic(), record.partition()),
-                                deserializer.deserialize(record.topic(), record.value())));
+                                record.getMessageId().getTopicUriPartition(),
+                                deserializer.deserialize(record.getValue())));
             }
         }
 

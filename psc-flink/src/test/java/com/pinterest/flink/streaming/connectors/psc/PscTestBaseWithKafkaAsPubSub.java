@@ -18,10 +18,15 @@
 package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.producer.Callback;
+import com.pinterest.psc.producer.PscProducer;
+import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.IntegerDeserializer;
+import com.pinterest.psc.serde.Serializer;
 import org.apache.flink.client.program.ProgramInvocationException;
 import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.MemorySize;
@@ -33,6 +38,9 @@ import org.apache.flink.streaming.util.TestStreamEnvironment;
 import org.apache.flink.test.util.SuccessException;
 import org.apache.flink.util.InstantiationUtil;
 import org.apache.flink.util.TestLogger;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -48,6 +56,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.fail;
 
@@ -208,12 +217,41 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
         }
     }
 
-    protected static void createTestTopic(String topicUri, int numberOfPartitions, int replicationFactor) {
+    public static void createTestTopic(String topicUri, int numberOfPartitions, int replicationFactor) {
         pscTestEnvWithKafka.createTestTopic(topicUri, numberOfPartitions, replicationFactor);
     }
 
     protected static void deleteTestTopic(String topic) {
         pscTestEnvWithKafka.deleteTestTopic(topic);
+    }
+
+    public static <K, V> void produceMessages(Collection<PscProducerMessage<K, V>> messages,
+                                              Class<? extends Serializer<K>> keySerializerClass,
+                                              Class<? extends Serializer<V>> valueSerializerClass) throws Throwable {
+        Properties props = new Properties();
+        props.putAll(standardPscProducerConfiguration);
+        props.putAll(pscTestEnvWithKafka.getIdempotentProducerConfig());
+        props.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, keySerializerClass.getName());
+        props.setProperty(
+                PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, valueSerializerClass.getName());
+
+        AtomicReference<Throwable> sendingError = new AtomicReference<>();
+        Callback callback =
+                (metadata, exception) -> {
+                    if (exception != null) {
+                        if (!sendingError.compareAndSet(null, exception)) {
+                            sendingError.get().addSuppressed(exception);
+                        }
+                    }
+                };
+        try (PscProducer<K, V> producer = new PscProducer<>(PscConfigurationUtils.propertiesToPscConfiguration(props))) {
+            for (PscProducerMessage<K, V> record : messages) {
+                producer.send(record, callback);
+            }
+        }
+        if (sendingError.get() != null) {
+            throw sendingError.get();
+        }
     }
 
     /**

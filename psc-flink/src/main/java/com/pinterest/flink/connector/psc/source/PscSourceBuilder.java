@@ -144,7 +144,7 @@ public class PscSourceBuilder<OUT> {
      */
     public PscSourceBuilder<OUT> setTopicUris(List<String> topicUris) {
         ensureSubscriberIsNull("topics");
-        subscriber = PscSubscriber.getTopicRnListSubscriber(topicUris);
+        subscriber = PscSubscriber.getTopicUriListSubscriber(topicUris);
         return this;
     }
 

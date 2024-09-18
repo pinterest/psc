@@ -3,6 +3,7 @@ package com.pinterest.psc.consumer;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.PscMessageTags;
+import com.pinterest.psc.common.TopicUriPartition;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,6 +31,19 @@ public class PscConsumerMessage<K, V> {
         this.key = key;
         this.value = value;
         this.publishTimestamp = publishTimestamp;
+    }
+
+    public PscConsumerMessage(
+            String topicUriString,
+            int partition,
+            long offset,
+            K key,
+            V value
+    ) {
+        this();
+        this.messageId = new MessageId(new TopicUriPartition(topicUriString, partition), partition, offset);
+        this.key = key;
+        this.value = value;
     }
 
     public PscConsumerMessage(PscConsumerMessage<K, V> other) {

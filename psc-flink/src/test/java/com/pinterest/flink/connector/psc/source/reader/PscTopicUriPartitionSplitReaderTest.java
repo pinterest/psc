@@ -18,14 +18,22 @@
 
 package com.pinterest.flink.connector.psc.source.reader;
 
+import com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.exception.ClientException;
+import com.pinterest.psc.exception.consumer.ConsumerException;
+import com.pinterest.psc.exception.consumer.DeserializerException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.serde.ByteArrayDeserializer;
+import com.pinterest.psc.serde.IntegerDeserializer;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsAddition;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
-import org.apache.flink.connector.kafka.source.metrics.KafkaSourceReaderMetrics;
-import org.apache.flink.connector.kafka.source.reader.KafkaPartitionSplitReader;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
-import org.apache.flink.connector.kafka.testutils.KafkaSourceTestEnv;
 import org.apache.flink.connector.testutils.source.reader.TestingReaderContext;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.Gauge;
@@ -37,12 +45,6 @@ import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
 
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
-import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.MatcherAssert;
 import org.hamcrest.Matchers;
@@ -69,7 +71,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.apache.flink.connector.kafka.testutils.KafkaSourceTestEnv.NUM_RECORDS_PER_PARTITION;
+import static com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv.NUM_RECORDS_PER_PARTITION;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -77,50 +79,50 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Unit tests for {@link KafkaPartitionSplitReader}. */
+/** Unit tests for {@link PscTopicUriPartitionSplitReader}. */
 public class PscTopicUriPartitionSplitReaderTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String TOPIC1 = "topic1";
     private static final String TOPIC2 = "topic2";
 
-    private static Map<Integer, Map<String, KafkaPartitionSplit>> splitsByOwners;
-    private static Map<TopicPartition, Long> earliestOffsets;
+    private static Map<Integer, Map<String, PscTopicUriPartitionSplit>> splitsByOwners;
+    private static Map<TopicUriPartition, Long> earliestOffsets;
 
     private final IntegerDeserializer deserializer = new IntegerDeserializer();
 
     @BeforeAll
     public static void setup() throws Throwable {
-        KafkaSourceTestEnv.setup();
-        KafkaSourceTestEnv.setupTopic(TOPIC1, true, true, KafkaSourceTestEnv::getRecordsForTopic);
-        KafkaSourceTestEnv.setupTopic(TOPIC2, true, true, KafkaSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setup();
+        PscSourceTestEnv.setupTopic(TOPIC1, true, true, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setupTopic(TOPIC2, true, true, PscSourceTestEnv::getRecordsForTopic);
         splitsByOwners =
-                KafkaSourceTestEnv.getSplitsByOwners(Arrays.asList(TOPIC1, TOPIC2), NUM_SUBTASKS);
+                PscSourceTestEnv.getSplitsByOwners(Arrays.asList(TOPIC1, TOPIC2), NUM_SUBTASKS);
         earliestOffsets =
-                KafkaSourceTestEnv.getEarliestOffsets(
-                        KafkaSourceTestEnv.getPartitionsForTopics(Arrays.asList(TOPIC1, TOPIC2)));
+                PscSourceTestEnv.getEarliestOffsets(
+                        PscSourceTestEnv.getPartitionsForTopics(Arrays.asList(TOPIC1, TOPIC2)));
     }
 
     @AfterAll
     public static void tearDown() throws Exception {
-        KafkaSourceTestEnv.tearDown();
+        PscSourceTestEnv.tearDown();
     }
 
     @Test
     public void testHandleSplitChangesAndFetch() throws Exception {
-        KafkaPartitionSplitReader reader = createReader();
+        PscTopicUriPartitionSplitReader reader = createReader();
         assignSplitsAndFetchUntilFinish(reader, 0);
         assignSplitsAndFetchUntilFinish(reader, 1);
     }
 
     @Test
     public void testWakeUp() throws Exception {
-        KafkaPartitionSplitReader reader = createReader();
-        TopicPartition nonExistingTopicPartition = new TopicPartition("NotExist", 0);
+        PscTopicUriPartitionSplitReader reader = createReader();
+        TopicUriPartition nonExistingTopicPartition = new TopicUriPartition("NotExist", 0);
         assignSplits(
                 reader,
                 Collections.singletonMap(
-                        KafkaPartitionSplit.toSplitId(nonExistingTopicPartition),
-                        new KafkaPartitionSplit(nonExistingTopicPartition, 0)));
+                        PscTopicUriPartitionSplit.toSplitId(nonExistingTopicPartition),
+                        new PscTopicUriPartitionSplit(nonExistingTopicPartition, 0)));
         AtomicReference<Throwable> error = new AtomicReference<>();
         Thread t =
                 new Thread(
@@ -142,8 +144,8 @@ public class PscTopicUriPartitionSplitReaderTest {
     }
 
     @Test
-    public void testWakeupThenAssign() throws IOException {
-        KafkaPartitionSplitReader reader = createReader();
+    public void testWakeupThenAssign() throws IOException, ConfigurationException, ClientException {
+        PscTopicUriPartitionSplitReader reader = createReader();
         // Assign splits with records
         assignSplits(reader, splitsByOwners.get(0));
         // Run a fetch operation, and it should not block
@@ -151,12 +153,12 @@ public class PscTopicUriPartitionSplitReaderTest {
         // Wake the reader up then assign a new split. This assignment should not throw
         // WakeupException.
         reader.wakeUp();
-        TopicPartition tp = new TopicPartition(TOPIC1, 0);
+        TopicUriPartition tp = new TopicUriPartition(TOPIC1, 0);
         assignSplits(
                 reader,
                 Collections.singletonMap(
-                        KafkaPartitionSplit.toSplitId(tp),
-                        new KafkaPartitionSplit(tp, KafkaPartitionSplit.EARLIEST_OFFSET)));
+                        PscTopicUriPartitionSplit.toSplitId(tp),
+                        new PscTopicUriPartitionSplit(tp, PscTopicUriPartitionSplit.EARLIEST_OFFSET)));
     }
 
     @Test
@@ -165,7 +167,7 @@ public class PscTopicUriPartitionSplitReaderTest {
                 UnregisteredMetricGroups.createUnregisteredOperatorMetricGroup();
         final Counter numBytesInCounter =
                 operatorMetricGroup.getIOMetricGroup().getNumBytesInCounter();
-        KafkaPartitionSplitReader reader =
+        PscTopicUriPartitionSplitReader reader =
                 createReader(
                         new Properties(),
                         InternalSourceReaderMetricGroup.wrap(operatorMetricGroup));
@@ -173,7 +175,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         reader.handleSplitsChanges(
                 new SplitsAddition<>(
                         Collections.singletonList(
-                                new KafkaPartitionSplit(new TopicPartition(TOPIC1, 0), 0L))));
+                                new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC1, 0), 0L))));
         reader.fetch();
         final long latestNumBytesIn = numBytesInCounter.getCount();
         // Since it's hard to know the exact number of bytes consumed, we just check if it is
@@ -183,7 +185,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         reader.handleSplitsChanges(
                 new SplitsAddition<>(
                         Collections.singletonList(
-                                new KafkaPartitionSplit(new TopicPartition(TOPIC2, 0), 0L))));
+                                new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC2, 0), 0L))));
         reader.fetch();
         // We just check if numBytesIn is increasing
         assertThat(numBytesInCounter.getCount(), Matchers.greaterThan(latestNumBytesIn));
@@ -196,15 +198,15 @@ public class PscTopicUriPartitionSplitReaderTest {
         final String topic1Name = TOPIC1 + topicSuffix;
         final String topic2Name = TOPIC2 + topicSuffix;
         if (!topicSuffix.isEmpty()) {
-            KafkaSourceTestEnv.setupTopic(
-                    topic1Name, true, true, KafkaSourceTestEnv::getRecordsForTopic);
-            KafkaSourceTestEnv.setupTopic(
-                    topic2Name, true, true, KafkaSourceTestEnv::getRecordsForTopic);
+            PscSourceTestEnv.setupTopic(
+                    topic1Name, true, true, PscSourceTestEnv::getRecordsForTopic);
+            PscSourceTestEnv.setupTopic(
+                    topic2Name, true, true, PscSourceTestEnv::getRecordsForTopic);
         }
         MetricListener metricListener = new MetricListener();
         final Properties props = new Properties();
-        props.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "1");
-        KafkaPartitionSplitReader reader =
+        props.setProperty(PscConfiguration.PSC_CONSUMER_POLL_MESSAGES_MAX, "1");
+        PscTopicUriPartitionSplitReader reader =
                 createReader(
                         props,
                         InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
@@ -212,7 +214,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         reader.handleSplitsChanges(
                 new SplitsAddition<>(
                         Collections.singletonList(
-                                new KafkaPartitionSplit(new TopicPartition(topic1Name, 0), 0L))));
+                                new PscTopicUriPartitionSplit(new TopicUriPartition(topic1Name, 0), 0L))));
         // pendingRecords should have not been registered because of lazily registration
         assertFalse(metricListener.getGauge(MetricNames.PENDING_RECORDS).isPresent());
         // Trigger first fetch
@@ -231,7 +233,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         reader.handleSplitsChanges(
                 new SplitsAddition<>(
                         Collections.singletonList(
-                                new KafkaPartitionSplit(new TopicPartition(topic2Name, 0), 0L))));
+                                new PscTopicUriPartitionSplit(new TopicUriPartition(topic2Name, 0), 0L))));
         // Validate pendingRecords
         for (int i = 0; i < NUM_RECORDS_PER_PARTITION; i++) {
             reader.fetch();
@@ -241,29 +243,29 @@ public class PscTopicUriPartitionSplitReaderTest {
 
     @Test
     public void testAssignEmptySplit() throws Exception {
-        KafkaPartitionSplitReader reader = createReader();
-        final KafkaPartitionSplit normalSplit =
-                new KafkaPartitionSplit(
-                        new TopicPartition(TOPIC1, 0),
-                        KafkaPartitionSplit.EARLIEST_OFFSET,
-                        KafkaPartitionSplit.NO_STOPPING_OFFSET);
-        final KafkaPartitionSplit emptySplit =
-                new KafkaPartitionSplit(
-                        new TopicPartition(TOPIC2, 0),
-                        KafkaPartitionSplit.LATEST_OFFSET,
-                        KafkaPartitionSplit.LATEST_OFFSET);
+        PscTopicUriPartitionSplitReader reader = createReader();
+        final PscTopicUriPartitionSplit normalSplit =
+                new PscTopicUriPartitionSplit(
+                        new TopicUriPartition(TOPIC1, 0),
+                        PscTopicUriPartitionSplit.EARLIEST_OFFSET,
+                        PscTopicUriPartitionSplit.NO_STOPPING_OFFSET);
+        final PscTopicUriPartitionSplit emptySplit =
+                new PscTopicUriPartitionSplit(
+                        new TopicUriPartition(TOPIC2, 0),
+                        PscTopicUriPartitionSplit.LATEST_OFFSET,
+                        PscTopicUriPartitionSplit.LATEST_OFFSET);
         reader.handleSplitsChanges(new SplitsAddition<>(Arrays.asList(normalSplit, emptySplit)));
 
         // Fetch and check empty splits is added to finished splits
-        RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>> recordsWithSplitIds = reader.fetch();
+        RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> recordsWithSplitIds = reader.fetch();
         assertTrue(recordsWithSplitIds.finishedSplits().contains(emptySplit.splitId()));
 
         // Assign another valid split to avoid consumer.poll() blocking
-        final KafkaPartitionSplit anotherNormalSplit =
-                new KafkaPartitionSplit(
-                        new TopicPartition(TOPIC1, 1),
-                        KafkaPartitionSplit.EARLIEST_OFFSET,
-                        KafkaPartitionSplit.NO_STOPPING_OFFSET);
+        final PscTopicUriPartitionSplit anotherNormalSplit =
+                new PscTopicUriPartitionSplit(
+                        new TopicUriPartition(TOPIC1, 1),
+                        PscTopicUriPartitionSplit.EARLIEST_OFFSET,
+                        PscTopicUriPartitionSplit.NO_STOPPING_OFFSET);
         reader.handleSplitsChanges(
                 new SplitsAddition<>(Collections.singletonList(anotherNormalSplit)));
 
@@ -273,26 +275,26 @@ public class PscTopicUriPartitionSplitReaderTest {
     }
 
     @Test
-    public void testUsingCommittedOffsetsWithNoneOffsetResetStrategy() {
+    public void testUsingCommittedOffsetsWithNoneOffsetResetStrategy() throws ConfigurationException, ClientException {
         final Properties props = new Properties();
         props.setProperty(
-                ConsumerConfig.GROUP_ID_CONFIG, "using-committed-offset-with-none-offset-reset");
-        KafkaPartitionSplitReader reader =
+                PscConfiguration.PSC_CONSUMER_GROUP_ID, "using-committed-offset-with-none-offset-reset");
+        PscTopicUriPartitionSplitReader reader =
                 createReader(props, UnregisteredMetricsGroup.createSourceReaderMetricGroup());
         // We expect that there is a committed offset, but the group does not actually have a
         // committed offset, and the offset reset strategy is none (Throw exception to the consumer
         // if no previous offset is found for the consumer's group);
         // So it is expected to throw an exception that missing the committed offset.
-        final KafkaException undefinedOffsetException =
+        final ConsumerException undefinedOffsetException =
                 Assertions.assertThrows(
-                        KafkaException.class,
+                        ConsumerException.class,
                         () ->
                                 reader.handleSplitsChanges(
                                         new SplitsAddition<>(
                                                 Collections.singletonList(
-                                                        new KafkaPartitionSplit(
-                                                                new TopicPartition(TOPIC1, 0),
-                                                                KafkaPartitionSplit
+                                                        new PscTopicUriPartitionSplit(
+                                                                new TopicUriPartition(TOPIC1, 0),
+                                                                PscTopicUriPartitionSplit
                                                                         .COMMITTED_OFFSET)))));
         MatcherAssert.assertThat(
                 undefinedOffsetException.getMessage(),
@@ -302,19 +304,19 @@ public class PscTopicUriPartitionSplitReaderTest {
     @ParameterizedTest
     @CsvSource({"earliest, 0", "latest, 10"})
     public void testUsingCommittedOffsetsWithEarliestOrLatestOffsetResetStrategy(
-            String offsetResetStrategy, Long expectedOffset) {
+            String offsetResetStrategy, Long expectedOffset) throws ClientException, ConfigurationException {
         final Properties props = new Properties();
-        props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, offsetResetStrategy);
-        props.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "using-committed-offset");
-        KafkaPartitionSplitReader reader =
+        props.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, offsetResetStrategy);
+        props.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "using-committed-offset");
+        PscTopicUriPartitionSplitReader reader =
                 createReader(props, UnregisteredMetricsGroup.createSourceReaderMetricGroup());
         // Add committed offset split
-        final TopicPartition partition = new TopicPartition(TOPIC1, 0);
+        final TopicUriPartition partition = new TopicUriPartition(TOPIC1, 0);
         reader.handleSplitsChanges(
                 new SplitsAddition<>(
                         Collections.singletonList(
-                                new KafkaPartitionSplit(
-                                        partition, KafkaPartitionSplit.COMMITTED_OFFSET))));
+                                new PscTopicUriPartitionSplit(
+                                        partition, PscTopicUriPartitionSplit.COMMITTED_OFFSET))));
 
         // Verify that the current offset of the consumer is the expected offset
         assertEquals(expectedOffset, reader.consumer().position(partition));
@@ -322,26 +324,26 @@ public class PscTopicUriPartitionSplitReaderTest {
 
     // ------------------
 
-    private void assignSplitsAndFetchUntilFinish(KafkaPartitionSplitReader reader, int readerId)
-            throws IOException {
-        Map<String, KafkaPartitionSplit> splits =
+    private void assignSplitsAndFetchUntilFinish(PscTopicUriPartitionSplitReader reader, int readerId)
+            throws IOException, DeserializerException {
+        Map<String, PscTopicUriPartitionSplit> splits =
                 assignSplits(reader, splitsByOwners.get(readerId));
 
         Map<String, Integer> numConsumedRecords = new HashMap<>();
         Set<String> finishedSplits = new HashSet<>();
         while (finishedSplits.size() < splits.size()) {
-            RecordsWithSplitIds<ConsumerRecord<byte[], byte[]>> recordsBySplitIds = reader.fetch();
+            RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> recordsBySplitIds = reader.fetch();
             String splitId = recordsBySplitIds.nextSplit();
             while (splitId != null) {
                 // Collect the records in this split.
-                List<ConsumerRecord<byte[], byte[]>> splitFetch = new ArrayList<>();
-                ConsumerRecord<byte[], byte[]> record;
+                List<PscConsumerMessage<byte[], byte[]>> splitFetch = new ArrayList<>();
+                PscConsumerMessage<byte[], byte[]> record;
                 while ((record = recordsBySplitIds.nextRecordFromSplit()) != null) {
                     splitFetch.add(record);
                 }
 
                 // Compute the expected next offset for the split.
-                TopicPartition tp = splits.get(splitId).getTopicPartition();
+                TopicUriPartition tp = splits.get(splitId).getTopicUriPartition();
                 long earliestOffset = earliestOffsets.get(tp);
                 int numConsumedRecordsForSplit = numConsumedRecords.getOrDefault(splitId, 0);
                 long expectedStartingOffset = earliestOffset + numConsumedRecordsForSplit;
@@ -363,7 +365,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         // Verify the number of records consumed from each split.
         numConsumedRecords.forEach(
                 (splitId, recordCount) -> {
-                    TopicPartition tp = splits.get(splitId).getTopicPartition();
+                    TopicUriPartition tp = splits.get(splitId).getTopicUriPartition();
                     long earliestOffset = earliestOffsets.get(tp);
                     long expectedRecordCount = NUM_RECORDS_PER_PARTITION - earliestOffset;
                     assertEquals(
@@ -377,48 +379,48 @@ public class PscTopicUriPartitionSplitReaderTest {
 
     // ------------------
 
-    private KafkaPartitionSplitReader createReader() {
+    private PscTopicUriPartitionSplitReader createReader() throws ConfigurationException, ClientException {
         return createReader(
                 new Properties(), UnregisteredMetricsGroup.createSourceReaderMetricGroup());
     }
 
-    private KafkaPartitionSplitReader createReader(
-            Properties additionalProperties, SourceReaderMetricGroup sourceReaderMetricGroup) {
+    private PscTopicUriPartitionSplitReader createReader(
+            Properties additionalProperties, SourceReaderMetricGroup sourceReaderMetricGroup) throws ConfigurationException, ClientException {
         Properties props = new Properties();
-        props.putAll(KafkaSourceTestEnv.getConsumerProperties(ByteArrayDeserializer.class));
-        props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none");
+        props.putAll(PscSourceTestEnv.getConsumerProperties(ByteArrayDeserializer.class));
+        props.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, "none");
         if (!additionalProperties.isEmpty()) {
             props.putAll(additionalProperties);
         }
-        KafkaSourceReaderMetrics kafkaSourceReaderMetrics =
-                new KafkaSourceReaderMetrics(sourceReaderMetricGroup);
-        return new KafkaPartitionSplitReader(
+        PscSourceReaderMetrics pscSourceReaderMetrics =
+                new PscSourceReaderMetrics(sourceReaderMetricGroup);
+        return new PscTopicUriPartitionSplitReader(
                 props,
                 new TestingReaderContext(new Configuration(), sourceReaderMetricGroup),
-                kafkaSourceReaderMetrics);
+                pscSourceReaderMetrics);
     }
 
-    private Map<String, KafkaPartitionSplit> assignSplits(
-            KafkaPartitionSplitReader reader, Map<String, KafkaPartitionSplit> splits) {
-        SplitsChange<KafkaPartitionSplit> splitsChange =
+    private Map<String, PscTopicUriPartitionSplit> assignSplits(
+            PscTopicUriPartitionSplitReader reader, Map<String, PscTopicUriPartitionSplit> splits) {
+        SplitsChange<PscTopicUriPartitionSplit> splitsChange =
                 new SplitsAddition<>(new ArrayList<>(splits.values()));
         reader.handleSplitsChanges(splitsChange);
         return splits;
     }
 
     private boolean verifyConsumed(
-            final KafkaPartitionSplit split,
+            final PscTopicUriPartitionSplit split,
             final long expectedStartingOffset,
-            final Collection<ConsumerRecord<byte[], byte[]>> consumed) {
+            final Collection<PscConsumerMessage<byte[], byte[]>> consumed) throws DeserializerException {
         long expectedOffset = expectedStartingOffset;
 
-        for (ConsumerRecord<byte[], byte[]> record : consumed) {
+        for (PscConsumerMessage<byte[], byte[]> record : consumed) {
             int expectedValue = (int) expectedOffset;
             long expectedTimestamp = expectedOffset * 1000L;
 
-            assertEquals(expectedValue, deserializer.deserialize(record.topic(), record.value()));
-            assertEquals(expectedOffset, record.offset());
-            assertEquals(expectedTimestamp, record.timestamp());
+            assertEquals(expectedValue, deserializer.deserialize(record.getValue()));
+            assertEquals(expectedOffset, record.getMessageId().getOffset());
+            assertEquals(expectedTimestamp, record.getMessageId().getTimestamp());
 
             expectedOffset++;
         }

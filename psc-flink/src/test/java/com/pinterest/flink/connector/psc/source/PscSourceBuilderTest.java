@@ -17,21 +17,16 @@
 
 package com.pinterest.flink.connector.psc.source;
 
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.serde.StringDeserializer;
 import org.apache.flink.configuration.ConfigOptions;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.KafkaSourceBuilder;
-import org.apache.flink.connector.kafka.source.KafkaSourceOptions;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 import org.apache.flink.util.TestLoggerExtension;
-
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.MatcherAssert;
-import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,41 +34,43 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Tests for {@link KafkaSourceBuilder}. */
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+/** Tests for {@link PscSourceBuilder}. */
 @ExtendWith(TestLoggerExtension.class)
 public class PscSourceBuilderTest {
 
     @Test
     public void testBuildSourceWithGroupId() {
-        final KafkaSource<String> kafkaSource = getBasicBuilder().setGroupId("groupId").build();
+        final PscSource<String> pscSource = getBasicBuilder().setGroupId("groupId").build();
         // Commit on checkpoint should be enabled by default
         Assertions.assertTrue(
-                kafkaSource
+                pscSource
                         .getConfiguration()
-                        .get(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT));
+                        .get(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT));
         // Auto commit should be disabled by default
         Assertions.assertFalse(
-                kafkaSource
+                pscSource
                         .getConfiguration()
                         .get(
-                                ConfigOptions.key(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG)
+                                ConfigOptions.key(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED)
                                         .booleanType()
                                         .noDefaultValue()));
     }
 
     @Test
     public void testBuildSourceWithoutGroupId() {
-        final KafkaSource<String> kafkaSource = getBasicBuilder().build();
+        final PscSource<String> pscSource = getBasicBuilder().build();
         // Commit on checkpoint and auto commit should be disabled because group.id is not specified
         Assertions.assertFalse(
-                kafkaSource
+                pscSource
                         .getConfiguration()
-                        .get(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT));
+                        .get(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT));
         Assertions.assertFalse(
-                kafkaSource
+                pscSource
                         .getConfiguration()
                         .get(
-                                ConfigOptions.key(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG)
+                                ConfigOptions.key(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED)
                                         .booleanType()
                                         .noDefaultValue()));
     }
@@ -81,12 +78,12 @@ public class PscSourceBuilderTest {
     @Test
     public void testEnableCommitOnCheckpointWithoutGroupId() {
         final IllegalStateException exception =
-                Assert.assertThrows(
+                assertThrows(
                         IllegalStateException.class,
                         () ->
                                 getBasicBuilder()
                                         .setProperty(
-                                                KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT
+                                                PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT
                                                         .key(),
                                                 "true")
                                         .build());
@@ -99,12 +96,12 @@ public class PscSourceBuilderTest {
     @Test
     public void testEnableAutoCommitWithoutGroupId() {
         final IllegalStateException exception =
-                Assertions.assertThrows(
+                assertThrows(
                         IllegalStateException.class,
                         () ->
                                 getBasicBuilder()
                                         .setProperty(
-                                                ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true")
+                                                PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "true")
                                         .build());
         MatcherAssert.assertThat(
                 exception.getMessage(),
@@ -115,16 +112,16 @@ public class PscSourceBuilderTest {
     @Test
     public void testDisableOffsetCommitWithoutGroupId() {
         getBasicBuilder()
-                .setProperty(KafkaSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key(), "false")
+                .setProperty(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT.key(), "false")
                 .build();
-        getBasicBuilder().setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false").build();
+        getBasicBuilder().setProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false").build();
     }
 
     @Test
     public void testUsingCommittedOffsetsInitializerWithoutGroupId() {
         // Using OffsetsInitializer#committedOffsets as starting offsets
         final IllegalStateException startingOffsetException =
-                Assertions.assertThrows(
+                assertThrows(
                         IllegalStateException.class,
                         () ->
                                 getBasicBuilder()
@@ -137,7 +134,7 @@ public class PscSourceBuilderTest {
 
         // Using OffsetsInitializer#committedOffsets as stopping offsets
         final IllegalStateException stoppingOffsetException =
-                Assertions.assertThrows(
+                assertThrows(
                         IllegalStateException.class,
                         () ->
                                 getBasicBuilder()
@@ -150,13 +147,13 @@ public class PscSourceBuilderTest {
 
         // Using OffsetsInitializer#offsets to manually specify committed offset as starting offset
         final IllegalStateException specificStartingOffsetException =
-                Assertions.assertThrows(
+                assertThrows(
                         IllegalStateException.class,
                         () -> {
-                            final Map<TopicPartition, Long> offsetMap = new HashMap<>();
+                            final Map<TopicUriPartition, Long> offsetMap = new HashMap<>();
                             offsetMap.put(
-                                    new TopicPartition("topic", 0),
-                                    KafkaPartitionSplit.COMMITTED_OFFSET);
+                                    new TopicUriPartition("topic", 0),
+                                    PscTopicUriPartitionSplit.COMMITTED_OFFSET);
                             getBasicBuilder()
                                     .setStartingOffsets(OffsetsInitializer.offsets(offsetMap))
                                     .build();
@@ -167,11 +164,10 @@ public class PscSourceBuilderTest {
                         "Property group.id is required because partition topic-0 is initialized with committed offset"));
     }
 
-    private KafkaSourceBuilder<String> getBasicBuilder() {
-        return new KafkaSourceBuilder<String>()
-                .setBootstrapServers("testServer")
-                .setTopics("topic")
+    private PscSourceBuilder<String> getBasicBuilder() {
+        return new PscSourceBuilder<String>()
+                .setTopicUris("topic")
                 .setDeserializer(
-                        KafkaRecordDeserializationSchema.valueOnly(StringDeserializer.class));
+                        PscRecordDeserializationSchema.valueOnly(StringDeserializer.class));
     }
 }

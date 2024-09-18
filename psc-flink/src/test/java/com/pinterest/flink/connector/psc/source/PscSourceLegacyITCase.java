@@ -18,11 +18,10 @@
 
 package com.pinterest.flink.connector.psc.source;
 
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
-import org.apache.flink.streaming.connectors.kafka.KafkaConsumerTestBase;
-import org.apache.flink.streaming.connectors.kafka.KafkaProducerTestBase;
-import org.apache.flink.streaming.connectors.kafka.KafkaTestEnvironmentImpl;
+import com.pinterest.flink.streaming.connectors.psc.FlinkPscProducer;
+import com.pinterest.flink.streaming.connectors.psc.PscConsumerTestBaseWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscProducerTestBase;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSubImpl;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -30,7 +29,7 @@ import org.junit.Test;
  * An IT case class that runs all the IT cases of the legacy {@link
  * org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer} with the new {@link KafkaSource}.
  */
-public class PscSourceLegacyITCase extends KafkaConsumerTestBase {
+public class PscSourceLegacyITCase extends PscConsumerTestBaseWithKafkaAsPubSub {
 
     public PscSourceLegacyITCase() throws Exception {
         super(true);
@@ -38,9 +37,9 @@ public class PscSourceLegacyITCase extends KafkaConsumerTestBase {
 
     @BeforeClass
     public static void prepare() throws Exception {
-        KafkaProducerTestBase.prepare();
-        ((KafkaTestEnvironmentImpl) kafkaServer)
-                .setProducerSemantic(FlinkKafkaProducer.Semantic.AT_LEAST_ONCE);
+        PscProducerTestBase.prepare();
+        ((PscTestEnvironmentWithKafkaAsPubSubImpl) kafkaServer) // TODO: we need kafkaServer
+                .setProducerSemantic(FlinkPscProducer.Semantic.AT_LEAST_ONCE);
     }
 
     @Test

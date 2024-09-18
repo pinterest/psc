@@ -113,6 +113,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.apache.flink.test.util.TestUtils.submitJobAndWaitForResult;
 import static org.apache.flink.test.util.TestUtils.tryExecute;
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -127,8 +129,16 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
     @Rule
     public RetryRule retryRule = new RetryRule();
-
+    protected final boolean useNewSource;
     private ClusterClient<?> client;
+
+    protected PscConsumerTestBaseWithKafkaAsPubSub() {
+        this(false);
+    }
+
+    protected PscConsumerTestBaseWithKafkaAsPubSub(boolean useNewSource) {
+        this.useNewSource = useNewSource;
+    }
 
     // ------------------------------------------------------------------------
     // Common Test Preparation
@@ -194,8 +204,15 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
                 assertTrue(optionalTimeoutException.isPresent());
 
                 final TimeoutException timeoutException = optionalTimeoutException.get();
-                assertEquals("Timeout expired while fetching topic metadata",
-                        timeoutException.getMessage());
+                if (useNewSource) {
+                    assertThat(
+                            timeoutException.getCause().getMessage(),
+                            containsString("Timed out waiting for a node assignment."));
+                } else {
+                    assertEquals(
+                            "Timeout expired while fetching topic metadata",
+                            timeoutException.getMessage());
+                }
             } else {
                 final Optional<Throwable> optionalThrowable = ExceptionUtils.findThrowableWithMessage(jee,
                         "Unable to retrieve any partitions");
@@ -466,6 +483,8 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
                 PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST
         ); // this should be ignored
 
+        // TODO: this test needs to take into account useNewSource
+
         FlinkPscConsumerBase<Tuple2<Integer, Integer>> latestReadingConsumer = pscTestEnvWithKafka
                 .getPscConsumer(topicUri.getTopicUriAsString(), deserSchema, readConfiguration);
         latestReadingConsumer.setStartFromLatest();
@@ -488,7 +507,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final AtomicReference<Throwable> error = new AtomicReference<>();
         Thread consumeThread = new Thread(() -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 if (!ExceptionUtils.findThrowable(t, JobCancellationException.class).isPresent()) {

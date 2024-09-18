@@ -18,37 +18,36 @@
 
 package com.pinterest.flink.connector.psc.source;
 
+import com.pinterest.flink.connector.psc.source.reader.PscSourceReader;
 import org.apache.flink.api.connector.source.SourceReaderContext;
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.reader.KafkaSourceReader;
 
 import java.util.Collection;
 import java.util.function.Consumer;
 
-/** Utility class for testing {@link KafkaSource}. */
+/** Utility class for testing {@link PscSource}. */
 public class PscSourceTestUtils {
 
     /**
-     * Create {@link KafkaSourceReader} with a custom hook handling IDs of finished {@link
+     * Create {@link PscSourceReader} with a custom hook handling IDs of finished {@link
      * org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit}.
      *
-     * @param kafkaSource Kafka source
+     * @param pscSource Kafka source
      * @param sourceReaderContext Context for SourceReader
      * @param splitFinishedHook Hook for handling finished splits
      * @param <T> Type of emitting records
      */
-    public static <T> KafkaSourceReader<T> createReaderWithFinishedSplitHook(
-            KafkaSource<T> kafkaSource,
+    public static <T> PscSourceReader<T> createReaderWithFinishedSplitHook(
+            PscSource<T> pscSource,
             SourceReaderContext sourceReaderContext,
             Consumer<Collection<String>> splitFinishedHook)
             throws Exception {
-        return ((KafkaSourceReader<T>)
-                kafkaSource.createReader(sourceReaderContext, splitFinishedHook));
+        return ((PscSourceReader<T>)
+                pscSource.createReader(sourceReaderContext, splitFinishedHook));
     }
 
     /** Get configuration of KafkaSource. */
-    public static Configuration getKafkaSourceConfiguration(KafkaSource<?> kafkaSource) {
-        return kafkaSource.getConfiguration();
+    public static Configuration getKafkaSourceConfiguration(PscSource<?> pscSource) {
+        return pscSource.getConfiguration();
     }
 }
