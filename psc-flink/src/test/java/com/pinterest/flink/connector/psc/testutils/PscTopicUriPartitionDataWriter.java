@@ -18,11 +18,15 @@
 
 package com.pinterest.flink.connector.psc.testutils;
 
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.exception.producer.ProducerException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.producer.PscProducer;
+import com.pinterest.psc.producer.PscProducerMessage;
 import org.apache.flink.connector.testframe.external.ExternalSystemSplitDataWriter;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Properties;
@@ -30,34 +34,42 @@ import java.util.Properties;
 /** Source split data writer for writing test data into Kafka topic partitions. */
 public class PscTopicUriPartitionDataWriter implements ExternalSystemSplitDataWriter<String> {
 
-    private final KafkaProducer<byte[], byte[]> kafkaProducer;
-    private final TopicPartition topicPartition;
+    private final PscProducer<byte[], byte[]> pscProducer;
+    private final TopicUriPartition topicPartition;
 
-    public PscTopicUriPartitionDataWriter(Properties producerProperties, TopicPartition topicPartition) {
-        this.kafkaProducer = new KafkaProducer<>(producerProperties);
+    public PscTopicUriPartitionDataWriter(Properties producerProperties, TopicUriPartition topicPartition) throws ConfigurationException, ProducerException {
+        this.pscProducer = new PscProducer<>(PscConfigurationUtils.propertiesToPscConfiguration(producerProperties));
         this.topicPartition = topicPartition;
     }
 
     @Override
     public void writeRecords(List<String> records) {
         for (String record : records) {
-            ProducerRecord<byte[], byte[]> producerRecord =
-                    new ProducerRecord<>(
-                            topicPartition.topic(),
-                            topicPartition.partition(),
+            PscProducerMessage<byte[], byte[]> producerRecord =
+                    new PscProducerMessage<>(
+                            topicPartition.getTopicUriAsString(),
+                            topicPartition.getPartition(),
                             null,
                             record.getBytes(StandardCharsets.UTF_8));
-            kafkaProducer.send(producerRecord);
+            try {
+                pscProducer.send(producerRecord);
+            } catch (ProducerException | ConfigurationException e) {
+                throw new RuntimeException(e);
+            }
         }
-        kafkaProducer.flush();
+        try {
+            pscProducer.flush();
+        } catch (ProducerException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
-    public void close() {
-        kafkaProducer.close();
+    public void close() throws IOException {
+        pscProducer.close();
     }
 
-    public TopicPartition getTopicPartition() {
+    public TopicUriPartition getTopicUriPartition() {
         return topicPartition;
     }
 }

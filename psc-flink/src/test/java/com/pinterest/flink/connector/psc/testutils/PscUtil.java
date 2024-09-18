@@ -111,14 +111,13 @@ public class PscUtil {
      * until that point.
      *
      * @param topic to fetch from
-     * @param properties used to configure the created {@link KafkaConsumer}
-     * @param committed determines the mode {@link ConsumerConfig#ISOLATION_LEVEL_CONFIG} with which
+     * @param properties used to configure the created {@link PscConsumer}
+     * @param committed determines the mode {@link PscConfiguration#PSC_CONSUMER_ISOLATION_LEVEL} with which
      *     the consumer reads the records.
-     * @return all {@link ConsumerRecord} in the topic
-     * @throws KafkaException
+     * @return all {@link PscConsumerMessage} in the topic
      */
     public static List<PscConsumerMessage<byte[], byte[]>> drainAllRecordsFromTopic(
-            String topic, Properties properties, boolean committed) {
+            String topic, Properties properties, boolean committed) throws ConfigurationException, ConsumerException {
         final Properties consumerConfig = new Properties();
         consumerConfig.putAll(properties);
         consumerConfig.put(
@@ -135,9 +134,8 @@ public class PscUtil {
      * until that point.
      *
      * @param topic to fetch from
-     * @param properties used to configure the created {@link KafkaConsumer}
-     * @return all {@link ConsumerRecord} in the topic
-     * @throws KafkaException
+     * @param properties used to configure the created {@link PscConsumer}
+     * @return all {@link PscConsumerMessage} in the topic
      */
     public static List<PscConsumerMessage<byte[], byte[]>> drainAllRecordsFromTopic(
             String topic, Properties properties) throws ConfigurationException, ConsumerException {

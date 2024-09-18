@@ -469,7 +469,7 @@ public class PscSinkITCase extends TestLogger {
     }
 
     private List<PscConsumerMessage<byte[], byte[]>> drainAllRecordsFromTopic(
-            String topic, boolean committed) {
+            String topic, boolean committed) throws ConfigurationException, ConsumerException {
         Properties properties = getKafkaClientConfiguration();
         return PscUtil.drainAllRecordsFromTopic(topic, properties, committed);
     }

@@ -61,7 +61,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -388,7 +387,7 @@ public class PscDynamicSource
         if (topicUris != null) {
             pscSourceBuilder.setTopicUris(topicUris);
         } else {
-            pscSourceBuilder.setTopicPattern(topicUriPattern);
+            pscSourceBuilder.setTopicUriPattern(topicUriPattern);
         }
 
         switch (startupMode) {

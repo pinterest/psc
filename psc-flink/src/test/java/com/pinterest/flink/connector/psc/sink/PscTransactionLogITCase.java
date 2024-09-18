@@ -17,6 +17,8 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.exception.consumer.ConsumerException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
 import org.apache.flink.util.TestLogger;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
@@ -66,7 +68,7 @@ public class PscTransactionLogITCase extends TestLogger {
     }
 
     @Test
-    public void testGetTransactions() {
+    public void testGetTransactions() throws ConfigurationException, ConsumerException {
         committedTransaction(1);
         abortedTransaction(2);
         lingeringTransaction(3);

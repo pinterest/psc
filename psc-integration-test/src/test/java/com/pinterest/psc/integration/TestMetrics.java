@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -163,7 +164,7 @@ public class TestMetrics {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testMetrics() throws ConfigurationException, ClientException, InterruptedException {
+    public void testMetrics() throws ConfigurationException, ClientException, InterruptedException, IOException {
         int messageCount = 5000;
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
@@ -541,7 +542,7 @@ public class TestMetrics {
             } finally {
                 try {
                     pscProducer.close();
-                } catch (ProducerException ignored) {
+                } catch (IOException ignored) {
                 }
                 logger.info("Thread with id {} completed after producing {} messages.", threadId, count);
             }

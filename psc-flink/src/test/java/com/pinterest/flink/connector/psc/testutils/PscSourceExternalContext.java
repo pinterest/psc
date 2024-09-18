@@ -18,13 +18,17 @@
 
 package com.pinterest.flink.connector.psc.testutils;
 
+import com.pinterest.flink.connector.psc.source.PscSource;
+import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.serde.ByteArraySerializer;
+import com.pinterest.psc.serde.StringDeserializer;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.Source;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.KafkaSourceBuilder;
-import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
-import org.apache.flink.connector.kafka.source.reader.deserializer.KafkaRecordDeserializationSchema;
 import org.apache.flink.connector.testframe.external.ExternalSystemSplitDataWriter;
 import org.apache.flink.connector.testframe.external.source.DataStreamSourceExternalContext;
 import org.apache.flink.connector.testframe.external.source.TestingSourceSettings;
@@ -33,13 +37,10 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -88,13 +89,14 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
 
     @Override
     public Source<String, ?, ?> createSource(TestingSourceSettings sourceSettings) {
-        final KafkaSourceBuilder<String> builder = KafkaSource.builder();
+        final PscSourceBuilder<String> builder = PscSource.builder();
 
-        builder.setBootstrapServers(bootstrapServers)
-                .setTopicPattern(TOPIC_NAME_PATTERN)
+        builder
+//                .setBootstrapServers(bootstrapServers)
+                .setTopicUriPattern(TOPIC_NAME_PATTERN)
                 .setGroupId(randomize(GROUP_ID_PREFIX))
                 .setDeserializer(
-                        KafkaRecordDeserializationSchema.valueOnly(StringDeserializer.class));
+                        PscRecordDeserializationSchema.valueOnly(StringDeserializer.class));
 
         if (sourceSettings.getBoundedness().equals(Boundedness.BOUNDED)) {
             builder.setBounded(OffsetsInitializer.latest());
@@ -153,8 +155,12 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
         final List<String> topics = new ArrayList<>();
         writers.forEach(
                 writer -> {
-                    topics.add(writer.getTopicPartition().topic());
-                    writer.close();
+                    topics.add(writer.getTopicUriPartition().getTopicUri().getTopic());
+                    try {
+                        writer.close();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
                 });
         adminClient.deleteTopics(topics).all().get();
     }
@@ -182,7 +188,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
                 .all()
                 .get();
         return new PscTopicUriPartitionDataWriter(
-                getKafkaProducerProperties(topicIndex), new TopicPartition(newTopicName, 0));
+                getPscProducerProperties(topicIndex), new TopicUriPartition(newTopicName, 0));
     }
 
     private PscTopicUriPartitionDataWriter scaleOutTopic(String topicName) throws Exception {
@@ -199,8 +205,8 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
                     .all()
                     .get();
             return new PscTopicUriPartitionDataWriter(
-                    getKafkaProducerProperties(numPartitions),
-                    new TopicPartition(topicName, numPartitions));
+                    getPscProducerProperties(numPartitions),
+                    new TopicUriPartition(topicName, numPartitions));
         } else {
             LOG.info("Creating topic '{}'", topicName);
             adminClient
@@ -208,26 +214,26 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
                     .all()
                     .get();
             return new PscTopicUriPartitionDataWriter(
-                    getKafkaProducerProperties(0), new TopicPartition(topicName, 0));
+                    getPscProducerProperties(0), new TopicUriPartition(topicName, 0));
         }
     }
 
-    private Properties getKafkaProducerProperties(int producerId) {
-        Properties kafkaProducerProperties = new Properties();
-        kafkaProducerProperties.setProperty(
-                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        kafkaProducerProperties.setProperty(
-                ProducerConfig.CLIENT_ID_CONFIG,
+    private Properties getPscProducerProperties(int producerId) {
+        Properties pscProducerProperties = new Properties();
+//        kafkaProducerProperties.setProperty(
+//                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        pscProducerProperties.setProperty(
+                PscConfiguration.PSC_PRODUCER_CLIENT_ID,
                 String.join(
                         "-",
                         "flink-kafka-split-writer",
                         Integer.toString(producerId),
                         Long.toString(ThreadLocalRandom.current().nextLong(Long.MAX_VALUE))));
-        kafkaProducerProperties.setProperty(
-                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-        kafkaProducerProperties.setProperty(
-                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-        return kafkaProducerProperties;
+        pscProducerProperties.setProperty(
+                PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
+        pscProducerProperties.setProperty(
+                PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
+        return pscProducerProperties;
     }
 
     /** Mode of mapping split to Kafka components. */

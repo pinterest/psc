@@ -136,7 +136,7 @@ public class PscSourceBuilder<OUT> {
     /**
      * Set a list of topicRns the PscSource should consume from. All the topics in the list should
      * have existed in the PubSub cluster. Otherwise an exception will be thrown. To allow some of
-     * the topics to be created lazily, please use {@link #setTopicPattern(Pattern)} instead.
+     * the topics to be created lazily, please use {@link #setTopicUriPattern(Pattern)} instead.
      *
      * @param topicUris the list of topicRns to consume from.
      * @return this PscSourceBuilder.
@@ -151,7 +151,7 @@ public class PscSourceBuilder<OUT> {
     /**
      * Set a list of topicRns the PscSource should consume from. All the topics in the list should
      * have existed in the PubSub cluster. Otherwise an exception will be thrown. To allow some of
-     * the topics to be created lazily, please use {@link #setTopicPattern(Pattern)} instead.
+     * the topics to be created lazily, please use {@link #setTopicUriPattern(Pattern)} instead.
      *
      * @param topicUris the list of topicRns to consume from.
      * @return this PscSourceBuilder.
@@ -164,13 +164,13 @@ public class PscSourceBuilder<OUT> {
     /**
      * Set a topic pattern to consume from use the java {@link Pattern}.
      *
-     * @param topicPattern the pattern of the topic name to consume from.
+     * @param topicUriPattern the pattern of the topic name to consume from.
      * @return this PscSourceBuilder.
      * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Pattern)
      */
-    public PscSourceBuilder<OUT> setTopicPattern(Pattern topicPattern) {
-        ensureSubscriberIsNull("topic pattern");
-        subscriber = PscSubscriber.getTopicPatternSubscriber(topicPattern);
+    public PscSourceBuilder<OUT> setTopicUriPattern(Pattern topicUriPattern) {
+        ensureSubscriberIsNull("topicUri pattern");
+        subscriber = PscSubscriber.getTopicPatternSubscriber(topicUriPattern);
         return this;
     }
 

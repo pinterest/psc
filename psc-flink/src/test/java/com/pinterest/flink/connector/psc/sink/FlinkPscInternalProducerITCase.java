@@ -17,21 +17,20 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.consumer.PscConsumer;
+import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
+import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.producer.PscProducerMessage;
+import com.pinterest.psc.serde.StringDeserializer;
+import com.pinterest.psc.serde.StringSerializer;
 import org.apache.flink.shaded.guava30.com.google.common.collect.Lists;
 import org.apache.flink.util.TestLoggerExtension;
-import org.apache.kafka.clients.CommonClientConfigs;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
-import org.apache.kafka.common.serialization.StringDeserializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -84,9 +83,9 @@ class FlinkPscInternalProducerITCase {
                     reuse.abortTransaction();
                 }
                 assertNumTransactions(i);
-                assertThat(readRecords(topicUriStr).count()).isEqualTo(i / 2);
+                assertThat(readRecords(topicUriStr).asList().size()).isEqualTo(i / 2);
             }
-        } catch (ConfigurationException | ProducerException | TopicUriSyntaxException | IOException e) {
+        } catch (ConfigurationException | ProducerException | TopicUriSyntaxException | IOException | ConsumerException e) {
             throw new RuntimeException(e);
         }
     }
@@ -120,14 +119,14 @@ class FlinkPscInternalProducerITCase {
 
     private static Properties getProperties() {
         Properties properties = new Properties();
-        properties.put(
-                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG,
-                KAFKA_CONTAINER.getBootstrapServers());
-        properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
-        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+//        properties.put(
+//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG,
+//                KAFKA_CONTAINER.getBootstrapServers());
+        properties.put(PscConfiguration.PSC_PRODUCER_IDEMPOTENCE_ENABLED, "true");
+        properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class);
+        properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class);
+        properties.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class);
+        properties.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class);
         return properties;
     }
 
@@ -137,7 +136,7 @@ class FlinkPscInternalProducerITCase {
                 FlinkPscInternalProducer::abortTransaction);
     }
 
-    private void assertNumTransactions(int numTransactions) {
+    private void assertNumTransactions(int numTransactions) throws ConfigurationException, ConsumerException {
         List<PscTransactionLog.TransactionRecord> transactions =
                 new PscTransactionLog(getProperties())
                         .getTransactions(id -> id.startsWith(TRANSACTION_PREFIX));
@@ -148,14 +147,12 @@ class FlinkPscInternalProducerITCase {
                 .hasSize(numTransactions);
     }
 
-    private ConsumerRecords<String, String> readRecords(String topic) {
+    private PscConsumerPollMessageIterator<String, String> readRecords(String topicUri) throws ConfigurationException, ConsumerException {
         Properties properties = getProperties();
-        properties.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(properties);
+        properties.put(PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL, "read_committed");
+        PscConsumer<String, String> consumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(properties));
         consumer.assign(
-                consumer.partitionsFor(topic).stream()
-                        .map(partitionInfo -> new TopicPartition(topic, partitionInfo.partition()))
-                        .collect(Collectors.toSet()));
+                consumer.getPartitions(topicUri));
         consumer.seekToBeginning(consumer.assignment());
         return consumer.poll(Duration.ofMillis(1000));
     }

@@ -19,6 +19,8 @@ package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.exception.consumer.ConsumerException;
+import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.serde.ByteArrayDeserializer;
 
 import java.nio.ByteBuffer;
@@ -59,12 +61,12 @@ class PscTransactionLog {
         consumerConfig.put(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, false);
     }
 
-    public List<TransactionRecord> getTransactions() {
+    public List<TransactionRecord> getTransactions() throws ConfigurationException, ConsumerException {
         return getTransactions(id -> true);
     }
 
     /** Gets all {@link TransactionRecord} matching the given id filter. */
-    public List<TransactionRecord> getTransactions(Predicate<String> transactionIdFilter) {
+    public List<TransactionRecord> getTransactions(Predicate<String> transactionIdFilter) throws ConfigurationException, ConsumerException {
         return drainAllRecordsFromTopic(TRANSACTION_STATE_TOPIC_NAME, consumerConfig, true).stream()
                 .map(r -> parseTransaction(r, transactionIdFilter))
                 .filter(Optional::isPresent)
