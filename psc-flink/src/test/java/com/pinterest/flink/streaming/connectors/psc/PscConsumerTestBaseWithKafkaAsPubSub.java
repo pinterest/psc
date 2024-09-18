@@ -111,6 +111,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.apache.flink.test.util.TestUtils.submitJobAndWaitForResult;
 import static org.apache.flink.test.util.TestUtils.tryExecute;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -1066,7 +1067,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         final Runnable jobRunner = () -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 jobError.set(t);
@@ -1139,7 +1140,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         final Runnable jobRunner = () -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 LOG.error("Job Runner failed with exception", t);

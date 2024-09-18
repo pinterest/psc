@@ -25,7 +25,6 @@ import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsIn
 import com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriber;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.psc.common.MessageId;
-import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.ByteArrayDeserializer;
@@ -139,13 +138,13 @@ public class PscSourceBuilder<OUT> {
      * have existed in the PubSub cluster. Otherwise an exception will be thrown. To allow some of
      * the topics to be created lazily, please use {@link #setTopicPattern(Pattern)} instead.
      *
-     * @param topics the list of topicRns to consume from.
+     * @param topicUris the list of topicRns to consume from.
      * @return this PscSourceBuilder.
      * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Collection)
      */
-    public PscSourceBuilder<OUT> setTopicRns(List<TopicRn> topics) {
+    public PscSourceBuilder<OUT> setTopicUris(List<String> topicUris) {
         ensureSubscriberIsNull("topics");
-        subscriber = PscSubscriber.getTopicRnListSubscriber(topics);
+        subscriber = PscSubscriber.getTopicRnListSubscriber(topicUris);
         return this;
     }
 
@@ -154,12 +153,12 @@ public class PscSourceBuilder<OUT> {
      * have existed in the PubSub cluster. Otherwise an exception will be thrown. To allow some of
      * the topics to be created lazily, please use {@link #setTopicPattern(Pattern)} instead.
      *
-     * @param topicRns the list of topicRns to consume from.
+     * @param topicUris the list of topicRns to consume from.
      * @return this PscSourceBuilder.
      * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Collection)
      */
-    public PscSourceBuilder<OUT> setTopicRns(TopicRn... topicRns) {
-        return setTopicRns(Arrays.asList(topicRns));
+    public PscSourceBuilder<OUT> setTopicUris(String... topicUris) {
+        return setTopicUris(Arrays.asList(topicUris));
     }
 
     /**

@@ -51,6 +51,7 @@ import static org.junit.Assert.assertThat;
 /**
  * IT cases for Kafka with changelog format for Table API & SQL.
  */
+// TODO: update alongside Table API convergence
 public class PscChangelogTableITCase extends PscTestBaseWithFlinkWithKafkaAsPubSub {
 
     protected StreamExecutionEnvironment env;

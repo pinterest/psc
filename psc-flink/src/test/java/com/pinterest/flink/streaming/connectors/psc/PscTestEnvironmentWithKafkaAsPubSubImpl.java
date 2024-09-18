@@ -17,6 +17,9 @@
 
 package com.pinterest.flink.streaming.connectors.psc;
 
+import com.pinterest.flink.connector.psc.source.PscSource;
+import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
+import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -32,7 +35,6 @@ import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.ByteArrayDeserializer;
 import com.pinterest.psc.serde.ByteArraySerializer;
-import kafka.metrics.KafkaMetricsReporter;
 import kafka.server.KafkaConfig;
 import kafka.server.KafkaServer;
 import org.apache.commons.collections.list.UnmodifiableList;
@@ -40,7 +42,6 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.curator.test.TestingServer;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.networking.NetworkFailuresProxy;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.operators.StreamSink;
@@ -55,9 +56,9 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.collection.mutable.ArraySeq;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.BindException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -312,6 +313,15 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
     }
 
     @Override
+    public <T> PscSourceBuilder<T> getSourceBuilder(
+            List<String> topics, PscDeserializationSchema<T> schema, Properties props) {
+        return PscSource.<T>builder()
+                .setTopicUris(topics)
+                .setDeserializer(PscRecordDeserializationSchema.of(schema))
+                .setProperties(props);
+    }
+
+    @Override
     public <K, V> Collection<PscConsumerMessage<K, V>> getAllMessagesFromTopicUri(
             Properties properties,
             String topicUri,
@@ -451,7 +461,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
     public void produceToKafka(String topicUri,
                                int numMessagesPerPartition,
                                int numPartitions,
-                               String basePayload) throws ProducerException, ConfigurationException {
+                               String basePayload) throws ProducerException, ConfigurationException, IOException {
         PscConfiguration pscConfiguration = new PscConfiguration();
         standardPscProducerConfiguration.forEach((key, value) -> pscConfiguration.setProperty(key.toString(), value));
         pscConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getCanonicalName());
@@ -489,11 +499,6 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         for (int i = 1; i <= numTries; i++) {
             int kafkaPort = NetUtils.getAvailablePort().getPort();
             kafkaProperties.put("port", Integer.toString(kafkaPort));
-
-            if (config.isHideKafkaBehindProxy()) {
-                NetworkFailuresProxy proxy = createProxy(KAFKA_HOST, kafkaPort);
-                kafkaProperties.put("advertised.port", proxy.getLocalPort());
-            }
 
             // to support secure kafka cluster
             if (config.isSecureMode()) {

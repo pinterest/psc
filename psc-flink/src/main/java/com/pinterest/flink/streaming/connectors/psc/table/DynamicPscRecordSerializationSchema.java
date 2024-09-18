@@ -17,26 +17,25 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.connector.psc.sink.PscRecordSerializationSchema;
+import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.psc.producer.PscProducerMessage;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaSink;
-import org.apache.flink.streaming.connectors.kafka.partitioner.FlinkKafkaPartitioner;
 import org.apache.flink.table.data.GenericRowData;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.Preconditions;
 
-import org.apache.kafka.clients.producer.ProducerRecord;
 
 import javax.annotation.Nullable;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
-/** SerializationSchema used by {@link KafkaDynamicSink} to configure a {@link KafkaSink}. */
-class DynamicPscRecordSerializationSchema implements KafkaRecordSerializationSchema<RowData> {
+/** SerializationSchema used by {@link PscDynamicSink} to configure a {@link com.pinterest.flink.connector.psc.sink.PscSink}. */
+class DynamicPscRecordSerializationSchema implements PscRecordSerializationSchema<RowData> {
 
     private final String topic;
-    private final FlinkKafkaPartitioner<RowData> partitioner;
+    private final FlinkPscPartitioner<RowData> partitioner;
     @Nullable private final SerializationSchema<RowData> keySerialization;
     private final SerializationSchema<RowData> valueSerialization;
     private final RowData.FieldGetter[] keyFieldGetters;
@@ -45,9 +44,9 @@ class DynamicPscRecordSerializationSchema implements KafkaRecordSerializationSch
     private final int[] metadataPositions;
     private final boolean upsertMode;
 
-    DynamicKafkaRecordSerializationSchema(
+    DynamicPscRecordSerializationSchema(
             String topic,
-            @Nullable FlinkKafkaPartitioner<RowData> partitioner,
+            @Nullable FlinkPscPartitioner<RowData> partitioner,
             @Nullable SerializationSchema<RowData> keySerialization,
             SerializationSchema<RowData> valueSerialization,
             RowData.FieldGetter[] keyFieldGetters,
@@ -72,18 +71,18 @@ class DynamicPscRecordSerializationSchema implements KafkaRecordSerializationSch
     }
 
     @Override
-    public ProducerRecord<byte[], byte[]> serialize(
-            RowData consumedRow, KafkaSinkContext context, Long timestamp) {
+    public PscProducerMessage<byte[], byte[]> serialize(
+            RowData consumedRow, PscSinkContext context, Long timestamp) {
         // shortcut in case no input projection is required
         if (keySerialization == null && !hasMetadata) {
             final byte[] valueSerialized = valueSerialization.serialize(consumedRow);
-            return new ProducerRecord<>(
+            return new PscProducerMessage<>(
                     topic,
                     extractPartition(
                             consumedRow,
                             null,
                             valueSerialized,
-                            context.getPartitionsForTopic(topic)),
+                            context.getPartitionsForTopicUri(topic)),
                     null,
                     valueSerialized);
         }
@@ -104,34 +103,35 @@ class DynamicPscRecordSerializationSchema implements KafkaRecordSerializationSch
             } else {
                 // make the message to be INSERT to be compliant with the INSERT-ONLY format
                 final RowData valueRow =
-                        DynamicKafkaRecordSerializationSchema.createProjectedRow(
+                        DynamicPscRecordSerializationSchema.createProjectedRow(
                                 consumedRow, kind, valueFieldGetters);
                 valueRow.setRowKind(RowKind.INSERT);
                 valueSerialized = valueSerialization.serialize(valueRow);
             }
         } else {
             final RowData valueRow =
-                    DynamicKafkaRecordSerializationSchema.createProjectedRow(
+                    DynamicPscRecordSerializationSchema.createProjectedRow(
                             consumedRow, kind, valueFieldGetters);
             valueSerialized = valueSerialization.serialize(valueRow);
         }
 
-        return new ProducerRecord<>(
+        PscProducerMessage<byte[], byte[]> producerMessage = new PscProducerMessage<>(
                 topic,
                 extractPartition(
                         consumedRow,
                         keySerialized,
                         valueSerialized,
-                        context.getPartitionsForTopic(topic)),
-                readMetadata(consumedRow, KafkaDynamicSink.WritableMetadata.TIMESTAMP),
+                        context.getPartitionsForTopicUri(topic)),
                 keySerialized,
                 valueSerialized,
-                readMetadata(consumedRow, KafkaDynamicSink.WritableMetadata.HEADERS));
+                readMetadata(consumedRow, PscDynamicSink.WritableMetadata.TIMESTAMP));
+        producerMessage.setHeaders(readMetadata(consumedRow, PscDynamicSink.WritableMetadata.HEADERS));
+        return producerMessage;
     }
 
     @Override
     public void open(
-            SerializationSchema.InitializationContext context, KafkaSinkContext sinkContext)
+            SerializationSchema.InitializationContext context, PscSinkContext sinkContext)
             throws Exception {
         if (keySerialization != null) {
             keySerialization.open(context);
@@ -167,7 +167,7 @@ class DynamicPscRecordSerializationSchema implements KafkaRecordSerializationSch
     }
 
     @SuppressWarnings("unchecked")
-    private <T> T readMetadata(RowData consumedRow, KafkaDynamicSink.WritableMetadata metadata) {
+    private <T> T readMetadata(RowData consumedRow, PscDynamicSink.WritableMetadata metadata) {
         final int pos = metadataPositions[metadata.ordinal()];
         if (pos < 0) {
             return null;

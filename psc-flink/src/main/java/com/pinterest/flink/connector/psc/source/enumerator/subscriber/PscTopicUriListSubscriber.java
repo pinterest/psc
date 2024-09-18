@@ -18,9 +18,11 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
+import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metadata.TopicRnMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.slf4j.Logger;
@@ -30,6 +32,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicRnMetadata;
 
@@ -42,8 +45,14 @@ class PscTopicUriListSubscriber implements PscSubscriber {
     private static final Logger LOG = LoggerFactory.getLogger(PscTopicUriListSubscriber.class);
     private final List<TopicRn> topicRns;
 
-    PscTopicUriListSubscriber(List<TopicRn> topicRns) {
-        this.topicRns = topicRns;
+    PscTopicUriListSubscriber(List<String> topicUris) {
+        this.topicRns = topicUris.stream().map(topicUri -> {
+            try {
+                return BaseTopicUri.validate(topicUri).getTopicRn();
+            } catch (TopicUriSyntaxException e) {
+                throw new RuntimeException(e);
+            }
+        }).collect(Collectors.toList());
     }
 
     @Override
