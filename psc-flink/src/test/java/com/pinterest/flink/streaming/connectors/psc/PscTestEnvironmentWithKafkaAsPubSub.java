@@ -21,11 +21,13 @@ import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscDeserializationSchemaWrapper;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import kafka.server.KafkaServer;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
@@ -49,6 +51,15 @@ import java.util.Properties;
  */
 public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     public static String PSC_TEST_TOPIC_URI_PREFIX = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
+    public static TopicUri PSC_TEST_CLUSTER_URI;
+
+    static {
+        try {
+            PSC_TEST_CLUSTER_URI = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_PREFIX + "cluster1");
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Unable to validate clusterUri", e);
+        }
+    }
 
     /**
      * Configuration class for {@link PscTestEnvironmentWithKafkaAsPubSub}.
@@ -109,10 +120,10 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
 
     public abstract void deleteTestTopic(String topic);
 
-    public abstract void createTestTopic(String topic, int numberOfPartitions, int replicationFactor, Properties properties);
+    public abstract void createTestTopic(String topicUriString, int numberOfPartitions, int replicationFactor, Properties properties);
 
-    public void createTestTopic(String topic, int numberOfPartitions, int replicationFactor) {
-        this.createTestTopic(topic, numberOfPartitions, replicationFactor, new Properties());
+    public void createTestTopic(String topicUriString, int numberOfPartitions, int replicationFactor) {
+        this.createTestTopic(topicUriString, numberOfPartitions, replicationFactor, new Properties());
     }
 
     public abstract Properties getStandardKafkaProperties();

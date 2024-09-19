@@ -56,9 +56,9 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
         partitionOffsetsRetriever
                 .offsetsForTimes(startingTimestamps)
                 .forEach(
-                        (tp, offsetMetadata) -> {
-                            if (offsetMetadata != null) {
-                                initialOffsets.put(tp, offsetMetadata.getOffset());
+                        (tp, offset) -> {
+                            if (offset != null) {
+                                initialOffsets.put(tp, offset);
                             } else {
                                 // The timestamp does not exist in the partition yet, we will just
                                 // consume from the latest.

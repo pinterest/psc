@@ -21,6 +21,7 @@ package com.pinterest.flink.connector.psc.source.enumerator.initializer;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumerator;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 
 import com.pinterest.psc.config.PscConfiguration;
@@ -40,17 +41,19 @@ import static org.junit.Assert.assertTrue;
 /** Unit tests for {@link OffsetsInitializer}. */
 public class OffsetsInitializerTest {
     private static final String TOPIC = "topic";
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC;
     private static final String TOPIC2 = "topic2";
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
     private static PscSourceEnumerator.PartitionOffsetsRetrieverImpl retriever;
 
     @BeforeClass
     public static void setup() throws Throwable {
         PscSourceTestEnv.setup();
-        PscSourceTestEnv.setupTopic(TOPIC, true, true, PscSourceTestEnv::getRecordsForTopic);
-        PscSourceTestEnv.setupTopic(TOPIC2, false, false, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setupTopic(TOPIC_URI, true, true, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setupTopic(TOPIC_URI2, false, false, PscSourceTestEnv::getRecordsForTopic);
         retriever =
                 new PscSourceEnumerator.PartitionOffsetsRetrieverImpl(
-                        PscSourceTestEnv.getAdminClient(), clusterUri, PscSourceTestEnv.GROUP_ID);
+                        PscSourceTestEnv.getMetadataClient(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI, PscSourceTestEnv.GROUP_ID);
     }
 
     @AfterClass

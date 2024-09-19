@@ -21,6 +21,7 @@ import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
@@ -228,17 +229,17 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
     }
 
     @Override
-    public void createTestTopic(String topic,
+    public void createTestTopic(String topicUriString,
                                 int numberOfPartitions,
                                 int replicationFactor,
                                 Properties properties) {
-        LOG.info("Creating topic {}", topic);
+        LOG.info("Creating topic {}", topicUriString);
         try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
-            NewTopic topicObj = new NewTopic(topic, numberOfPartitions, (short) replicationFactor);
+            NewTopic topicObj = new NewTopic(BaseTopicUri.validate(topicUriString).getTopic(), numberOfPartitions, (short) replicationFactor);
             adminClient.createTopics(Collections.singleton(topicObj)).all().get();
         } catch (Exception e) {
             e.printStackTrace();
-            fail("Create test topic : " + topic + " failed, " + e.getMessage());
+            fail("Create test topic : " + topicUriString + " failed, " + e.getMessage());
         }
     }
 

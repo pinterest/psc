@@ -1903,7 +1903,7 @@ public class FlinkPscProducer<IN>
     private void closeProducer(FlinkPscInternalProducer producer) {
         try {
             producer.close(Duration.ZERO);
-        } catch (ProducerException e) {
+        } catch (IOException e) {
             LOG.warn("Failed to close FlinkPscInternalProducer with id {}", producer.getClientId(), e);
         }
     }

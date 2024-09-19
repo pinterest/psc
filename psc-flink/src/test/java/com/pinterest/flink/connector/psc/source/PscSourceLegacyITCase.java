@@ -27,7 +27,7 @@ import org.junit.Test;
 
 /**
  * An IT case class that runs all the IT cases of the legacy {@link
- * org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer} with the new {@link KafkaSource}.
+ * com.pinterest.flink.streaming.connectors.psc.FlinkPscConsumer} with the new {@link PscSource}.
  */
 public class PscSourceLegacyITCase extends PscConsumerTestBaseWithKafkaAsPubSub {
 
@@ -38,7 +38,7 @@ public class PscSourceLegacyITCase extends PscConsumerTestBaseWithKafkaAsPubSub 
     @BeforeClass
     public static void prepare() throws Exception {
         PscProducerTestBase.prepare();
-        ((PscTestEnvironmentWithKafkaAsPubSubImpl) kafkaServer) // TODO: we need kafkaServer
+        ((PscTestEnvironmentWithKafkaAsPubSubImpl) pscTestEnvWithKafka)
                 .setProducerSemantic(FlinkPscProducer.Semantic.AT_LEAST_ONCE);
     }
 

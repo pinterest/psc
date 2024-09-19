@@ -139,7 +139,7 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
     }
 
     @Override
-    public void close() {
+    public void close() throws IOException {
         if (recoveryProducer != null) {
             recoveryProducer.close();
         }

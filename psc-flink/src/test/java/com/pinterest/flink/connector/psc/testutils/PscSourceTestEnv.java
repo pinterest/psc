@@ -27,6 +27,7 @@ import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.metadata.client.PscMetadataClient;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.IntegerDeserializer;
 import com.pinterest.psc.serde.IntegerSerializer;
@@ -78,6 +79,12 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
         Properties props = new Properties();
         props.putAll(standardKafkaProperties);
         return AdminClient.create(props);
+    }
+
+    public static PscMetadataClient getMetadataClient() throws ConfigurationException {
+        PscConfiguration pscConfiguration = new PscConfiguration();
+        pscConfiguration.setProperty(PscConfiguration.PSC_METADATA_CLIENT_ID, "psc-source-test-env-metadata-client");
+        return new PscMetadataClient(pscConfiguration);
     }
 
     public static PscConsumer<String, Integer> getConsumer() throws ConfigurationException, ConsumerException {
