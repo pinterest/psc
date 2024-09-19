@@ -123,10 +123,11 @@ class FlinkPscInternalProducerITCase {
 //                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG,
 //                KAFKA_CONTAINER.getBootstrapServers());
         properties.put(PscConfiguration.PSC_PRODUCER_IDEMPOTENCE_ENABLED, "true");
-        properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class);
-        properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class);
-        properties.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class);
-        properties.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class);
+        properties.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "FlinkPscInternalProducerITCase");
+        properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
+        properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
+        properties.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
+        properties.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class.getName());
         return properties;
     }
 
