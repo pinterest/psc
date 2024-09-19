@@ -1801,7 +1801,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         Thread jobThread = new Thread(() -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 if (!ExceptionUtils.findThrowable(t, JobCancellationException.class).isPresent()) {
@@ -2312,7 +2312,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         Thread runner = new Thread(() -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
                 tryExecute(readEnv, "sequence validation");
             } catch (Throwable t) {

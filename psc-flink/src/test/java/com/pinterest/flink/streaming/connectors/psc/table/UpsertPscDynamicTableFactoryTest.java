@@ -18,15 +18,16 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.connector.psc.sink.PscSink;
+import com.pinterest.flink.connector.psc.source.PscSource;
+import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
+import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.connector.base.DeliveryGuarantee;
-import org.apache.flink.connector.kafka.sink.KafkaSink;
-import org.apache.flink.connector.kafka.source.KafkaSource;
-import org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumState;
-import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
 import org.apache.flink.formats.avro.AvroRowDataSerializationSchema;
 import org.apache.flink.formats.avro.RowDataToAvroConverters;
 import org.apache.flink.formats.avro.registry.confluent.ConfluentRegistryAvroSerializationSchema;
@@ -34,12 +35,6 @@ import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.StreamOperatorFactory;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
-import org.apache.flink.streaming.connectors.kafka.config.StartupMode;
-import org.apache.flink.streaming.connectors.kafka.table.KafkaConnectorOptions;
-import org.apache.flink.streaming.connectors.kafka.table.KafkaDynamicSink;
-import org.apache.flink.streaming.connectors.kafka.table.KafkaDynamicSource;
-import org.apache.flink.streaming.connectors.kafka.table.SinkBufferFlushMode;
-import org.apache.flink.streaming.connectors.kafka.table.UpsertKafkaDynamicTableFactory;
 import org.apache.flink.streaming.runtime.operators.sink.SinkWriterOperatorFactory;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.ValidationException;
@@ -79,8 +74,8 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.function.Consumer;
 
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.AVRO_CONFLUENT;
 import static org.apache.flink.core.testutils.FlinkMatchers.containsCause;
-import static org.apache.flink.streaming.connectors.kafka.table.KafkaConnectorOptionsUtil.AVRO_CONFLUENT;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSink;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSource;
 import static org.hamcrest.CoreMatchers.instanceOf;
@@ -88,7 +83,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-/** Test for {@link UpsertKafkaDynamicTableFactory}. */
+/** Test for {@link UpsertPscDynamicTableFactory}. */
 public class UpsertPscDynamicTableFactoryTest extends TestLogger {
 
     private static final String SOURCE_TOPIC = "sourceTopic_1";
@@ -155,7 +150,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         final DynamicTableSource actualSource =
                 createTableSource(SOURCE_SCHEMA, getFullSourceOptions());
 
-        final KafkaDynamicSource expectedSource =
+        final PscDynamicSource expectedSource =
                 createExpectedScanSource(
                         producedDataType,
                         keyDecodingFormat,
@@ -167,7 +162,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         UPSERT_KAFKA_SOURCE_PROPERTIES);
         assertEquals(actualSource, expectedSource);
 
-        final KafkaDynamicSource actualUpsertKafkaSource = (KafkaDynamicSource) actualSource;
+        final PscDynamicSource actualUpsertKafkaSource = (PscDynamicSource) actualSource;
         ScanTableSource.ScanRuntimeProvider provider =
                 actualUpsertKafkaSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
         assertKafkaSource(provider);
@@ -189,11 +184,11 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         SINK_TOPIC,
                         UPSERT_KAFKA_SINK_PROPERTIES,
                         DeliveryGuarantee.AT_LEAST_ONCE,
-                        org.apache.flink.streaming.connectors.kafka.table.SinkBufferFlushMode.DISABLED,
+                        SinkBufferFlushMode.DISABLED,
                         null);
 
         // Test sink format.
-        final KafkaDynamicSink actualUpsertKafkaSink = (KafkaDynamicSink) actualSink;
+        final PscDynamicSink actualUpsertKafkaSink = (PscDynamicSink) actualSink;
         assertEquals(expectedSink, actualSink);
 
         // Test kafka producer.
@@ -202,7 +197,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         assertThat(provider, instanceOf(SinkV2Provider.class));
         final SinkV2Provider sinkFunctionProvider = (SinkV2Provider) provider;
         final Sink<RowData> sink = sinkFunctionProvider.createSink();
-        assertThat(sink, instanceOf(KafkaSink.class));
+        assertThat(sink, instanceOf(PscSink.class));
     }
 
     @SuppressWarnings("rawtypes")
@@ -230,11 +225,11 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         SINK_TOPIC,
                         UPSERT_KAFKA_SINK_PROPERTIES,
                         DeliveryGuarantee.AT_LEAST_ONCE,
-                        new org.apache.flink.streaming.connectors.kafka.table.SinkBufferFlushMode(100, 1000L),
+                        new SinkBufferFlushMode(100, 1000L),
                         null);
 
         // Test sink format.
-        final KafkaDynamicSink actualUpsertKafkaSink = (KafkaDynamicSink) actualSink;
+        final PscDynamicSink actualUpsertKafkaSink = (PscDynamicSink) actualSink;
         assertEquals(expectedSink, actualSink);
 
         // Test kafka producer.
@@ -278,7 +273,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         SINK_TOPIC,
                         UPSERT_KAFKA_SINK_PROPERTIES,
                         DeliveryGuarantee.AT_LEAST_ONCE,
-                        org.apache.flink.streaming.connectors.kafka.table.SinkBufferFlushMode.DISABLED,
+                        SinkBufferFlushMode.DISABLED,
                         100);
         assertEquals(expectedSink, actualSink);
 
@@ -354,7 +349,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             String expectedKeySubject) {
         Map<String, String> options = new HashMap<>();
         // Kafka specific options.
-        options.put("connector", UpsertKafkaDynamicTableFactory.IDENTIFIER);
+        options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic", SINK_TOPIC);
         options.put("properties.group.id", "dummy");
         options.put("properties.bootstrap.servers", "dummy");
@@ -364,10 +359,10 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         final String valueFormat =
                 options.getOrDefault(
                         FactoryUtil.FORMAT.key(),
-                        options.get(KafkaConnectorOptions.VALUE_FORMAT.key()));
-        final String keyFormat = options.get(KafkaConnectorOptions.KEY_FORMAT.key());
+                        options.get(PscConnectorOptions.VALUE_FORMAT.key()));
+        final String keyFormat = options.get(PscConnectorOptions.KEY_FORMAT.key());
 
-        KafkaDynamicSink sink = (KafkaDynamicSink) createTableSink(SINK_SCHEMA, options);
+        PscDynamicSink sink = (PscDynamicSink) createTableSink(SINK_SCHEMA, options);
 
         if (AVRO_CONFLUENT.equals(valueFormat)) {
             SerializationSchema<RowData> actualValueEncoder =
@@ -523,7 +518,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     private static Map<String, String> getFullSourceOptions() {
         // table options
         Map<String, String> options = new HashMap<>();
-        options.put("connector", UpsertKafkaDynamicTableFactory.IDENTIFIER);
+        options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic", SOURCE_TOPIC);
         options.put("properties.bootstrap.servers", "dummy");
         // key format options
@@ -565,7 +560,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
 
     private static Map<String, String> getFullSinkOptions() {
         Map<String, String> options = new HashMap<>();
-        options.put("connector", UpsertKafkaDynamicTableFactory.IDENTIFIER);
+        options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic", SINK_TOPIC);
         options.put("properties.bootstrap.servers", "dummy");
         // key format options
@@ -595,7 +590,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         return options;
     }
 
-    private KafkaDynamicSource createExpectedScanSource(
+    private PscDynamicSource createExpectedScanSource(
             DataType producedDataType,
             DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
             DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat,
@@ -604,10 +599,10 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             String keyPrefix,
             String topic,
             Properties properties) {
-        return new KafkaDynamicSource(
+        return new PscDynamicSource(
                 producedDataType,
                 keyDecodingFormat,
-                new UpsertKafkaDynamicTableFactory.DecodingFormatWrapper(valueDecodingFormat),
+                new UpsertPscDynamicTableFactory.DecodingFormatWrapper(valueDecodingFormat),
                 keyFields,
                 valueFields,
                 keyPrefix,
@@ -621,7 +616,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 FactoryMocks.IDENTIFIER.asSummaryString());
     }
 
-    private static KafkaDynamicSink createExpectedSink(
+    private static PscDynamicSink createExpectedSink(
             DataType consumedDataType,
             EncodingFormat<SerializationSchema<RowData>> keyEncodingFormat,
             EncodingFormat<SerializationSchema<RowData>> valueEncodingFormat,
@@ -633,11 +628,11 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             DeliveryGuarantee deliveryGuarantee,
             SinkBufferFlushMode flushMode,
             Integer parallelism) {
-        return new KafkaDynamicSink(
+        return new PscDynamicSink(
                 consumedDataType,
                 consumedDataType,
                 keyEncodingFormat,
-                new UpsertKafkaDynamicTableFactory.EncodingFormatWrapper(valueEncodingFormat),
+                new UpsertPscDynamicTableFactory.EncodingFormatWrapper(valueEncodingFormat),
                 keyProjection,
                 valueProjection,
                 keyPrefix,
@@ -661,10 +656,10 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                                 StreamExecutionEnvironment.createLocalEnvironment())
                         .getTransformation();
         assertThat(transformation, instanceOf(SourceTransformation.class));
-        SourceTransformation<RowData, KafkaPartitionSplit, KafkaSourceEnumState>
+        SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>
                 sourceTransformation =
-                        (SourceTransformation<RowData, KafkaPartitionSplit, KafkaSourceEnumState>)
+                        (SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>)
                                 transformation;
-        assertThat(sourceTransformation.getSource(), instanceOf(KafkaSource.class));
+        assertThat(sourceTransformation.getSource(), instanceOf(PscSource.class));
     }
 }

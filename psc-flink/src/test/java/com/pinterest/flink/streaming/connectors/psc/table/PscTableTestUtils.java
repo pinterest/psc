@@ -69,7 +69,7 @@ public class PscTableTestUtils {
     }
 
     public static List<String> readLines(String resource) throws IOException {
-        final URL url = KafkaChangelogTableITCase.class.getClassLoader().getResource(resource);
+        final URL url = PscChangelogTableITCase.class.getClassLoader().getResource(resource);
         assert url != null;
         Path path = new File(url.getFile()).toPath();
         return Files.readAllLines(path);

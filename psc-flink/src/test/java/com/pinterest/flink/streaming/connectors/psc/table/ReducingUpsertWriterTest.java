@@ -21,7 +21,6 @@ import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.operators.ProcessingTimeService;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.sink2.StatefulSink;
-import org.apache.flink.streaming.connectors.kafka.table.SinkBufferFlushMode;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.catalog.Column;
 import org.apache.flink.table.catalog.ResolvedSchema;
@@ -53,7 +52,7 @@ import static org.apache.flink.types.RowKind.UPDATE_AFTER;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-/** Tests for {@link org.apache.flink.streaming.connectors.kafka.table.ReducingUpsertWriter}. */
+/** Tests for {@link ReducingUpsertWriter}. */
 @RunWith(Parameterized.class)
 public class ReducingUpsertWriterTest {
     @Parameterized.Parameters(name = "object reuse = {0}")
@@ -72,7 +71,7 @@ public class ReducingUpsertWriterTest {
 
     private static final int keyIndices = 0;
     private static final int TIMESTAMP_INDICES = 5;
-    private static final org.apache.flink.streaming.connectors.kafka.table.SinkBufferFlushMode BUFFER_FLUSH_MODE =
+    private static final SinkBufferFlushMode BUFFER_FLUSH_MODE =
             new SinkBufferFlushMode(4, Long.MAX_VALUE);
 
     public static final RowData[] TEST_DATA = {
@@ -151,7 +150,7 @@ public class ReducingUpsertWriterTest {
     @Test
     public void testWriteData() throws Exception {
         final MockedSinkWriter writer = new MockedSinkWriter();
-        final org.apache.flink.streaming.connectors.kafka.table.ReducingUpsertWriter<?> bufferedWriter = createBufferedWriter(writer);
+        final ReducingUpsertWriter<?> bufferedWriter = createBufferedWriter(writer);
 
         // write 4 records which doesn't trigger batch size
         writeData(bufferedWriter, new ReusableIterator(0, 4));
@@ -218,7 +217,7 @@ public class ReducingUpsertWriterTest {
     @Test
     public void testFlushDataWhenCheckpointing() throws Exception {
         final MockedSinkWriter writer = new MockedSinkWriter();
-        final org.apache.flink.streaming.connectors.kafka.table.ReducingUpsertWriter<?> bufferedWriter = createBufferedWriter(writer);
+        final ReducingUpsertWriter<?> bufferedWriter = createBufferedWriter(writer);
         // write all data, there should be 3 records are still buffered
         writeData(bufferedWriter, new ReusableIterator(0, 4));
         // snapshot should flush the buffer
@@ -277,7 +276,7 @@ public class ReducingUpsertWriterTest {
         }
     }
 
-    private void writeData(org.apache.flink.streaming.connectors.kafka.table.ReducingUpsertWriter<?> writer, Iterator<RowData> iterator)
+    private void writeData(ReducingUpsertWriter<?> writer, Iterator<RowData> iterator)
             throws Exception {
         while (iterator.hasNext()) {
             RowData next = iterator.next();
@@ -299,12 +298,12 @@ public class ReducingUpsertWriterTest {
     }
 
     @SuppressWarnings("unchecked")
-    private org.apache.flink.streaming.connectors.kafka.table.ReducingUpsertWriter<?> createBufferedWriter(MockedSinkWriter sinkWriter) {
+    private ReducingUpsertWriter<?> createBufferedWriter(MockedSinkWriter sinkWriter) {
         TypeInformation<RowData> typeInformation =
                 (TypeInformation<RowData>)
                         new SinkRuntimeProviderContext(false)
                                 .createTypeInformation(SCHEMA.toPhysicalRowDataType());
-        return new org.apache.flink.streaming.connectors.kafka.table.ReducingUpsertWriter<>(
+        return new ReducingUpsertWriter<>(
                 sinkWriter,
                 SCHEMA.toPhysicalRowDataType(),
                 new int[] {keyIndices},

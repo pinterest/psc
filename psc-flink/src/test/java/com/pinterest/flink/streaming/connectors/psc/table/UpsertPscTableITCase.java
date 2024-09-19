@@ -39,20 +39,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.collectRows;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.comparedWithKeyAndOrder;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.waitingExpectedResults;
 import static org.apache.flink.api.common.typeinfo.Types.INT;
 import static org.apache.flink.api.common.typeinfo.Types.LOCAL_DATE_TIME;
 import static org.apache.flink.api.common.typeinfo.Types.ROW_NAMED;
 import static org.apache.flink.api.common.typeinfo.Types.STRING;
-import static org.apache.flink.streaming.connectors.kafka.table.KafkaTableTestUtils.collectRows;
-import static org.apache.flink.streaming.connectors.kafka.table.KafkaTableTestUtils.comparedWithKeyAndOrder;
-import static org.apache.flink.streaming.connectors.kafka.table.KafkaTableTestUtils.waitingExpectedResults;
 import static org.apache.flink.table.planner.factories.TestValuesTableFactory.changelogRow;
 import static org.apache.flink.table.utils.TableTestMatchers.deepEqualTo;
 import static org.junit.Assert.assertThat;
 
 /** Upsert-kafka IT cases. */
 @RunWith(Parameterized.class)
-public class UpsertPscTableITCase extends KafkaTableTestBase {
+public class UpsertPscTableITCase extends PscTableTestBase {
 
     private static final String JSON_FORMAT = "json";
     private static final String CSV_FORMAT = "csv";

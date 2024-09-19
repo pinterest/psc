@@ -47,7 +47,7 @@ public class PscSourceTestUtils {
     }
 
     /** Get configuration of KafkaSource. */
-    public static Configuration getKafkaSourceConfiguration(PscSource<?> pscSource) {
+    public static Configuration getPscSourceConfiguration(PscSource<?> pscSource) {
         return pscSource.getConfiguration();
     }
 }

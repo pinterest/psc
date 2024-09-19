@@ -19,7 +19,6 @@
 package com.pinterest.flink.streaming.connectors.psc.table;
 
 import org.apache.flink.configuration.Configuration;
-import org.apache.flink.streaming.connectors.kafka.table.KafkaConnectorOptionsUtil;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.types.DataType;
@@ -28,8 +27,8 @@ import org.junit.Test;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.apache.flink.streaming.connectors.kafka.table.KafkaConnectorOptionsUtil.createKeyFormatProjection;
-import static org.apache.flink.streaming.connectors.kafka.table.KafkaConnectorOptionsUtil.createValueFormatProjection;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createKeyFormatProjection;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createValueFormatProjection;
 import static org.apache.flink.table.api.DataTypes.FIELD;
 import static org.apache.flink.table.api.DataTypes.INT;
 import static org.apache.flink.table.api.DataTypes.ROW;
@@ -40,7 +39,7 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 import static org.junit.internal.matchers.ThrowableMessageMatcher.hasMessage;
 
-/** Test for {@link KafkaConnectorOptionsUtil}. */
+/** Test for {@link PscConnectorOptionsUtil}. */
 public class PscConnectorOptionsUtilTest {
 
     @Test
