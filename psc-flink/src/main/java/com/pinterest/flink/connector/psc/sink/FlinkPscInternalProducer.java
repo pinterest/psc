@@ -17,7 +17,7 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
-import com.pinterest.flink.connector.psc.PscFlinkUtil;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
@@ -56,8 +56,8 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         super(PscConfigurationUtils.propertiesToPscConfiguration(withTransactionalId(properties, transactionalId)));
         if (transactionalId != null) {
             // Producer is transactional, so the backend producer should be immediately initialized given the ClusterUri in the properties
-            TopicUri clusterUri = PscFlinkUtil.getAndValidateClusterUri(properties);
-            getBackendProducerForTopicUri(clusterUri);
+            TopicUri clusterUri = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties);
+            getBackendProducerForTopicUri(validateTopicUri(clusterUri.getTopicUriAsString()));
         }
         this.transactionalId = transactionalId;
     }

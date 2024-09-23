@@ -18,7 +18,7 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator;
 
-import com.pinterest.flink.connector.psc.PscFlinkUtil;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.PscSourceOptions;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriber;
@@ -135,7 +135,7 @@ public class PscSourceEnumerator
                         Long::parseLong);
         this.consumerGroupId = properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         try {
-            this.clusterUri = PscFlinkUtil.getAndValidateClusterUri(properties);
+            this.clusterUri = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties);
         } catch (TopicUriSyntaxException e) {
             throw new RuntimeException("Failed to get and validate clusterUri from properties", e);
         }

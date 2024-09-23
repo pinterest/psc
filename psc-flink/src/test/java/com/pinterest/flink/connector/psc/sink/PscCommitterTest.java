@@ -17,14 +17,18 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
+import com.pinterest.psc.serde.StringSerializer;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.connector.sink2.mocks.MockCommitRequest;
 import org.apache.flink.util.TestLoggerExtension;
 
-import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -35,13 +39,14 @@ import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Tests for {@link KafkaCommitter}. */
+/** Tests for {@link PscCommitter}. */
 @ExtendWith({TestLoggerExtension.class})
 public class PscCommitterTest {
 
     private static final int PRODUCER_ID = 0;
     private static final short EPOCH = 0;
     private static final String TRANSACTIONAL_ID = "transactionalId";
+    private static final String CLUSTER_URI = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
 
     /** Causes a network error by inactive broker and tests that a retry will happen. */
     @Test
@@ -122,8 +127,16 @@ public class PscCommitterTest {
 //        properties.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "http://localhost:1");
         // Low timeout will fail commitTransaction quicker
 //        properties.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, "100");
-        properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class);
-        properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class);
+        properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
+        properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
+        properties.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "PscCommitterTest");
+        properties.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, CLUSTER_URI);
+        properties.setProperty("psc.discovery.topic.uri.prefixes",
+                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, ",", 1));
+        properties.setProperty("psc.discovery.connection.urls", "http://localhost:1");
+        properties.setProperty("psc.discovery.security.protocols",
+                StringUtils.repeat("plaintext", ",", 1));
+
         return properties;
     }
 }

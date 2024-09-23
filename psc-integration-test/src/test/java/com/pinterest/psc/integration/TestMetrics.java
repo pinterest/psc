@@ -291,7 +291,7 @@ public class TestMetrics {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testProducerWithDisabledMetricsReporting() throws ConfigurationException, ProducerException, InterruptedException {
+    public void testProducerWithDisabledMetricsReporting() throws ConfigurationException, ProducerException, InterruptedException, IOException {
         producerConfiguration.setProperty(PscConfiguration.PSC_METRIC_REPORTING_ENABLED, "false");
         PscProducer<byte[], byte[]> pscProducer = new PscProducer<>(producerConfiguration);
         PscMetricsUtil.cleanup(PscMetricRegistryManager.getInstance());

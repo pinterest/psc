@@ -6,10 +6,10 @@ import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 
 import java.util.Properties;
 
-public class PscFlinkUtil {
+public class PscFlinkConfiguration {
     public static final String CLUSTER_URI_CONFIG = "psc.producer.cluster.uri";
 
-    public static TopicUri getAndValidateClusterUri(Properties properties) throws TopicUriSyntaxException {
+    public static TopicUri validateAndGetBaseClusterUri(Properties properties) throws TopicUriSyntaxException {
         if (!properties.containsKey(CLUSTER_URI_CONFIG)) {
             throw new IllegalArgumentException("Cluster URI is required for transactional producer");
         }

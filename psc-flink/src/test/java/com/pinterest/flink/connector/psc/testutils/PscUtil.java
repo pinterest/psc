@@ -110,20 +110,20 @@ public class PscUtil {
      * <p>This method will fetch the latest offsets for the partitions once and only return records
      * until that point.
      *
-     * @param topic to fetch from
+     * @param topicUriStr to fetch from
      * @param properties used to configure the created {@link PscConsumer}
      * @param committed determines the mode {@link PscConfiguration#PSC_CONSUMER_ISOLATION_LEVEL} with which
      *     the consumer reads the records.
      * @return all {@link PscConsumerMessage} in the topic
      */
     public static List<PscConsumerMessage<byte[], byte[]>> drainAllRecordsFromTopic(
-            String topic, Properties properties, boolean committed) throws ConfigurationException, ConsumerException {
+            String topicUriStr, Properties properties, boolean committed) throws ConfigurationException, ConsumerException {
         final Properties consumerConfig = new Properties();
         consumerConfig.putAll(properties);
         consumerConfig.put(
                 PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL,
                 committed ? PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL_TRANSACTIONAL : PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL_NON_TRANSACTIONAL);
-        return drainAllRecordsFromTopic(topic, consumerConfig);
+        return drainAllRecordsFromTopic(topicUriStr, consumerConfig);
     }
 
     /**
@@ -133,18 +133,18 @@ public class PscUtil {
      * <p>This method will fetch the latest offsets for the partitions once and only return records
      * until that point.
      *
-     * @param topic to fetch from
+     * @param topicUriStr to fetch from
      * @param properties used to configure the created {@link PscConsumer}
      * @return all {@link PscConsumerMessage} in the topic
      */
     public static List<PscConsumerMessage<byte[], byte[]>> drainAllRecordsFromTopic(
-            String topic, Properties properties) throws ConfigurationException, ConsumerException {
+            String topicUriStr, Properties properties) throws ConfigurationException, ConsumerException {
         final Properties consumerConfig = new Properties();
         consumerConfig.putAll(properties);
         consumerConfig.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, ByteArrayDeserializer.class.getName());
         consumerConfig.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArrayDeserializer.class.getName());
         try (PscConsumer<byte[], byte[]> consumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(consumerConfig))) {
-            Set<TopicUriPartition> topicPartitions = getAllPartitions(consumer, topic);
+            Set<TopicUriPartition> topicPartitions = getAllPartitions(consumer, topicUriStr);
             Map<TopicUriPartition, Long> endOffsets = consumer.endOffsets(topicPartitions);
             consumer.assign(topicPartitions);
             consumer.seekToBeginning(topicPartitions);

@@ -75,7 +75,7 @@ public class PscTransactionLogITCase extends TestLogger {
         lingeringTransaction(4);
 
         final PscTransactionLog transactionLog =
-                new PscTransactionLog(getKafkaClientConfiguration());
+                new PscTransactionLog(null, getKafkaClientConfiguration());     // TODO: clusterUriStr needs to be replaced
         final List<PscTransactionLog.TransactionRecord> transactions = transactionLog.getTransactions();
         assertThat(
                 transactions,

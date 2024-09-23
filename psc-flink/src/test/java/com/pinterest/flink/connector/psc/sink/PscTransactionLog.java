@@ -46,14 +46,16 @@ class PscTransactionLog {
 
     private static final int SUPPORTED_KAFKA_SCHEMA_VERSION = 0;
     private final Properties consumerConfig;
+    private final String clusterUriStr;
 
     /**
      * Constructor creating a KafkaTransactionLog.
      *
-     * @param kafkaConfig used to configure the {@link KafkaConsumer} to query the topic containing
+     * @param kafkaConfig used to configure the {@link com.pinterest.psc.consumer.PscConsumer} to query the topic containing
      *     the transaction information
      */
-    PscTransactionLog(Properties kafkaConfig) {
+    PscTransactionLog(String clusterUriStr, Properties kafkaConfig) {
+        this.clusterUriStr = checkNotNull(clusterUriStr);
         this.consumerConfig = new Properties();
         consumerConfig.putAll(checkNotNull(kafkaConfig, "kafkaConfig"));
         consumerConfig.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, ByteArrayDeserializer.class.getName());
@@ -67,7 +69,7 @@ class PscTransactionLog {
 
     /** Gets all {@link TransactionRecord} matching the given id filter. */
     public List<TransactionRecord> getTransactions(Predicate<String> transactionIdFilter) throws ConfigurationException, ConsumerException {
-        return drainAllRecordsFromTopic(TRANSACTION_STATE_TOPIC_NAME, consumerConfig, true).stream()
+        return drainAllRecordsFromTopic(clusterUriStr + TRANSACTION_STATE_TOPIC_NAME, consumerConfig, true).stream()
                 .map(r -> parseTransaction(r, transactionIdFilter))
                 .filter(Optional::isPresent)
                 .map(Optional::get)

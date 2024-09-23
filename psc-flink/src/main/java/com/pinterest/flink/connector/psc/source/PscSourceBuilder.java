@@ -18,7 +18,7 @@
 
 package com.pinterest.flink.connector.psc.source;
 
-import com.pinterest.flink.connector.psc.PscFlinkUtil;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppingOffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializerValidator;
@@ -91,7 +91,7 @@ import static org.apache.flink.util.Preconditions.checkState;
 public class PscSourceBuilder<OUT> {
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceBuilder.class);
     private static final String[] REQUIRED_CONFIGS = {
-            PscFlinkUtil.CLUSTER_URI_CONFIG,
+            PscFlinkConfiguration.CLUSTER_URI_CONFIG,
     };
     // The subscriber specifies the partitions to subscribe to.
     private PscSubscriber subscriber;
@@ -120,7 +120,7 @@ public class PscSourceBuilder<OUT> {
      * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setClusterUri(String clusterUri) {
-        return setProperty(PscFlinkUtil.CLUSTER_URI_CONFIG, clusterUri);
+        return setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, clusterUri);
     }
 
     /**

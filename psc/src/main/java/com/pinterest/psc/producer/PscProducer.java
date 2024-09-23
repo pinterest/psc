@@ -457,9 +457,9 @@ public class PscProducer<K, V> implements Closeable {
      * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
      */
     protected void initTransactions(PscBackendProducer<K, V> backendProducer) throws ProducerException {
-        if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
-                !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
-            throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
+//        if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
+//                !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
+//            throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
 
         try {
             backendProducer.initTransaction();
@@ -889,7 +889,7 @@ public class PscProducer<K, V> implements Closeable {
             throw new ProducerException(ExceptionMessage.ALREADY_CLOSED_EXCEPTION);
     }
 
-    private TopicUri validateTopicUri(String topicUriAsString) throws ProducerException {
+    protected TopicUri validateTopicUri(String topicUriAsString) throws ProducerException {
         if (topicUriAsString == null)
             throw new ProducerException("Null topic URI was passed to the producer API.");
 

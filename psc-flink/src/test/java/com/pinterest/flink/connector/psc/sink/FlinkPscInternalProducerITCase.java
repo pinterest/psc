@@ -17,6 +17,9 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumer;
@@ -28,6 +31,7 @@ import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.StringDeserializer;
 import com.pinterest.psc.serde.StringSerializer;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.shaded.guava30.com.google.common.collect.Lists;
 import org.apache.flink.util.TestLoggerExtension;
 import org.apache.kafka.common.errors.ProducerFencedException;
@@ -66,15 +70,17 @@ class FlinkPscInternalProducerITCase {
 
     private static final String TRANSACTION_PREFIX = "test-transaction-";
 
+    private static final String CLUSTER_URI = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
+
     @Test
-    void testInitTransactionId() {
-        final String topicUriStr = "test-init-transactions";    // TODO: create discovery mechanism for topicUriStr
-        try (FlinkPscInternalProducer<String, String> reuse =
-                new FlinkPscInternalProducer<>(getProperties(), "dummy")) {
+    void testInitTransactionId() throws IOException {
+        final String topicUriStr = CLUSTER_URI + "test-init-transactions";
+        FlinkPscInternalProducer<String, String> reuse = null;
+        try {
             int numTransactions = 20;
+            reuse = new FlinkPscInternalProducer<>(getProperties(), "dummy");
             for (int i = 1; i <= numTransactions; i++) {
                 reuse.initTransactionId(TRANSACTION_PREFIX + i);
-                reuse.beginTransaction();
                 reuse.send(new PscProducerMessage<>(topicUriStr, "test-value-" + i));
                 if (i % 2 == 0) {
                     reuse.commitTransaction();
@@ -85,8 +91,11 @@ class FlinkPscInternalProducerITCase {
                 assertNumTransactions(i);
                 assertThat(readRecords(topicUriStr).asList().size()).isEqualTo(i / 2);
             }
-        } catch (ConfigurationException | ProducerException | TopicUriSyntaxException | IOException | ConsumerException e) {
+        } catch (ConfigurationException | ProducerException | TopicUriSyntaxException | ConsumerException e) {
             throw new RuntimeException(e);
+        } finally {
+            if (reuse != null)
+                reuse.close();
         }
     }
 
@@ -94,22 +103,19 @@ class FlinkPscInternalProducerITCase {
     @MethodSource("provideTransactionsFinalizer")
     void testResetInnerTransactionIfFinalizingTransactionFailed(
             Consumer<FlinkPscInternalProducer<?, ?>> transactionFinalizer) {
-        final String topic = "reset-producer-internal-state";   // TODO: create discovery mechanism for topic
+        final String topicUriStr = CLUSTER_URI + "reset-producer-internal-state";   // TODO: create discovery mechanism for topic
         try (FlinkPscInternalProducer<String, String> fenced =
                 new FlinkPscInternalProducer<>(getProperties(), "dummy")) {
             fenced.initTransactions();
-            fenced.beginTransaction();
-            fenced.send(new PscProducerMessage<>(topic, "test-value"));
+            fenced.send(new PscProducerMessage<>(topicUriStr, "test-value"));
             // Start a second producer that fences the first one
             try (FlinkPscInternalProducer<String, String> producer =
                     new FlinkPscInternalProducer<>(getProperties(), "dummy")) {
                 producer.initTransactions();
-                producer.beginTransaction();
-                producer.send(new PscProducerMessage<>(topic, "test-value"));
+                producer.send(new PscProducerMessage<>(topicUriStr, "test-value"));
                 producer.commitTransaction();
             }
-            assertThatThrownBy(() -> transactionFinalizer.accept(fenced))
-                    .isInstanceOf(ProducerFencedException.class);
+            assertThatThrownBy(() -> transactionFinalizer.accept(fenced)).getRootCause().isInstanceOf(ProducerFencedException.class);
             // Internal transaction should be reset and setting a new transactional id is possible
             fenced.setTransactionId("dummy2");
         } catch (ConfigurationException | ProducerException | TopicUriSyntaxException | IOException e) {
@@ -119,15 +125,22 @@ class FlinkPscInternalProducerITCase {
 
     private static Properties getProperties() {
         Properties properties = new Properties();
-//        properties.put(
-//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG,
-//                KAFKA_CONTAINER.getBootstrapServers());
         properties.put(PscConfiguration.PSC_PRODUCER_IDEMPOTENCE_ENABLED, "true");
         properties.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "FlinkPscInternalProducerITCase");
+        properties.put(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "FlinkPscInternalProducerITCase");
+        properties.put(PscConfiguration.PSC_CONSUMER_GROUP_ID, "FlinkPscInternalProducerITCase");
         properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
         properties.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
         properties.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class.getName());
+        properties.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, CLUSTER_URI);
+        String brokerConnectionString = KAFKA_CONTAINER.getBootstrapServers().split("://")[1];
+        int bootstrapCount = brokerConnectionString.split(",").length;
+        properties.setProperty("psc.discovery.topic.uri.prefixes",
+                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, ",", bootstrapCount));
+        properties.setProperty("psc.discovery.connection.urls", brokerConnectionString);
+        properties.setProperty("psc.discovery.security.protocols",
+                StringUtils.repeat("plaintext", ",", bootstrapCount));
         return properties;
     }
 
@@ -139,7 +152,7 @@ class FlinkPscInternalProducerITCase {
 
     private void assertNumTransactions(int numTransactions) throws ConfigurationException, ConsumerException {
         List<PscTransactionLog.TransactionRecord> transactions =
-                new PscTransactionLog(getProperties())
+                new PscTransactionLog(CLUSTER_URI, getProperties())
                         .getTransactions(id -> id.startsWith(TRANSACTION_PREFIX));
         assertThat(
                         transactions.stream()
@@ -150,7 +163,7 @@ class FlinkPscInternalProducerITCase {
 
     private PscConsumerPollMessageIterator<String, String> readRecords(String topicUri) throws ConfigurationException, ConsumerException {
         Properties properties = getProperties();
-        properties.put(PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL, "read_committed");
+        properties.put(PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL, PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL_TRANSACTIONAL);
         PscConsumer<String, String> consumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(properties));
         consumer.assign(
                 consumer.getPartitions(topicUri));
