@@ -207,6 +207,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
      * obtained ones, so that we can resume transaction after a restart.
      */
     public void resumeTransaction(long producerId, short epoch) throws ProducerException {
+        ensureOnlyOneBackendProducer();
         checkState(!inTransaction, "Already in transaction %s", transactionalId);
         checkState(
                 producerId >= 0 && epoch >= 0,
@@ -220,12 +221,22 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
                 epoch);
 
         Object transactionManager = getTransactionManager();
+        PscProducerTransactionalProperties pscProducerTransactionalProperties = new PscProducerTransactionalProperties(producerId, epoch);
         synchronized (transactionManager) {
             TransactionManagerUtils.resumeTransaction(
                     transactionManager,
-                    new PscProducerTransactionalProperties(producerId, epoch)
+                    pscProducerTransactionalProperties
             );
+            PscBackendProducer<K, V> backendProducer = getBackendProducers().iterator().next();
+            setBackendProducerTransactionalState(backendProducer, TransactionalState.IN_TRANSACTION);
+            setTransactionalState(TransactionalState.INIT_AND_BEGUN);
             this.inTransaction = true;
+        }
+    }
+
+    private void ensureOnlyOneBackendProducer() {
+        if (getBackendProducers().size() != 1) {
+            throw new IllegalStateException("This operation is only supported when there is exactly one backend producer");
         }
     }
 

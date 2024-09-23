@@ -28,7 +28,6 @@ import com.pinterest.psc.serde.StringSerializer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.connector.sink2.mocks.MockCommitRequest;
 import org.apache.flink.util.TestLoggerExtension;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -124,9 +123,6 @@ public class PscCommitterTest {
 
     Properties getProperties() {
         Properties properties = new Properties();
-//        properties.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "http://localhost:1");
-        // Low timeout will fail commitTransaction quicker
-//        properties.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, "100");
         properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
         properties.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "PscCommitterTest");

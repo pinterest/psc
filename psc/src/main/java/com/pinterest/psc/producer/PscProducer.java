@@ -19,8 +19,8 @@ import com.pinterest.psc.exception.producer.TransactionalProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.PscStartupException;
 import com.pinterest.psc.interceptor.Interceptors;
-import com.pinterest.psc.interceptor.TypePreservingInterceptor;
 import com.pinterest.psc.interceptor.ProducerInterceptors;
+import com.pinterest.psc.interceptor.TypePreservingInterceptor;
 import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
@@ -978,6 +978,20 @@ public class PscProducer<K, V> implements Closeable {
     @InterfaceStability.Evolving
     protected TransactionalState getTransactionalState() {
         return transactionalState.get();
+    }
+
+    protected void setTransactionalState(TransactionalState stateToSet) {
+        if (stateToSet == null)
+            throw new IllegalArgumentException("Transactional state cannot be null.");
+        transactionalState.set(stateToSet);
+    }
+
+    protected void setBackendProducerTransactionalState(PscBackendProducer<K, V> backendProducer, TransactionalState stateToSet) {
+        if (backendProducer == null || stateToSet == null)
+            throw new IllegalArgumentException("Backend producer and transactional state cannot be null.");
+        if (!transactionalStateByBackendProducer.containsKey(backendProducer))
+            throw new IllegalArgumentException("Backend producer not found in the transactional state map.");
+        transactionalStateByBackendProducer.put(backendProducer, stateToSet);
     }
 
     @VisibleForTesting
