@@ -113,6 +113,7 @@ class PscWriter<IN>
 
     private boolean closed = false;
     private long lastSync = System.currentTimeMillis();
+    private boolean isMetricsInitialized = false;
 
     /**
      * Constructor creating a PSC writer.
@@ -156,7 +157,7 @@ class PscWriter<IN>
         this.timeService = sinkInitContext.getProcessingTimeService();
         this.metricGroup = sinkInitContext.metricGroup();
         this.numBytesOutCounter = metricGroup.getIOMetricGroup().getNumBytesOutCounter();
-        this.numRecordsOutCounter = metricGroup.getIOMetricGroup().getNumRecordsOutCounter();
+        this.numRecordsOutCounter = metricGroup.getNumRecordsSendCounter();
         this.numRecordsOutErrorsCounter = metricGroup.getNumRecordsOutErrorsCounter();
         this.pscSinkContext =
                 new DefaultPscSinkContext(
@@ -183,13 +184,10 @@ class PscWriter<IN>
                 || deliveryGuarantee == DeliveryGuarantee.NONE) {
             this.currentProducer = new FlinkPscInternalProducer<>(this.pscProducerConfig, null);
             closer.register(this.currentProducer);
-            initPscMetrics(this.currentProducer);
         } else {
             throw new UnsupportedOperationException(
                     "Unsupported PSC writer semantic " + this.deliveryGuarantee);
         }
-
-        initFlinkMetrics();
     }
 
     @Override
@@ -198,7 +196,10 @@ class PscWriter<IN>
                 recordSerializer.serialize(element, pscSinkContext, context.timestamp());
         try {
             currentProducer.send(record, deliveryCallback);
-        } catch (ProducerException | ConfigurationException e) {
+            if (!isMetricsInitialized) {
+                initPscAndFlinkMetrics(currentProducer);
+            }
+        } catch (ConfigurationException | ClientException e) {
             throw new RuntimeException(e);
         }
         numRecordsOutCounter.inc();
@@ -345,7 +346,8 @@ class PscWriter<IN>
                 producer = new FlinkPscInternalProducer<>(pscProducerConfig, transactionalId);
                 closer.register(producer);
                 producer.initTransactions();
-                initPscMetrics(producer);
+                if (!isMetricsInitialized)
+                    initPscAndFlinkMetrics(producer);
             } else {
                 producer.initTransactionId(transactionalId);
             }
@@ -385,6 +387,16 @@ class PscWriter<IN>
                 pscMetricGroup.gauge(name, wrapper);
             }
         };
+    }
+
+    private void initPscAndFlinkMetrics(FlinkPscInternalProducer<byte[], byte[]> producer) {
+        try {
+            initPscMetrics(producer);
+        } catch (ClientException e) {
+            throw new RuntimeException("Failed to initialize PSC metrics", e);
+        }
+        initFlinkMetrics();
+        isMetricsInitialized = true;
     }
 
     private long computeSendTime() {

@@ -462,6 +462,7 @@ public class PscProducer<K, V> implements Closeable {
      * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
      */
     protected void initTransactions(PscBackendProducer<K, V> backendProducer, boolean callBeginTransaction) throws ProducerException {
+        // below code is commented out because initTransactions can be called multiple times for the same backend producer in Flink 1.15
 //        if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
 //                !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
 //            throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");

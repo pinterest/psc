@@ -19,7 +19,6 @@ package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.testutils.PscSinkExternalContextFactory;
-import com.pinterest.flink.connector.psc.sink.testutils.PscSinkTestSuiteBase;
 import com.pinterest.flink.connector.psc.testutils.PscUtil;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
@@ -182,7 +181,7 @@ public class PscSinkITCase extends TestLogger {
 
     /** Integration test based on connector testing framework. */
     @Nested
-    class IntegrationTests extends PscSinkTestSuiteBase<String> {
+    class IntegrationTests extends SinkTestSuiteBase<String> {
         // Defines test environment on Flink MiniCluster
         @SuppressWarnings("unused")
         @TestEnv
