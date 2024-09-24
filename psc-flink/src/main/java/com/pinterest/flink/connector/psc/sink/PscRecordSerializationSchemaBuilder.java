@@ -322,7 +322,6 @@ public class PscRecordSerializationSchemaBuilder<IN> {
                                             targetTopicUri,
                                             context.getPartitionsForTopicUri(targetTopicUri)))
                             : OptionalInt.empty();
-
             return new PscProducerMessage<>(
                     targetTopicUri,
                     partition.isPresent() ? partition.getAsInt() : null,

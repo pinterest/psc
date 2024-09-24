@@ -210,7 +210,7 @@ public class PscWriterITCase {
                     new FlinkPscInternalProducer<>(properties, transactionalId)) {
 
                 producer.initTransactions();
-                producer.beginTransaction();
+//                producer.beginTransaction();
                 producer.send(new PscProducerMessage<>(topic, "2".getBytes()));
                 producer.commitTransaction();
             }

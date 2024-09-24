@@ -379,14 +379,7 @@ public class PscProducer<K, V> implements Closeable {
         }
     }
 
-    /**
-     * Prepares the state of this producer to start a transaction.
-     *
-     * @throws ProducerException if the producer is already closed, or is not in the proper state to begin a
-     *                           transaction.
-     */
-    @InterfaceStability.Evolving
-    public void beginTransaction() throws ProducerException {
+    private void beginTransactionInternal() throws ProducerException {
         ensureOpen();
 
         // the case where no backend producer is created yet
@@ -428,6 +421,17 @@ public class PscProducer<K, V> implements Closeable {
     }
 
     /**
+     * Prepares the state of this producer to start a transaction.
+     *
+     * @throws ProducerException if the producer is already closed, or is not in the proper state to begin a
+     *                           transaction.
+     */
+    @InterfaceStability.Evolving
+    public void beginTransaction() throws ProducerException {
+        beginTransactionInternal();
+    }
+
+    /**
      * Initializes the transactional producer in the backend. This moves the transactional state one step further from what
      * <code>beginTransaction()</code> does as it creates a backend producer and initializes its transactional state. This
      * is used in cases where the PSC producer needs to be immediately transactional ready upon creation. Note that this
@@ -446,7 +450,7 @@ public class PscProducer<K, V> implements Closeable {
 
         TopicUri topicUri = validateTopicUri(topicUriString);
         PscBackendProducer<K, V> backendProducer = getBackendProducerForTopicUri(topicUri);
-        initTransactions(backendProducer);
+        initTransactions(backendProducer, true);
         return backendProducer.getTransactionalProperties();
     }
 
@@ -454,9 +458,10 @@ public class PscProducer<K, V> implements Closeable {
      * Centralized logic for initializing transactions for a given backend producer.
      *
      * @param backendProducer the backendProducer to initialize transactions for
+     * @param callBeginTransaction whether to call beginTransaction after initializing transactions
      * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
      */
-    protected void initTransactions(PscBackendProducer<K, V> backendProducer) throws ProducerException {
+    protected void initTransactions(PscBackendProducer<K, V> backendProducer, boolean callBeginTransaction) throws ProducerException {
 //        if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
 //                !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
 //            throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
@@ -473,8 +478,8 @@ public class PscProducer<K, V> implements Closeable {
             logger.error("initTransactions() on backend producer failed.");
             throw exception;
         }
-
-        this.beginTransaction();
+        if (callBeginTransaction)
+            this.beginTransactionInternal();
     }
 
     /**

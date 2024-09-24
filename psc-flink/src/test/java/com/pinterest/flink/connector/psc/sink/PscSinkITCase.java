@@ -17,8 +17,11 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.testutils.PscSinkExternalContextFactory;
+import com.pinterest.flink.connector.psc.sink.testutils.PscSinkTestSuiteBase;
 import com.pinterest.flink.connector.psc.testutils.PscUtil;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumer;
@@ -108,6 +111,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
+import static com.pinterest.flink.connector.psc.sink.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
 import static org.apache.flink.util.DockerImageVersions.KAFKA;
 import static org.hamcrest.CoreMatchers.containsString;
@@ -118,7 +122,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-/** Tests for using KafkaSink writing to a Kafka cluster. */
+/** Tests for using PscSink writing to a Kafka cluster. */
 public class PscSinkITCase extends TestLogger {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSinkITCase.class);
@@ -129,6 +133,7 @@ public class PscSinkITCase extends TestLogger {
     private static AdminClient admin;
 
     private String topic;
+    private String topicUriStr;
     private SharedReference<AtomicLong> emittedRecordsCount;
     private SharedReference<AtomicLong> emittedRecordsWithCheckpoint;
     private SharedReference<AtomicBoolean> failed;
@@ -167,6 +172,7 @@ public class PscSinkITCase extends TestLogger {
         lastCheckpointedRecord = sharedObjects.add(new AtomicLong(0));
         topic = UUID.randomUUID().toString();
         createTestTopic(topic, 1, TOPIC_REPLICATION_FACTOR);
+        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
     }
 
     @After
@@ -176,7 +182,7 @@ public class PscSinkITCase extends TestLogger {
 
     /** Integration test based on connector testing framework. */
     @Nested
-    class IntegrationTests extends SinkTestSuiteBase<String> {
+    class IntegrationTests extends PscSinkTestSuiteBase<String> {
         // Defines test environment on Flink MiniCluster
         @SuppressWarnings("unused")
         @TestEnv
@@ -370,7 +376,7 @@ public class PscSinkITCase extends TestLogger {
 //                        .setBootstrapServers(KAFKA_CONTAINER.getBootstrapServers())
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
-                                        .setTopicUriString(topic)
+                                        .setTopicUriString(topicUriStr)
                                         .setValueSerializationSchema(new RecordSerializer())
                                         .build())
                         .setTransactionalIdPrefix("kafka-sink")
@@ -392,13 +398,18 @@ public class PscSinkITCase extends TestLogger {
                 env.addSource(
                         new InfiniteIntegerSource(
                                 emittedRecordsCount, emittedRecordsWithCheckpoint));
+        Properties producerProperties = new Properties();
+        producerProperties.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-client");
+        producerProperties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG,PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        injectDiscoveryConfigs(producerProperties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         source.sinkTo(
                 new PscSinkBuilder<Long>()
+                        .setPscProducerConfig(producerProperties)
 //                        .setBootstrapServers(KAFKA_CONTAINER.getBootstrapServers())
                         .setDeliverGuarantee(deliveryGuarantee)
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
-                                        .setTopicUriString(topic)
+                                        .setTopicUriString(topicUriStr)
                                         .setValueSerializationSchema(new RecordSerializer())
                                         .build())
                         .setTransactionalIdPrefix("kafka-sink")

@@ -49,7 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Tests for {@link KafkaRecordSerializationSchemaBuilder}. */
+/** Tests for {@link PscRecordSerializationSchemaBuilder}. */
 public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
 
     private static final String DEFAULT_TOPIC = "test";
@@ -229,13 +229,15 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
                 schema.serialize("a", null, 0L);
         assertEquals(0L, (long) recordWithTimestampZero.getPublishTimestamp());
 
-        final PscProducerMessage<byte[], byte[]> recordWithoutTimestamp =
-                schema.serialize("a", null, null);
-        assertNull(recordWithoutTimestamp.getPublishTimestamp());
+        // the below tests are commented out because PSC core injects the timestamp if it's null
 
-        final PscProducerMessage<byte[], byte[]> recordWithInvalidTimestamp =
-                schema.serialize("a", null, -100L);
-        assertNull(recordWithInvalidTimestamp.getPublishTimestamp());
+//        final PscProducerMessage<byte[], byte[]> recordWithoutTimestamp =
+//                schema.serialize("a", null, null);
+//        assertNull(recordWithoutTimestamp.getPublishTimestamp());
+//
+//        final PscProducerMessage<byte[], byte[]> recordWithInvalidTimestamp =
+//                schema.serialize("a", null, -100L);
+//        assertNull(recordWithInvalidTimestamp.getPublishTimestamp());
     }
 
     private static void assertOnlyOneSerializerAllowed(
@@ -288,7 +290,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
 
     /**
      * Serializer based on Kafka's serialization stack. This is the special case that implements
-     * {@link Configurable}
+     * {@link PscPlugin}
      *
      * <p>This class must be public to make it instantiable by the tests.
      */

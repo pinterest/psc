@@ -165,7 +165,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             throw new IllegalStateException("initTransactions() can only be called when there is exactly one backend producer" +
                     " already created.");
         PscBackendProducer<K, V> backendProducer = getBackendProducers().iterator().next();
-        initTransactions(backendProducer);
+        initTransactions(backendProducer, false);
     }
 
     public void setTransactionId(String transactionalId) throws ProducerException {

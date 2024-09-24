@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.connector.psc.sink.testutils;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.PscRecordSerializationSchema;
 import com.pinterest.flink.connector.psc.sink.PscSink;
 import com.pinterest.flink.connector.psc.sink.PscSinkBuilder;
@@ -27,6 +28,8 @@ import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.serde.StringDeserializer;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.sink2.Sink;
@@ -35,14 +38,10 @@ import org.apache.flink.connector.testframe.external.ExternalSystemDataReader;
 import org.apache.flink.connector.testframe.external.sink.DataStreamSinkV2ExternalContext;
 import org.apache.flink.connector.testframe.external.sink.TestingSinkSettings;
 import org.apache.flink.streaming.api.CheckpointingMode;
-
-import org.apache.commons.lang3.RandomStringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.slf4j.Logger;
@@ -61,6 +60,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static com.pinterest.flink.connector.psc.sink.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE;
 
 /** A Kafka external context that will create only one topic and use partitions in that topic. */
@@ -79,6 +79,7 @@ public class PscSinkExternalContext implements DataStreamSinkV2ExternalContext<S
     protected TopicUri clusterUri;
 
     protected final String topic;
+    protected final String topicUriString;
 
     private final List<ExternalSystemDataReader<String>> readers = new ArrayList<>();
 
@@ -94,6 +95,7 @@ public class PscSinkExternalContext implements DataStreamSinkV2ExternalContext<S
         this.connectorJarPaths = connectorJarPaths;
         this.topic =
                 TOPIC_NAME_PREFIX + "-" + ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
+        this.topicUriString = clusterUri.getTopicUriAsString() + topic;
         kafkaAdminClient = createAdminClient();
     }
 
@@ -139,13 +141,16 @@ public class PscSinkExternalContext implements DataStreamSinkV2ExternalContext<S
         final Properties properties = new Properties();
         properties.put(
                 PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS, DEFAULT_TRANSACTION_TIMEOUT_IN_MS);
+        properties.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "PscSinkExternalContext");
+        injectDiscoveryConfigs(properties, bootstrapServers, clusterUri.getTopicUriAsString());
+        properties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, clusterUri.getTopicUriAsString());
         builder // TODO: might need to set cluster URI
                 .setDeliverGuarantee(toDeliveryGuarantee(sinkSettings.getCheckpointingMode()))
                 .setTransactionalIdPrefix("testingFramework")
                 .setPscProducerConfig(properties)
                 .setRecordSerializer(
                         PscRecordSerializationSchema.builder()
-                                .setTopicUriString(topic)
+                                .setTopicUriString(topicUriString)
                                 .setValueSerializationSchema(new SimpleStringSchema())
                                 .build());
         return builder.build();
@@ -180,6 +185,8 @@ public class PscSinkExternalContext implements DataStreamSinkV2ExternalContext<S
             properties.setProperty(PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL, PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL_TRANSACTIONAL);
         }
         properties.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
+        properties.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "PscSinkExternalContext");
+        injectDiscoveryConfigs(properties, bootstrapServers, clusterUri.getTopicUriAsString());
         try {
             readers.add(new PscDataReader(properties, subscribedPartitions));
         } catch (ConfigurationException | ConsumerException e) {

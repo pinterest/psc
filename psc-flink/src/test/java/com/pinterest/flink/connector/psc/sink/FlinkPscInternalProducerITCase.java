@@ -81,6 +81,7 @@ class FlinkPscInternalProducerITCase {
             reuse = new FlinkPscInternalProducer<>(getProperties(), "dummy");
             for (int i = 1; i <= numTransactions; i++) {
                 reuse.initTransactionId(TRANSACTION_PREFIX + i);
+                reuse.beginTransaction();
                 reuse.send(new PscProducerMessage<>(topicUriStr, "test-value-" + i));
                 if (i % 2 == 0) {
                     reuse.commitTransaction();
@@ -107,11 +108,13 @@ class FlinkPscInternalProducerITCase {
         try (FlinkPscInternalProducer<String, String> fenced =
                 new FlinkPscInternalProducer<>(getProperties(), "dummy")) {
             fenced.initTransactions();
+            fenced.beginTransaction();
             fenced.send(new PscProducerMessage<>(topicUriStr, "test-value"));
             // Start a second producer that fences the first one
             try (FlinkPscInternalProducer<String, String> producer =
                     new FlinkPscInternalProducer<>(getProperties(), "dummy")) {
                 producer.initTransactions();
+                producer.beginTransaction();
                 producer.send(new PscProducerMessage<>(topicUriStr, "test-value"));
                 producer.commitTransaction();
             }

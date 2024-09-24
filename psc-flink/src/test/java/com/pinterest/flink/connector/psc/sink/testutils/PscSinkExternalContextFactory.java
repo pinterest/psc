@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.connector.psc.sink.testutils;
 
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
@@ -27,6 +28,7 @@ import org.testcontainers.containers.KafkaContainer;
 
 import java.net.URL;
 import java.util.List;
+import java.util.Properties;
 import java.util.stream.Collectors;
 
 /** Kafka sink external context factory. */
@@ -49,16 +51,8 @@ public class PscSinkExternalContextFactory
         return String.join(",", kafkaContainer.getBootstrapServers(), internalEndpoints);
     }
 
-    private TopicUri getClusterUri() {
-        try {
-            return new KafkaTopicUri(BaseTopicUri.validate("plaintext:/rn:kafka:env:cloud_region::test_cluster:"));
-        } catch (TopicUriSyntaxException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     @Override
     public PscSinkExternalContext createExternalContext(String testName) {
-        return new PscSinkExternalContext(getBootstrapServer(), getClusterUri(), connectorJars);
+        return new PscSinkExternalContext(getBootstrapServer(), PscTestUtils.getClusterUri(), connectorJars);
     }
 }

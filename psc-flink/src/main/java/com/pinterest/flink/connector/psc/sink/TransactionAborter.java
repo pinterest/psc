@@ -98,6 +98,8 @@ class TransactionAborter implements Closeable {
      */
     private int abortTransactionOfSubtask(String prefix, long startCheckpointId, int subtaskId) throws ProducerException {
         int numTransactionAborted = 0;
+        int numCalled = 0;
+        int numCalled1 = 0;
         for (long checkpointId = startCheckpointId; ; checkpointId++, numTransactionAborted++) {
             // initTransactions fences all old transactions with the same id by bumping the epoch
             String transactionalId =

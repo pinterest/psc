@@ -17,6 +17,7 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.util.TestLoggerExtension;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -27,7 +28,7 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-/** Tests for {@link KafkaSinkBuilder}. */
+/** Tests for {@link PscSinkBuilder}. */
 @ExtendWith(TestLoggerExtension.class)
 public class PscSinkBuilderTest {
 
@@ -40,7 +41,7 @@ public class PscSinkBuilderTest {
                         .setPscProducerConfig(testConf)
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
-                                        .setTopicUriString("topic")
+                                        .setTopicUriString(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "topic")
                                         .setValueSerializationSchema(new SimpleStringSchema())
                                         .build());
 
