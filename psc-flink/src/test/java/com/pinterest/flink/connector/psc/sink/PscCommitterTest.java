@@ -107,7 +107,9 @@ public class PscCommitterTest {
                     public void flush() {}
 
                     @Override
-                    public void close() {}
+                    public void close() throws IOException {
+                        super.close();
+                    }
                 };
         try (final PscCommitter committer = new PscCommitter(properties);
                 Recyclable<FlinkPscInternalProducer<Object, Object>> recyclable =
@@ -118,6 +120,7 @@ public class PscCommitterTest {
 
             committer.commit(Collections.singletonList(request));
             assertThat(recyclable.isRecycled()).isTrue();
+            producer.close();
         }
     }
 

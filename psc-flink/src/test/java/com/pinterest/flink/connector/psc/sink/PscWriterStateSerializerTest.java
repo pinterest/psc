@@ -25,8 +25,8 @@ import java.io.IOException;
 import static org.junit.Assert.assertEquals;
 
 /**
- * Tests for serializing and deserialzing {@link KafkaWriterState} with {@link
- * KafkaWriterStateSerializer}.
+ * Tests for serializing and deserialzing {@link PscWriterState} with {@link
+ * PscWriterStateSerializer}.
  */
 public class PscWriterStateSerializerTest extends TestLogger {
 
