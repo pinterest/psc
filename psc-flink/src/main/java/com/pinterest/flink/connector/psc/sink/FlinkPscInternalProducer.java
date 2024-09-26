@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.Future;
 
@@ -51,12 +52,13 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     @Nullable private String transactionalId;
     private volatile boolean inTransaction;
     private volatile boolean closed;
+    private TopicUri clusterUri = null;
 
     public FlinkPscInternalProducer(Properties properties, @Nullable String transactionalId) throws ConfigurationException, ProducerException, TopicUriSyntaxException {
         super(PscConfigurationUtils.propertiesToPscConfiguration(withTransactionalId(properties, transactionalId)));
         if (transactionalId != null) {
             // Producer is transactional, so the backend producer should be immediately initialized given the ClusterUri in the properties
-            TopicUri clusterUri = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties);
+            this.clusterUri = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties);
             getBackendProducerForTopicUri(validateTopicUri(clusterUri.getTopicUriAsString()));
         }
         this.transactionalId = transactionalId;
@@ -115,7 +117,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             // If this producer is still in transaction, it should be committing.
             // However, at this point, we cannot decide that and we shouldn't prolong cancellation.
             // So hard kill this producer with all resources.
-            super.close();
+            super.close(Duration.ZERO);
         } else {
             // If this is outside of a transaction, we should be able to cleanly shutdown.
             super.close(Duration.ofHours(1));
@@ -209,6 +211,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     public void resumeTransaction(long producerId, short epoch) throws ProducerException {
         ensureOnlyOneBackendProducer();
         checkState(!inTransaction, "Already in transaction %s", transactionalId);
+        checkState(clusterUri != null, "ClusterUri is not set");
         checkState(
                 producerId >= 0 && epoch >= 0,
                 "Incorrect values for producerId %s and epoch %s",
@@ -220,18 +223,9 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
                 producerId,
                 epoch);
 
-        Object transactionManager = getTransactionManager();
         PscProducerTransactionalProperties pscProducerTransactionalProperties = new PscProducerTransactionalProperties(producerId, epoch);
-        synchronized (transactionManager) {
-            TransactionManagerUtils.resumeTransaction(
-                    transactionManager,
-                    pscProducerTransactionalProperties
-            );
-            PscBackendProducer<K, V> backendProducer = getBackendProducers().iterator().next();
-            setBackendProducerTransactionalState(backendProducer, TransactionalState.IN_TRANSACTION);
-            setTransactionalState(TransactionalState.INIT_AND_BEGUN);
-            this.inTransaction = true;
-        }
+        super.resumeTransaction(pscProducerTransactionalProperties, Collections.singleton(clusterUri.getTopicUriAsString()));
+        this.inTransaction = true;
     }
 
     private void ensureOnlyOneBackendProducer() {

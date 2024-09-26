@@ -286,4 +286,12 @@ public class KafkaTransactionManagerOperator implements TransactionManagerOperat
             Object transactionManager, String state) {
         PscCommon.invoke(transactionManager, "transitionTo", getTransactionManagerState(state));
     }
+
+    private String getCurrentTransactionManagerState(Object transactionManager) {
+        return PscCommon.getField(transactionManager, "currentState").toString();
+    }
+
+    private String getCurrentTransactionalId(Object transactionManager) {
+        return PscCommon.getField(transactionManager, "transactionalId").toString();
+    }
 }

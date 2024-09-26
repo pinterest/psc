@@ -244,7 +244,10 @@ public class PscSinkITCase extends TestLogger {
                                 contains(
                                         LongStream.range(1, lastCheckpointedRecord.get().get() + 1)
                                                 .boxed()
-                                                .toArray())));
+                                                .toArray()
+                                )
+                        )
+        );
     }
 
     @Test
@@ -291,7 +294,7 @@ public class PscSinkITCase extends TestLogger {
         executeWithMapper(
                 new FailingCheckpointMapper(failed, lastCheckpointedRecord), config, "newPrefix");
         final List<PscConsumerMessage<byte[], byte[]>> collectedRecords =
-                drainAllRecordsFromTopic(topic, true);
+                drainAllRecordsFromTopic(topicUriStr, true);
         assertThat(
                 deserializeValues(collectedRecords),
                 contains(
@@ -312,7 +315,7 @@ public class PscSinkITCase extends TestLogger {
                     e.getCause().getCause().getMessage(),
                     containsString("Exceeded checkpoint tolerable failure"));
         }
-        assertTrue(deserializeValues(drainAllRecordsFromTopic(topic, true)).isEmpty());
+        assertTrue(deserializeValues(drainAllRecordsFromTopic(topicUriStr, true)).isEmpty());
 
         // Second job aborts all transactions from previous runs with higher parallelism
         config.set(CoreOptions.DEFAULT_PARALLELISM, 1);
@@ -320,7 +323,7 @@ public class PscSinkITCase extends TestLogger {
         executeWithMapper(
                 new FailingCheckpointMapper(failed, lastCheckpointedRecord), config, null);
         final List<PscConsumerMessage<byte[], byte[]>> collectedRecords =
-                drainAllRecordsFromTopic(topic, true);
+                drainAllRecordsFromTopic(topicUriStr, true);
         assertThat(
                 deserializeValues(collectedRecords),
                 contains(
@@ -342,14 +345,14 @@ public class PscSinkITCase extends TestLogger {
         final PscSinkBuilder<Long> builder =
                 new PscSinkBuilder<Long>()
                         .setDeliverGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
-//                        .setBootstrapServers(KAFKA_CONTAINER.getBootstrapServers())
+                        .setPscProducerConfig(getPscClientConfiguration())
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
-                                        .setTopicUriString(topic)
+                                        .setTopicUriString(topicUriStr)
                                         .setValueSerializationSchema(new RecordSerializer())
                                         .build());
         if (transactionalIdPrefix == null) {
-            transactionalIdPrefix = "kafka-sink";
+            transactionalIdPrefix = "psc-sink";
         }
         builder.setTransactionalIdPrefix(transactionalIdPrefix);
         stream.sinkTo(builder.build());
@@ -368,22 +371,21 @@ public class PscSinkITCase extends TestLogger {
         DataStreamSource<Long> source = env.fromSequence(1, 10);
         DataStream<Long> stream =
                 source.map(new FailingCheckpointMapper(failed, lastCheckpointedRecord));
-
         stream.sinkTo(
                 new PscSinkBuilder<Long>()
                         .setDeliverGuarantee(guarantee)
-//                        .setBootstrapServers(KAFKA_CONTAINER.getBootstrapServers())
+                        .setPscProducerConfig(getPscClientConfiguration())
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
                                         .setTopicUriString(topicUriStr)
                                         .setValueSerializationSchema(new RecordSerializer())
                                         .build())
-                        .setTransactionalIdPrefix("kafka-sink")
+                        .setTransactionalIdPrefix("psc-sink")
                         .build());
         env.execute();
 
         final List<PscConsumerMessage<byte[], byte[]>> collectedRecords =
-                drainAllRecordsFromTopic(topic, guarantee == DeliveryGuarantee.EXACTLY_ONCE);
+                drainAllRecordsFromTopic(topicUriStr, guarantee == DeliveryGuarantee.EXACTLY_ONCE);
         recordsAssertion.accept(deserializeValues(collectedRecords));
         checkProducerLeak();
     }
@@ -404,20 +406,19 @@ public class PscSinkITCase extends TestLogger {
         source.sinkTo(
                 new PscSinkBuilder<Long>()
                         .setPscProducerConfig(producerProperties)
-//                        .setBootstrapServers(KAFKA_CONTAINER.getBootstrapServers())
                         .setDeliverGuarantee(deliveryGuarantee)
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
                                         .setTopicUriString(topicUriStr)
                                         .setValueSerializationSchema(new RecordSerializer())
                                         .build())
-                        .setTransactionalIdPrefix("kafka-sink")
+                        .setTransactionalIdPrefix("psc-sink")
                         .build());
         env.execute();
 
         final List<PscConsumerMessage<byte[], byte[]>> collectedRecords =
                 drainAllRecordsFromTopic(
-                        topic, deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE);
+                        topicUriStr, deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE);
         final long recordsCount = expectedRecords.get().get();
         assertEquals(collectedRecords.size(), recordsCount);
         assertThat(
@@ -439,16 +440,18 @@ public class PscSinkITCase extends TestLogger {
                 .collect(Collectors.toList());
     }
 
-    private static Properties getKafkaClientConfiguration() {
-        final Properties standardProps = new Properties();
-        standardProps.put("bootstrap.servers", KAFKA_CONTAINER.getBootstrapServers());
-        standardProps.put("group.id", UUID.randomUUID().toString());
-        standardProps.put("enable.auto.commit", false);
-        standardProps.put("auto.offset.reset", "earliest");
-        standardProps.put("max.partition.fetch.bytes", 256);
-        standardProps.put("zookeeper.session.timeout.ms", ZK_TIMEOUT_MILLIS);
-        standardProps.put("zookeeper.connection.timeout.ms", ZK_TIMEOUT_MILLIS);
-        return standardProps;
+    private static Properties getPscClientConfiguration() {
+        Properties properties = new Properties();
+        properties.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "PscSinkITCase");
+        properties.setProperty(PscConfiguration.PSC_PRODUCER_BATCH_DURATION_MAX_MS, "0");
+        properties.setProperty(PscConfiguration.PSC_PRODUCER_BUFFER_SEND_BYTES, "131072");
+        properties.setProperty(PscConfiguration.PSC_PRODUCER_BUFFER_RECEIVE_BYTES, "32768");
+        properties.setProperty(PscConfiguration.PSC_PRODUCER_RETRIES, "2147483647");
+        properties.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "PscSinkITCase");
+        properties.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "PscSinkITCase");
+        properties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        injectDiscoveryConfigs(properties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        return properties;
     }
 
     private static PscConsumer<byte[], byte[]> createTestConsumer(
@@ -479,9 +482,9 @@ public class PscSinkITCase extends TestLogger {
     }
 
     private List<PscConsumerMessage<byte[], byte[]>> drainAllRecordsFromTopic(
-            String topic, boolean committed) throws ConfigurationException, ConsumerException {
-        Properties properties = getKafkaClientConfiguration();
-        return PscUtil.drainAllRecordsFromTopic(topic, properties, committed);
+            String topicUriStr, boolean committed) throws ConfigurationException, ConsumerException {
+        Properties properties = getPscClientConfiguration();
+        return PscUtil.drainAllRecordsFromTopic(topicUriStr, properties, committed);
     }
 
     private static class RecordSerializer implements SerializationSchema<Long> {

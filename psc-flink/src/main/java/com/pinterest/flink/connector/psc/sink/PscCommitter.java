@@ -63,7 +63,7 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
         for (CommitRequest<PscCommittable> request : requests) {
             final PscCommittable committable = request.getCommittable();
             final String transactionalId = committable.getTransactionalId();
-            LOG.debug("Committing Kafka transaction {}", transactionalId);
+            LOG.debug("Committing transaction {}", transactionalId);
             Optional<Recyclable<? extends FlinkPscInternalProducer<?, ?>>> recyclable =
                     committable.getProducer();
             FlinkPscInternalProducer<?, ?> producer;
@@ -83,6 +83,7 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
                 recyclable.ifPresent(Recyclable::close);
             } catch (Exception ex) {
                 // TODO: make exception handling backend-agnostic
+                LOG.warn("Caught exception while committing transaction {}", transactionalId, ex);
                 Throwable cause = ex.getCause();
                 try {
                     if (cause instanceof Exception)
