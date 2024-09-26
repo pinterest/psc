@@ -97,6 +97,7 @@ class PscWriter<IN>
     private final SinkWriterMetricGroup metricGroup;
     private final boolean disabledMetrics;
     private final Counter numRecordsOutCounter;
+    private final Counter numRecordsSendCounter;
     private final Counter numBytesOutCounter;
     private final Counter numRecordsOutErrorsCounter;
     private final ProcessingTimeService timeService;
@@ -158,7 +159,8 @@ class PscWriter<IN>
         this.timeService = sinkInitContext.getProcessingTimeService();
         this.metricGroup = sinkInitContext.metricGroup();
         this.numBytesOutCounter = metricGroup.getIOMetricGroup().getNumBytesOutCounter();
-        this.numRecordsOutCounter = metricGroup.getNumRecordsSendCounter();
+        this.numRecordsOutCounter = metricGroup.getIOMetricGroup().getNumRecordsOutCounter();
+        this.numRecordsSendCounter = metricGroup.getNumRecordsSendCounter();
         this.numRecordsOutErrorsCounter = metricGroup.getNumRecordsOutErrorsCounter();
         this.pscSinkContext =
                 new DefaultPscSinkContext(
@@ -204,6 +206,7 @@ class PscWriter<IN>
             throw new RuntimeException(e);
         }
         numRecordsOutCounter.inc();
+        numRecordsSendCounter.inc();
     }
 
     @Override

@@ -17,7 +17,10 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.MessageId;
+import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
@@ -73,6 +76,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
 
+import static com.pinterest.flink.connector.psc.sink.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.drainAllRecordsFromTopic;
 import static org.apache.flink.util.DockerImageVersions.KAFKA;
@@ -85,9 +89,10 @@ public class PscWriterITCase {
     private static final Logger LOG = LoggerFactory.getLogger(PscWriterITCase.class);
     private static final String INTER_CONTAINER_KAFKA_ALIAS = "kafka";
     private static final Network NETWORK = Network.newNetwork();
-    private static final String KAFKA_METRIC_WITH_GROUP_NAME = "KafkaProducer.incoming-byte-total";
+    private static final String PSC_METRIC_WITH_GROUP_NAME = "PscProducer.incoming-byte-total";
     private static final SinkWriter.Context SINK_WRITER_CONTEXT = new DummySinkWriterContext();
     private String topic;
+    private String topicUriStr;
 
     private MetricListener metricListener;
     private TriggerTimeService timeService;
@@ -113,14 +118,16 @@ public class PscWriterITCase {
         metricListener = new MetricListener();
         timeService = new TriggerTimeService();
         topic = testInfo.getDisplayName().replaceAll("\\W", "");
+        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
     }
 
     @ParameterizedTest
     @EnumSource(DeliveryGuarantee.class)
     public void testRegisterMetrics(DeliveryGuarantee guarantee) throws Exception {
         try (final PscWriter<Integer> ignored =
-                createWriterWithConfiguration(getKafkaClientConfiguration(), guarantee)) {
-            assertThat(metricListener.getGauge(KAFKA_METRIC_WITH_GROUP_NAME).isPresent()).isTrue();
+                createWriterWithConfiguration(getPscClientConfiguration(), guarantee)) {
+            ignored.write(1, SINK_WRITER_CONTEXT);  // write one record to trigger backendProducer creation
+            assertThat(metricListener.getGauge(PSC_METRIC_WITH_GROUP_NAME).isPresent()).isTrue();
         }
     }
 
@@ -140,7 +147,7 @@ public class PscWriterITCase {
                         metricListener.getMetricGroup(), operatorIOMetricGroup);
         try (final PscWriter<Integer> writer =
                 createWriterWithConfiguration(
-                        getKafkaClientConfiguration(), DeliveryGuarantee.NONE, metricGroup)) {
+                        getPscClientConfiguration(), DeliveryGuarantee.NONE, metricGroup)) {
             final Counter numBytesOut = metricGroup.getIOMetricGroup().getNumBytesOutCounter();
             final Counter numRecordsOut = metricGroup.getIOMetricGroup().getNumRecordsOutCounter();
             final Counter numRecordsOutErrors = metricGroup.getNumRecordsOutErrorsCounter();
@@ -165,13 +172,9 @@ public class PscWriterITCase {
                 InternalSinkWriterMetricGroup.mock(metricListener.getMetricGroup());
         try (final PscWriter<Integer> writer =
                 createWriterWithConfiguration(
-                        getKafkaClientConfiguration(),
+                        getPscClientConfiguration(),
                         DeliveryGuarantee.AT_LEAST_ONCE,
                         metricGroup)) {
-            final Optional<Gauge<Long>> currentSendTime =
-                    metricListener.getGauge("currentSendTime");
-            assertThat(currentSendTime.isPresent()).isTrue();
-            assertThat(currentSendTime.get().getValue()).isEqualTo(0L);
             IntStream.range(0, 100)
                     .forEach(
                             (run) -> {
@@ -185,13 +188,17 @@ public class PscWriterITCase {
                                     throw new RuntimeException("Failed writing Kafka record.");
                                 }
                             });
+            Thread.sleep(500L);
+            final Optional<Gauge<Long>> currentSendTime =
+                    metricListener.getGauge("currentSendTime");
+            assertThat(currentSendTime.isPresent()).isTrue();
             assertThat(currentSendTime.get().getValue()).isGreaterThan(0L);
         }
     }
 
     @Test
     void testNumRecordsOutErrorsCounterMetric() throws Exception {
-        Properties properties = getKafkaClientConfiguration();
+        Properties properties = getPscClientConfiguration();
         final InternalSinkWriterMetricGroup metricGroup =
                 InternalSinkWriterMetricGroup.mock(metricListener.getMetricGroup());
 
@@ -210,8 +217,8 @@ public class PscWriterITCase {
                     new FlinkPscInternalProducer<>(properties, transactionalId)) {
 
                 producer.initTransactions();
-//                producer.beginTransaction();
-                producer.send(new PscProducerMessage<>(topic, "2".getBytes()));
+                producer.beginTransaction();
+                producer.send(new PscProducerMessage<>(topicUriStr, "2".getBytes()));
                 producer.commitTransaction();
             }
 
@@ -227,14 +234,14 @@ public class PscWriterITCase {
         List<String> metadataList = new ArrayList<>();
         try (final PscWriter<Integer> writer =
                 createWriterWithConfiguration(
-                        getKafkaClientConfiguration(),
+                        getPscClientConfiguration(),
                         DeliveryGuarantee.AT_LEAST_ONCE,
                         InternalSinkWriterMetricGroup.mock(metricListener.getMetricGroup()),
-                        meta -> metadataList.add(meta.toString()))) {
+                        meta -> metadataList.add(meta.getTopicUriPartition().getTopicUriAsString() + "-" + meta.getTopicUriPartition().getPartition() + "@" + meta.getOffset()))) {
             List<String> expected = new ArrayList<>();
             for (int i = 0; i < 100; i++) {
                 writer.write(1, SINK_WRITER_CONTEXT);
-                expected.add("testMetadataPublisher-0@" + i);
+                expected.add(topicUriStr + "-0@" + i);
             }
             writer.flush(false);
             assertThat(metadataList).usingRecursiveComparison().isEqualTo(expected);
@@ -246,7 +253,7 @@ public class PscWriterITCase {
     void testLingeringTransaction() throws Exception {
         final PscWriter<Integer> failedWriter =
                 createWriterWithConfiguration(
-                        getKafkaClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE);
+                        getPscClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE);
 
         // create two lingering transactions
         failedWriter.flush(false);
@@ -258,7 +265,7 @@ public class PscWriterITCase {
 
         try (final PscWriter<Integer> recoveredWriter =
                 createWriterWithConfiguration(
-                        getKafkaClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE)) {
+                        getPscClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE)) {
             recoveredWriter.write(1, SINK_WRITER_CONTEXT);
 
             recoveredWriter.flush(false);
@@ -271,7 +278,7 @@ public class PscWriterITCase {
             committable.getProducer().get().getObject().commitTransaction();
 
             List<PscConsumerMessage<byte[], byte[]>> records =
-                    drainAllRecordsFromTopic(topic, getKafkaClientConfiguration(), true);
+                    drainAllRecordsFromTopic(topicUriStr, getPscClientConfiguration(), true);
             assertThat(records).hasSize(1);
         }
 
@@ -286,7 +293,7 @@ public class PscWriterITCase {
             mode = EnumSource.Mode.EXCLUDE)
     void useSameProducerForNonTransactional(DeliveryGuarantee guarantee) throws Exception {
         try (final PscWriter<Integer> writer =
-                createWriterWithConfiguration(getKafkaClientConfiguration(), guarantee)) {
+                createWriterWithConfiguration(getPscClientConfiguration(), guarantee)) {
             assertThat(writer.getProducerPool()).hasSize(0);
 
             FlinkPscInternalProducer<byte[], byte[]> firstProducer = writer.getCurrentProducer();
@@ -307,7 +314,7 @@ public class PscWriterITCase {
     void usePoolForTransactional() throws Exception {
         try (final PscWriter<Integer> writer =
                 createWriterWithConfiguration(
-                        getKafkaClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE)) {
+                        getPscClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE)) {
             assertThat(writer.getProducerPool()).hasSize(0);
 
             writer.flush(false);
@@ -348,11 +355,11 @@ public class PscWriterITCase {
      */
     @Test
     void testAbortOnClose() throws Exception {
-        Properties properties = getKafkaClientConfiguration();
+        Properties properties = getPscClientConfiguration();
         try (final PscWriter<Integer> writer =
                 createWriterWithConfiguration(properties, DeliveryGuarantee.EXACTLY_ONCE)) {
             writer.write(1, SINK_WRITER_CONTEXT);
-            assertThat(drainAllRecordsFromTopic(topic, properties, true)).hasSize(0);
+            assertThat(drainAllRecordsFromTopic(topicUriStr, properties, true)).hasSize(0);
         }
 
         try (final PscWriter<Integer> writer =
@@ -372,18 +379,18 @@ public class PscWriterITCase {
                 producer.commitTransaction();
             }
 
-            assertThat(drainAllRecordsFromTopic(topic, properties, true)).hasSize(1);
+            assertThat(drainAllRecordsFromTopic(topicUriStr, properties, true)).hasSize(1);
         }
     }
 
     private void assertKafkaMetricNotPresent(
             DeliveryGuarantee guarantee, String configKey, String configValue) throws Exception {
-        final Properties config = getKafkaClientConfiguration();
+        final Properties config = getPscClientConfiguration();
         config.put(configKey, configValue);
         try (final PscWriter<Integer> ignored =
                 createWriterWithConfiguration(config, guarantee)) {
             Assertions.assertFalse(
-                    metricListener.getGauge(KAFKA_METRIC_WITH_GROUP_NAME).isPresent());
+                    metricListener.getGauge(PSC_METRIC_WITH_GROUP_NAME).isPresent());
         }
     }
 
@@ -421,14 +428,17 @@ public class PscWriterITCase {
         }
     }
 
-    private static Properties getKafkaClientConfiguration() {
+    private static Properties getPscClientConfiguration() {
         final Properties standardProps = new Properties();
-        standardProps.put("bootstrap.servers", KAFKA_CONTAINER.getBootstrapServers());
-        standardProps.put("group.id", "kafkaWriter-tests");
-        standardProps.put("enable.auto.commit", false);
-        standardProps.put("key.serializer", ByteArraySerializer.class.getName());
-        standardProps.put("value.serializer", ByteArraySerializer.class.getName());
-        standardProps.put("auto.offset.reset", "earliest");
+        standardProps.put(PscConfiguration.PSC_CONSUMER_GROUP_ID, "pscWriter-tests");
+        standardProps.put(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, false);
+        standardProps.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
+        standardProps.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
+        standardProps.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "pscWriter-tests");
+        standardProps.put(PscConfiguration.PSC_AUTO_RESOLUTION_ENABLED, false);
+        standardProps.put(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
+        standardProps.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         return standardProps;
     }
 
@@ -498,7 +508,7 @@ public class PscWriterITCase {
         @Override
         public PscProducerMessage<byte[], byte[]> serialize(
                 Integer element, PscSinkContext context, Long timestamp) {
-            return new PscProducerMessage<>(topic, ByteBuffer.allocate(4).putInt(element).array());
+            return new PscProducerMessage<>(topicUriStr, ByteBuffer.allocate(4).putInt(element).array());
         }
     }
 

@@ -85,7 +85,7 @@ public class PscTransactionLogITCase extends TestLogger {
         lingeringTransaction(4);
 
         final PscTransactionLog transactionLog =
-                new PscTransactionLog(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI.getTopicUriAsString(), getKafkaClientConfiguration());
+                new PscTransactionLog(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI.getTopicUriAsString(), getPscClientConfiguration());
         final List<PscTransactionLog.TransactionRecord> transactions = transactionLog.getTransactions();
         assertThat(
                 transactions,
@@ -162,7 +162,7 @@ public class PscTransactionLogITCase extends TestLogger {
     }
 
     private static PscProducer<byte[], Integer> createProducer(String transactionalId) throws ConfigurationException, ProducerException {
-        final Properties producerProperties = getKafkaClientConfiguration();
+        final Properties producerProperties = getPscClientConfiguration();
         producerProperties.put(
                 PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
         producerProperties.put(
@@ -172,7 +172,7 @@ public class PscTransactionLogITCase extends TestLogger {
         return new PscProducer<>(PscConfigurationUtils.propertiesToPscConfiguration(producerProperties));
     }
 
-    private static Properties getKafkaClientConfiguration() {
+    private static Properties getPscClientConfiguration() {
         final Properties standardProps = new Properties();
 //        standardProps.put("bootstrap.servers", KAFKA_CONTAINER.getBootstrapServers());
         standardProps.put(PscConfiguration.PSC_CONSUMER_GROUP_ID, "flink-tests");
