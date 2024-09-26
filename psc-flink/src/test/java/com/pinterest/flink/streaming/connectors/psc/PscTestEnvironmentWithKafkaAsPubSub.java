@@ -55,7 +55,7 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
 
     static {
         try {
-            PSC_TEST_CLUSTER_URI = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_PREFIX + "cluster1");
+            PSC_TEST_CLUSTER_URI = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_PREFIX);
         } catch (TopicUriSyntaxException e) {
             throw new RuntimeException("Unable to validate clusterUri", e);
         }

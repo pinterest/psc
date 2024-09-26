@@ -123,6 +123,7 @@ public class PscUtil {
         consumerConfig.put(
                 PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL,
                 committed ? PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL_TRANSACTIONAL : PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL_NON_TRANSACTIONAL);
+        consumerConfig.put(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "psc-test-consumer");
         return drainAllRecordsFromTopic(topicUriStr, consumerConfig);
     }
 
