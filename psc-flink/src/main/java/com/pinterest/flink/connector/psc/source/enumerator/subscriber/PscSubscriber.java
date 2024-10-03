@@ -57,9 +57,8 @@ public interface PscSubscriber extends Serializable {
         return new PscTopicUriListSubscriber(topicUris);
     }
 
-    static PscSubscriber getTopicPatternSubscriber(Pattern topicUriPattern) {
-        // TODO: should this be topic pattern or topic uri pattern?
-        return new TopicUriPatternSubscriber(topicUriPattern);
+    static PscSubscriber getTopicPatternSubscriber(Pattern topicNamePattern) {
+        return new TopicNamePatternSubscriber(topicNamePattern);
     }
 
     static PscSubscriber getPartitionSetSubscriber(Set<TopicUriPartition> partitions) {

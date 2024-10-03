@@ -33,14 +33,17 @@ import java.util.regex.Pattern;
 
 import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getAllTopicRnMetadata;
 
-/** A subscriber to a topic pattern. */
-class TopicUriPatternSubscriber implements PscSubscriber {
+/**
+ * A subscriber to a topic name pattern. Note that this pattern should match only the topic name itself. The pattern
+ * does not care about the entire TopicUri.
+ */
+class TopicNamePatternSubscriber implements PscSubscriber {
     private static final long serialVersionUID = -7471048577725467797L;
-    private static final Logger LOG = LoggerFactory.getLogger(TopicUriPatternSubscriber.class);
-    private final Pattern topicRnPattern;
+    private static final Logger LOG = LoggerFactory.getLogger(TopicNamePatternSubscriber.class);
+    private final Pattern topicNamePattern;
 
-    TopicUriPatternSubscriber(Pattern topicPattern) {
-        this.topicRnPattern = topicPattern;
+    TopicNamePatternSubscriber(Pattern topicNamePattern) {
+        this.topicNamePattern = topicNamePattern;
     }
 
     @Override
@@ -52,7 +55,7 @@ class TopicUriPatternSubscriber implements PscSubscriber {
 
         allTopicRnMetadata.forEach(
                 (topicRn, topicRnMetadata) -> {
-                    if (topicRnPattern.matcher(topicRn.toString()).matches()) {
+                    if (topicNamePattern.matcher(topicRn.getTopic()).matches()) {
                         subscribedTopicUriPartitions.addAll(topicRnMetadata.getTopicUriPartitions());
                     }
                 });

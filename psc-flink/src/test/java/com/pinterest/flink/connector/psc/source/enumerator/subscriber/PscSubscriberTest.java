@@ -47,7 +47,9 @@ public class PscSubscriberTest {
     private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "pattern-topic";
     private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
-    private static final TopicUriPartition NON_EXISTING_TOPIC = new TopicUriPartition("removed", 0);
+    private static final TopicUriPartition NON_EXISTING_TOPIC_URI_PARTITION = new TopicUriPartition(
+            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "removed",
+            0);
     private static AdminClient adminClient;
     private static PscMetadataClient pscMetadataClient;
 
@@ -67,7 +69,7 @@ public class PscSubscriberTest {
     }
 
     @Test
-    public void testTopicListSubscriber() {
+    public void testTopicUriListSubscriber() {
         List<String> topics = Arrays.asList(TOPIC_URI1, TOPIC_URI2);
         PscSubscriber subscriber =
                 PscSubscriber.getTopicUriListSubscriber(Arrays.asList(TOPIC_URI1, TOPIC_URI2));
@@ -84,7 +86,7 @@ public class PscSubscriberTest {
     public void testNonExistingTopic() {
         final PscSubscriber subscriber =
                 PscSubscriber.getTopicUriListSubscriber(
-                        Collections.singletonList(NON_EXISTING_TOPIC.getTopicUriAsString()));
+                        Collections.singletonList(NON_EXISTING_TOPIC_URI_PARTITION.getTopicUriAsString()));
 
         Throwable t =
                 assertThrows(
@@ -140,7 +142,7 @@ public class PscSubscriberTest {
 
         assertEquals(
                 String.format(
-                        "Partition '%s' does not exist on Kafka brokers", nonExistingPartition),
+                        "Partition '%s' does not exist on PubSub brokers", nonExistingPartition),
                 t.getMessage());
     }
 }
