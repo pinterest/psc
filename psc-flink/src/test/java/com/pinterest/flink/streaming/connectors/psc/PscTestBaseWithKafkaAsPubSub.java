@@ -58,6 +58,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static org.junit.Assert.fail;
 
 /**
@@ -234,6 +235,7 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
         props.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, keySerializerClass.getName());
         props.setProperty(
                 PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, valueSerializerClass.getName());
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
 
         AtomicReference<Throwable> sendingError = new AtomicReference<>();
         Callback callback =

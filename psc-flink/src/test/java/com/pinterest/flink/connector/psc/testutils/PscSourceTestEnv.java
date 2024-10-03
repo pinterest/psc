@@ -20,6 +20,7 @@ package com.pinterest.flink.connector.psc.testutils;
 
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.streaming.connectors.psc.PscTestBaseWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
@@ -36,9 +37,12 @@ import com.pinterest.psc.serde.StringSerializer;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsOptions;
 import org.apache.kafka.clients.admin.RecordsToDelete;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -47,9 +51,11 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static org.junit.Assert.assertEquals;
 
 /** Base class for KafkaSource unit tests. */
@@ -59,11 +65,13 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
     public static final int NUM_RECORDS_PER_PARTITION = 10;
 
     private static AdminClient adminClient;
+    private static PscMetadataClient metadataClient;
     private static PscConsumer<String, Integer> consumer;
 
     public static void setup() throws Throwable {
         prepare();
         adminClient = getAdminClient();
+        metadataClient = getMetadataClient();
         consumer = getConsumer();
     }
 
@@ -82,9 +90,10 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
     }
 
     public static PscMetadataClient getMetadataClient() throws ConfigurationException {
-        PscConfiguration pscConfiguration = new PscConfiguration();
-        pscConfiguration.setProperty(PscConfiguration.PSC_METADATA_CLIENT_ID, "psc-source-test-env-metadata-client");
-        return new PscMetadataClient(pscConfiguration);
+        Properties props = new Properties();
+        props.setProperty(PscConfiguration.PSC_METADATA_CLIENT_ID, "psc-source-test-env-metadata-client");
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        return new PscMetadataClient(PscConfigurationUtils.propertiesToPscConfiguration(props));
     }
 
     public static PscConsumer<String, Integer> getConsumer() throws ConfigurationException, ConsumerException {
@@ -96,6 +105,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
         props.setProperty(
                 PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER,
                 IntegerDeserializer.class.getName());
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         return new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(props));
     }
 
@@ -107,6 +117,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
                 PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, deserializerClass.getName());
         props.setProperty(
                 PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, deserializerClass.getName());
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         return props;
     }
 
@@ -249,23 +260,15 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
     }
 
     public static void setupCommittedOffsets(String topicUriString)
-            throws ExecutionException, InterruptedException, ConfigurationException, ConsumerException {
+            throws ExecutionException, InterruptedException, ConfigurationException, ConsumerException, TimeoutException {
         List<TopicUriPartition> partitions = getPartitionsForTopic(topicUriString);
         Map<TopicUriPartition, Long> committedOffsets = getCommittedOffsets(partitions);
         List<MessageId> toCommit = new ArrayList<>();
         for (Map.Entry<TopicUriPartition, Long> entry : committedOffsets.entrySet()) {
-            toCommit.add(new MessageId(entry.getKey().getTopicUriAsString(), entry.getKey().getPartition(), entry.getValue()));
+            toCommit.add(new MessageId(entry.getKey().getTopicUriAsString(), entry.getKey().getPartition(), entry.getValue() - 1));
         }
         consumer.commitSync(toCommit);
-        Map<TopicPartition, OffsetAndMetadata> toVerify =
-                adminClient
-                        .listConsumerGroupOffsets(
-                                GROUP_ID,
-                                new ListConsumerGroupOffsetsOptions()
-                                        .topicPartitions(
-                                                committedOffsets.keySet().stream().map(tup -> new TopicPartition(tup.getTopicUri().getTopic(), tup.getPartition())).collect(Collectors.toList())))
-                        .partitionsToOffsetAndMetadata()
-                        .get();
+        Map<TopicUriPartition, Long> toVerify = metadataClient.listOffsetsForConsumerGroup(PscTestUtils.getClusterUri(), GROUP_ID, committedOffsets.keySet(), Duration.ofSeconds(10));
         assertEquals("The offsets are not committed", committedOffsets, toVerify);
     }
 

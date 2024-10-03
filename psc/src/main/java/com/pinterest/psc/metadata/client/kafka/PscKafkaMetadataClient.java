@@ -163,8 +163,11 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
         Map<TopicUriPartition, Long> result = new HashMap<>();
         offsets.forEach((tp, offsetAndMetadata) -> {
             TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, tp.topic());
-            TopicUriPartition tup = createKafkaTopicUriPartition(topicRn, tp.partition());
             Long offset = offsetAndMetadata == null ? null : offsetAndMetadata.offset();
+            if (offset == null) {
+                logger.warn("Consumer group {} has no committed offset for topic partition {}", consumerGroupId, tp);
+                return;
+            }
             result.put(
                     createKafkaTopicUriPartition(topicRn, tp.partition()),
                     offset

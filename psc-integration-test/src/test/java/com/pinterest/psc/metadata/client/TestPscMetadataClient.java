@@ -289,11 +289,8 @@ public class TestPscMetadataClient {
                 Duration.ofMillis(10000)
         );
 
-        assertEquals(4, offsets.size());
+        assertEquals(1, offsets.size());
         assertTrue(offsets.containsKey(t1p0));
-        assertTrue(offsets.containsKey(t1p1));
-        assertTrue(offsets.containsKey(t2p23));
-        assertTrue(offsets.containsKey(t3p0));
         assertEquals(1, (long) offsets.get(t1p0));
         assertNull(offsets.get(t1p1));
         assertNull(offsets.get(t2p23));
@@ -381,11 +378,7 @@ public class TestPscMetadataClient {
                 Duration.ofMillis(10000)
         );
 
-        assertEquals(4, offsets.size());
-        assertTrue(offsets.containsKey(t1p0));
-        assertTrue(offsets.containsKey(t1p1));
-        assertTrue(offsets.containsKey(t2p23));
-        assertTrue(offsets.containsKey(t3p0));
+        assertEquals(0, offsets.size());
         assertNull(offsets.get(t1p0));
         assertNull(offsets.get(t1p1));
         assertNull(offsets.get(t2p23));
@@ -399,8 +392,7 @@ public class TestPscMetadataClient {
                 Duration.ofMillis(10000)
         );
 
-        assertEquals(1, offsets.size());
-        assertTrue(offsets.containsKey(new TopicUriPartition(topic1Uri, 100)));
+        assertEquals(0, offsets.size());
         assertNull(offsets.get(new TopicUriPartition(topic1Uri, 100)));
 
         pscConsumer.close();

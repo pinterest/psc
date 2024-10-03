@@ -47,7 +47,7 @@ import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.Transacti
 import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.TransactionState.Ongoing;
 import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.TransactionState.PrepareAbort;
 import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.TransactionState.PrepareCommit;
-import static com.pinterest.flink.connector.psc.sink.testutils.PscTestUtils.injectDiscoveryConfigs;
+import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
 import static org.apache.flink.util.DockerImageVersions.KAFKA;
 import static org.hamcrest.Matchers.containsInAnyOrder;
