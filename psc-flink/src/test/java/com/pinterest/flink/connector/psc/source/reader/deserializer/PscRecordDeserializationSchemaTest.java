@@ -20,6 +20,7 @@ package com.pinterest.flink.connector.psc.source.reader.deserializer;
 
 import com.pinterest.flink.streaming.util.serialization.psc.JSONKeyValueDeserializationSchema;
 import com.pinterest.psc.common.PscPlugin;
+import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.DeserializerException;
 import com.pinterest.psc.serde.StringDeserializer;
@@ -49,8 +50,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Unit tests for PscRecordDeserializationSchema. */
 public class PscRecordDeserializationSchemaTest {
 
-    private static Map<String, ?> configurableConfiguration;
-    private static Map<String, ?> configuration;
+    private static Map<String, String> configurableConfiguration;
+    private static Map<String, String> configuration;
     private static boolean isKeyDeserializer;
 
     @Before
@@ -171,8 +172,8 @@ public class PscRecordDeserializationSchemaTest {
     public static class ConfigurableStringSerializer extends StringDeserializer
             implements PscPlugin {
         @Override
-        public void configure(Map<String, String> configs, boolean isKey) {
-            configurableConfiguration = configs;
+        public void configure(PscConfiguration pscConfig, boolean isKey) {
+            pscConfig.getKeys().forEachRemaining(key -> configurableConfiguration.put(key, pscConfig.getString(key)));
         }
     }
 
@@ -183,8 +184,8 @@ public class PscRecordDeserializationSchemaTest {
      */
     public static class SimpleStringSerializer extends StringDeserializer {
         @Override
-        public void configure(Map<String, String> configs, boolean isKey) {
-            configuration = configs;
+        public void configure(PscConfiguration pscConfig, boolean isKey) {
+            pscConfig.getKeys().forEachRemaining(key -> configuration.put(key, pscConfig.getString(key)));
             isKeyDeserializer = isKey;
         }
     }

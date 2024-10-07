@@ -18,7 +18,6 @@
 
 package com.pinterest.flink.connector.psc.source.reader.deserializer;
 
-import com.pinterest.psc.common.PscPlugin;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.DeserializerException;
@@ -68,7 +67,7 @@ class PscValueOnlyDeserializerWrapper<T> implements PscRecordDeserializationSche
                                     getClass().getClassLoader());
 
             if (deserializer != null) {
-                ((PscPlugin) deserializer).configure(config);
+                deserializer.configure(config, false);
             } else {
                 // Always be false since this Deserializer is only used for value.
                 deserializer.configure(config, false);

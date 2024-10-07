@@ -41,7 +41,7 @@ public class PscConsumerMessage<K, V> {
             V value
     ) {
         this();
-        this.messageId = new MessageId(new TopicUriPartition(topicUriString, partition), partition, offset);
+        this.messageId = new MessageId(topicUriString, partition, offset);
         this.key = key;
         this.value = value;
     }
