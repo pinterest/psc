@@ -20,6 +20,7 @@ package com.pinterest.flink.connector.psc.source.enumerator;
 
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplitSerializer;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.connector.base.source.utils.SerdeUtils;
 
@@ -38,7 +39,7 @@ import static org.junit.Assert.assertEquals;
 public class PscSourceEnumStateSerializerTest {
 
     private static final int NUM_READERS = 10;
-    private static final String TOPIC_PREFIX = "topic-";
+    private static final String TOPIC_PREFIX = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "topic-";
     private static final int NUM_PARTITIONS_PER_TOPIC = 10;
     private static final long STARTING_OFFSET = PscTopicUriPartitionSplit.EARLIEST_OFFSET;
 
@@ -69,10 +70,10 @@ public class PscSourceEnumStateSerializerTest {
 
         // Deserialize above bytes with KafkaEnumStateSerializer version 1 to check backward
         // compatibility
-        final PscSourceEnumState kafkaSourceEnumState =
+        final PscSourceEnumState pscSourceEnumState =
                 new PscSourceEnumStateSerializer().deserialize(0, bytes);
 
-        assertEquals(topicPartitions, kafkaSourceEnumState.assignedPartitions());
+        assertEquals(topicPartitions, pscSourceEnumState.assignedPartitions());
     }
 
     private Set<TopicUriPartition> constructTopicPartitions() {

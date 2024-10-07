@@ -18,48 +18,48 @@
 
 package com.pinterest.flink.connector.psc.source.metrics;
 
-import org.apache.flink.connector.kafka.source.metrics.KafkaSourceReaderMetrics;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.testutils.MetricListener;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
 
-import org.apache.kafka.common.TopicPartition;
 import org.junit.Test;
 
 import java.util.Optional;
 
-import static org.apache.flink.connector.kafka.source.metrics.KafkaSourceReaderMetrics.PARTITION_GROUP;
-import static org.apache.flink.connector.kafka.source.metrics.KafkaSourceReaderMetrics.TOPIC_GROUP;
+import static com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics.PARTITION_GROUP;
+import static com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics.TOPIC_URI_GROUP;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/** Unit test for {@link KafkaSourceReaderMetrics}. */
+/** Unit test for {@link PscSourceReaderMetrics}. */
 public class PscSourceReaderMetricsTest {
 
-    private static final TopicPartition FOO_0 = new TopicPartition("foo", 0);
-    private static final TopicPartition FOO_1 = new TopicPartition("foo", 1);
-    private static final TopicPartition BAR_0 = new TopicPartition("bar", 0);
-    private static final TopicPartition BAR_1 = new TopicPartition("bar", 1);
+    private static final TopicUriPartition FOO_0 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "foo", 0);
+    private static final TopicUriPartition FOO_1 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "foo", 1);
+    private static final TopicUriPartition BAR_0 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "bar", 0);
+    private static final TopicUriPartition BAR_1 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "bar", 1);
 
     @Test
     public void testCurrentOffsetTracking() {
         MetricListener metricListener = new MetricListener();
 
-        final KafkaSourceReaderMetrics kafkaSourceReaderMetrics =
-                new KafkaSourceReaderMetrics(
+        final PscSourceReaderMetrics pscSourceReaderMetrics =
+                new PscSourceReaderMetrics(
                         InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
 
-        kafkaSourceReaderMetrics.registerTopicPartition(FOO_0);
-        kafkaSourceReaderMetrics.registerTopicPartition(FOO_1);
-        kafkaSourceReaderMetrics.registerTopicPartition(BAR_0);
-        kafkaSourceReaderMetrics.registerTopicPartition(BAR_1);
+        pscSourceReaderMetrics.registerTopicUriPartition(FOO_0);
+        pscSourceReaderMetrics.registerTopicUriPartition(FOO_1);
+        pscSourceReaderMetrics.registerTopicUriPartition(BAR_0);
+        pscSourceReaderMetrics.registerTopicUriPartition(BAR_1);
 
-        kafkaSourceReaderMetrics.recordCurrentOffset(FOO_0, 15213L);
-        kafkaSourceReaderMetrics.recordCurrentOffset(FOO_1, 18213L);
-        kafkaSourceReaderMetrics.recordCurrentOffset(BAR_0, 18613L);
-        kafkaSourceReaderMetrics.recordCurrentOffset(BAR_1, 15513L);
+        pscSourceReaderMetrics.recordCurrentOffset(FOO_0, 15213L);
+        pscSourceReaderMetrics.recordCurrentOffset(FOO_1, 18213L);
+        pscSourceReaderMetrics.recordCurrentOffset(BAR_0, 18613L);
+        pscSourceReaderMetrics.recordCurrentOffset(BAR_1, 15513L);
 
         assertCurrentOffset(FOO_0, 15213L, metricListener);
         assertCurrentOffset(FOO_1, 18213L, metricListener);
@@ -71,19 +71,19 @@ public class PscSourceReaderMetricsTest {
     public void testCommitOffsetTracking() {
         MetricListener metricListener = new MetricListener();
 
-        final KafkaSourceReaderMetrics kafkaSourceReaderMetrics =
-                new KafkaSourceReaderMetrics(
+        final PscSourceReaderMetrics pscSourceReaderMetrics =
+                new PscSourceReaderMetrics(
                         InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
 
-        kafkaSourceReaderMetrics.registerTopicPartition(FOO_0);
-        kafkaSourceReaderMetrics.registerTopicPartition(FOO_1);
-        kafkaSourceReaderMetrics.registerTopicPartition(BAR_0);
-        kafkaSourceReaderMetrics.registerTopicPartition(BAR_1);
+        pscSourceReaderMetrics.registerTopicUriPartition(FOO_0);
+        pscSourceReaderMetrics.registerTopicUriPartition(FOO_1);
+        pscSourceReaderMetrics.registerTopicUriPartition(BAR_0);
+        pscSourceReaderMetrics.registerTopicUriPartition(BAR_1);
 
-        kafkaSourceReaderMetrics.recordCommittedOffset(FOO_0, 15213L);
-        kafkaSourceReaderMetrics.recordCommittedOffset(FOO_1, 18213L);
-        kafkaSourceReaderMetrics.recordCommittedOffset(BAR_0, 18613L);
-        kafkaSourceReaderMetrics.recordCommittedOffset(BAR_1, 15513L);
+        pscSourceReaderMetrics.recordCommittedOffset(FOO_0, 15213L);
+        pscSourceReaderMetrics.recordCommittedOffset(FOO_1, 18213L);
+        pscSourceReaderMetrics.recordCommittedOffset(BAR_0, 18613L);
+        pscSourceReaderMetrics.recordCommittedOffset(BAR_1, 15513L);
 
         assertCommittedOffset(FOO_0, 15213L, metricListener);
         assertCommittedOffset(FOO_1, 18213L, metricListener);
@@ -92,12 +92,12 @@ public class PscSourceReaderMetricsTest {
 
         final Optional<Counter> commitsSucceededCounter =
                 metricListener.getCounter(
-                        KafkaSourceReaderMetrics.KAFKA_SOURCE_READER_METRIC_GROUP,
-                        KafkaSourceReaderMetrics.COMMITS_SUCCEEDED_METRIC_COUNTER);
+                        PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP,
+                        PscSourceReaderMetrics.COMMITS_SUCCEEDED_METRIC_COUNTER);
         assertTrue(commitsSucceededCounter.isPresent());
         assertEquals(0L, commitsSucceededCounter.get().getCount());
 
-        kafkaSourceReaderMetrics.recordSucceededCommit();
+        pscSourceReaderMetrics.recordSucceededCommit();
 
         assertEquals(1L, commitsSucceededCounter.get().getCount());
     }
@@ -105,28 +105,28 @@ public class PscSourceReaderMetricsTest {
     @Test
     public void testNonTrackingTopicPartition() {
         MetricListener metricListener = new MetricListener();
-        final KafkaSourceReaderMetrics kafkaSourceReaderMetrics =
-                new KafkaSourceReaderMetrics(
+        final PscSourceReaderMetrics pscSourceReaderMetrics =
+                new PscSourceReaderMetrics(
                         InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> kafkaSourceReaderMetrics.recordCurrentOffset(FOO_0, 15213L));
+                () -> pscSourceReaderMetrics.recordCurrentOffset(FOO_0, 15213L));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> kafkaSourceReaderMetrics.recordCommittedOffset(FOO_0, 15213L));
+                () -> pscSourceReaderMetrics.recordCommittedOffset(FOO_0, 15213L));
     }
 
     @Test
     public void testFailedCommit() {
         MetricListener metricListener = new MetricListener();
-        final KafkaSourceReaderMetrics kafkaSourceReaderMetrics =
-                new KafkaSourceReaderMetrics(
+        final PscSourceReaderMetrics kafkaSourceReaderMetrics =
+                new PscSourceReaderMetrics(
                         InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
         kafkaSourceReaderMetrics.recordFailedCommit();
         final Optional<Counter> commitsFailedCounter =
                 metricListener.getCounter(
-                        KafkaSourceReaderMetrics.KAFKA_SOURCE_READER_METRIC_GROUP,
-                        KafkaSourceReaderMetrics.COMMITS_FAILED_METRIC_COUNTER);
+                        PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP,
+                        PscSourceReaderMetrics.COMMITS_FAILED_METRIC_COUNTER);
         assertTrue(commitsFailedCounter.isPresent());
         assertEquals(1L, commitsFailedCounter.get().getCount());
     }
@@ -134,29 +134,29 @@ public class PscSourceReaderMetricsTest {
     // ----------- Assertions --------------
 
     private void assertCurrentOffset(
-            TopicPartition tp, long expectedOffset, MetricListener metricListener) {
+            TopicUriPartition tp, long expectedOffset, MetricListener metricListener) {
         final Optional<Gauge<Long>> currentOffsetGauge =
                 metricListener.getGauge(
-                        KafkaSourceReaderMetrics.KAFKA_SOURCE_READER_METRIC_GROUP,
-                        TOPIC_GROUP,
-                        tp.topic(),
+                        PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP,
+                        TOPIC_URI_GROUP,
+                        tp.getTopicUriAsString(),
                         PARTITION_GROUP,
-                        String.valueOf(tp.partition()),
-                        KafkaSourceReaderMetrics.CURRENT_OFFSET_METRIC_GAUGE);
+                        String.valueOf(tp.getPartition()),
+                        PscSourceReaderMetrics.CURRENT_OFFSET_METRIC_GAUGE);
         assertTrue(currentOffsetGauge.isPresent());
         assertEquals(expectedOffset, (long) currentOffsetGauge.get().getValue());
     }
 
     private void assertCommittedOffset(
-            TopicPartition tp, long expectedOffset, MetricListener metricListener) {
+            TopicUriPartition tp, long expectedOffset, MetricListener metricListener) {
         final Optional<Gauge<Long>> committedOffsetGauge =
                 metricListener.getGauge(
-                        KafkaSourceReaderMetrics.KAFKA_SOURCE_READER_METRIC_GROUP,
-                        TOPIC_GROUP,
-                        tp.topic(),
+                        PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP,
+                        TOPIC_URI_GROUP,
+                        tp.getTopicUriAsString(),
                         PARTITION_GROUP,
-                        String.valueOf(tp.partition()),
-                        KafkaSourceReaderMetrics.COMMITTED_OFFSET_METRIC_GAUGE);
+                        String.valueOf(tp.getPartition()),
+                        PscSourceReaderMetrics.COMMITTED_OFFSET_METRIC_GAUGE);
         assertTrue(committedOffsetGauge.isPresent());
         assertEquals(expectedOffset, (long) committedOffsetGauge.get().getValue());
     }
