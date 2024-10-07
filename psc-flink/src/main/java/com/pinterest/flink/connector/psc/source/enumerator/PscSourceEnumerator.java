@@ -84,7 +84,7 @@ public class PscSourceEnumerator
      */
     private final TopicUri clusterUri;
 
-    /** The consumer group id used for this KafkaSource. */
+    /** The consumer group id used for this PscSource. */
     private final String consumerGroupId;
 
     // Lazily instantiated or mutable fields.
@@ -165,7 +165,7 @@ public class PscSourceEnumerator
         }
         if (partitionDiscoveryIntervalMs > 0) {
             LOG.info(
-                    "Starting the KafkaSourceEnumerator for consumer group {} "
+                    "Starting the PscSourceEnumerator for consumer group {} "
                             + "with partition discovery interval of {} ms.",
                     consumerGroupId,
                     partitionDiscoveryIntervalMs);
@@ -176,7 +176,7 @@ public class PscSourceEnumerator
                     partitionDiscoveryIntervalMs);
         } else {
             LOG.info(
-                    "Starting the KafkaSourceEnumerator for consumer group {} "
+                    "Starting the PscSourceEnumerator for consumer group {} "
                             + "without periodic partition discovery.",
                     consumerGroupId);
             context.callAsync(this::getSubscribedTopicUriPartitions, this::checkPartitionChanges);
@@ -185,7 +185,7 @@ public class PscSourceEnumerator
 
     @Override
     public void handleSplitRequest(int subtaskId, @Nullable String requesterHostname) {
-        // the kafka source pushes splits eagerly, rather than act upon split requests
+        // the psc source pushes splits eagerly, rather than act upon split requests
     }
 
     @Override
@@ -201,7 +201,7 @@ public class PscSourceEnumerator
     @Override
     public void addReader(int subtaskId) {
         LOG.debug(
-                "Adding reader {} to KafkaSourceEnumerator for consumer group {}.",
+                "Adding reader {} to PscSourceEnumerator for consumer group {}.",
                 subtaskId,
                 consumerGroupId);
         assignPendingPartitionSplits(Collections.singleton(subtaskId));
@@ -222,10 +222,10 @@ public class PscSourceEnumerator
     // ----------------- private methods -------------------
 
     /**
-     * List subscribed topic partitions on Kafka brokers.
+     * List subscribed topic partitions on PubSub brokers.
      *
      * <p>NOTE: This method should only be invoked in the worker executor thread, because it
-     * requires network I/O with Kafka brokers.
+     * requires network I/O with PubSub brokers.
      *
      * @return Set of subscribed {@link TopicUriPartition}s
      */
@@ -271,7 +271,7 @@ public class PscSourceEnumerator
      * <p>Otherwise offsets will be initialized by readers.
      *
      * <p>NOTE: This method should only be invoked in the worker executor thread, because it
-     * potentially requires network I/O with Kafka brokers for fetching offsets.
+     * potentially requires network I/O with PubSub brokers for fetching offsets.
      *
      * @param partitionChange Newly discovered and removed partitions
      * @return {@link PscTopicUriPartitionSplit} of new partitions and {@link TopicUriPartition} of removed
@@ -372,7 +372,7 @@ public class PscSourceEnumerator
         // signal NoMoreSplitsEvent to pending readers
         if (noMoreNewPartitionSplits && boundedness == Boundedness.BOUNDED) {
             LOG.debug(
-                    "No more KafkaPartitionSplits to assign. Sending NoMoreSplitsEvent to reader {}"
+                    "No more PscTopicUriPartitionSplits to assign. Sending NoMoreSplitsEvent to reader {}"
                             + " in consumer group {}.",
                     pendingReaders,
                     consumerGroupId);
@@ -430,7 +430,7 @@ public class PscSourceEnumerator
     }
 
     /**
-     * Returns the index of the target subtask that a specific Kafka partition should be assigned
+     * Returns the index of the target subtask that a specific TopicUriPartition should be assigned
      * to.
      *
      * <p>The resulting distribution of partitions of a single topic has the following contract:
@@ -443,7 +443,7 @@ public class PscSourceEnumerator
      *       topic name).
      * </ul>
      *
-     * @param tp the Kafka partition to assign.
+     * @param tp the PSC TopicUriPartition to assign.
      * @param numReaders the total number of readers.
      * @return the id of the subtask that owns the split.
      */
@@ -451,7 +451,7 @@ public class PscSourceEnumerator
     static int getSplitOwner(TopicUriPartition tp, int numReaders) {
         int startIndex = ((tp.getTopicUriAsString().hashCode() * 31) & 0x7FFFFFFF) % numReaders;
 
-        // here, the assumption is that the id of Kafka partitions are always ascending
+        // here, the assumption is that the id of partitions are always ascending
         // starting from 0, and therefore can be used directly as the offset clockwise from the
         // start index
         return (startIndex + tp.getPartition()) % numReaders;

@@ -265,6 +265,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
         Map<TopicUriPartition, Long> committedOffsets = getCommittedOffsets(partitions);
         List<MessageId> toCommit = new ArrayList<>();
         for (Map.Entry<TopicUriPartition, Long> entry : committedOffsets.entrySet()) {
+            // commit the offset minus 1 since PscConsumer adds 1 underneath the hood during commit() calls
             toCommit.add(new MessageId(entry.getKey().getTopicUriAsString(), entry.getKey().getPartition(), entry.getValue() - 1));
         }
         consumer.commitSync(toCommit);

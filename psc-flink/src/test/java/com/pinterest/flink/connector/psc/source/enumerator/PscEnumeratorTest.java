@@ -18,14 +18,21 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.PscSourceOptions;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppingOffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriber;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationInternal;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
+import com.pinterest.psc.metadata.client.PscMetadataClient;
 import com.pinterest.psc.serde.StringDeserializer;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.ReaderInfo;
@@ -59,13 +66,18 @@ import static org.junit.Assert.assertTrue;
 public class PscEnumeratorTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String DYNAMIC_TOPIC_NAME = "dynamic_topic";
+    private static final String DYNAMIC_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DYNAMIC_TOPIC_NAME;
     private static final int NUM_PARTITIONS_DYNAMIC_TOPIC = 4;
 
     private static final String TOPIC1 = "topic";
+    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "pattern-topic";
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
 
     private static final int READER0 = 0;
     private static final int READER1 = 1;
+    private static final Set<String> PRE_EXISTING_TOPIC_URIS =
+            new HashSet<>(Arrays.asList(TOPIC_URI1, TOPIC_URI2));
     private static final Set<String> PRE_EXISTING_TOPICS =
             new HashSet<>(Arrays.asList(TOPIC1, TOPIC2));
     private static final int PARTITION_DISCOVERY_CALLABLE_INDEX = 0;
@@ -77,8 +89,8 @@ public class PscEnumeratorTest {
     @BeforeClass
     public static void setup() throws Throwable {
         PscSourceTestEnv.setup();
-        PscSourceTestEnv.setupTopic(TOPIC1, true, true, PscSourceTestEnv::getRecordsForTopic);
-        PscSourceTestEnv.setupTopic(TOPIC2, true, true, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setupTopic(TOPIC_URI1, true, true, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.setupTopic(TOPIC_URI2, true, true, PscSourceTestEnv::getRecordsForTopic);
     }
 
     @AfterClass
@@ -143,7 +155,7 @@ public class PscEnumeratorTest {
 
             // Verify assignments for reader 0.
             verifyLastReadersAssignments(
-                    context, Arrays.asList(READER0, READER1), PRE_EXISTING_TOPICS, 1);
+                    context, Arrays.asList(READER0, READER1), PRE_EXISTING_TOPIC_URIS, 1);
         }
     }
 
@@ -162,11 +174,11 @@ public class PscEnumeratorTest {
 
             registerReader(context, enumerator, READER0);
             verifyLastReadersAssignments(
-                    context, Collections.singleton(READER0), PRE_EXISTING_TOPICS, 1);
+                    context, Collections.singleton(READER0), PRE_EXISTING_TOPIC_URIS, 1);
 
             registerReader(context, enumerator, READER1);
             verifyLastReadersAssignments(
-                    context, Collections.singleton(READER1), PRE_EXISTING_TOPICS, 2);
+                    context, Collections.singleton(READER1), PRE_EXISTING_TOPIC_URIS, 2);
         }
     }
 
@@ -213,7 +225,7 @@ public class PscEnumeratorTest {
             verifyLastReadersAssignments(
                     context,
                     Arrays.asList(READER0, READER1),
-                    Collections.singleton(DYNAMIC_TOPIC_NAME),
+                    Collections.singleton(DYNAMIC_TOPIC_URI),
                     3);
         } finally {
             try (AdminClient adminClient = PscSourceTestEnv.getAdminClient()) {
@@ -246,7 +258,7 @@ public class PscEnumeratorTest {
             // Simulate a reader recovery.
             registerReader(context, enumerator, READER0);
             verifyLastReadersAssignments(
-                    context, Collections.singleton(READER0), PRE_EXISTING_TOPICS, 3);
+                    context, Collections.singleton(READER0), PRE_EXISTING_TOPIC_URIS, 3);
         }
     }
 
@@ -273,18 +285,17 @@ public class PscEnumeratorTest {
                                 new Properties())) {
             enumerator.start();
             runPeriodicPartitionDiscovery(context2);
-
             registerReader(context2, enumerator, READER0);
             assertTrue(context2.getSplitsAssignmentSequence().isEmpty());
 
             registerReader(context2, enumerator, READER1);
             verifyLastReadersAssignments(
-                    context2, Collections.singleton(READER1), PRE_EXISTING_TOPICS, 1);
+                    context2, Collections.singleton(READER1), PRE_EXISTING_TOPIC_URIS, 1);
         }
     }
 
     @Test
-    public void testKafkaClientProperties() throws Exception {
+    public void testPscClientProperties() throws Exception {
         Properties properties = new Properties();
         String clientIdPrefix = "test-prefix";
         Integer defaultTimeoutMs = 99999;
@@ -297,23 +308,18 @@ public class PscEnumeratorTest {
                         createEnumerator(
                                 context,
                                 ENABLE_PERIODIC_PARTITION_DISCOVERY,
-                                PRE_EXISTING_TOPICS,
+                                PRE_EXISTING_TOPIC_URIS,
                                 Collections.emptySet(),
                                 properties)) {
             enumerator.start();
 
-            AdminClient adminClient =
-                    (AdminClient) Whitebox.getInternalState(enumerator, "adminClient");
-            assertNotNull(adminClient);
-            String clientId = (String) Whitebox.getInternalState(adminClient, "clientId");
-            assertNotNull(clientId);
-            assertTrue(clientId.startsWith(clientIdPrefix));
-            assertEquals(
-                    defaultTimeoutMs,
-                    Whitebox.getInternalState(adminClient, "defaultApiTimeoutMs"));
-
-            assertNotNull(clientId);
-            assertTrue(clientId.startsWith(clientIdPrefix));
+            PscMetadataClient pscMetadataClient =
+                    (PscMetadataClient) Whitebox.getInternalState(enumerator, "metadataClient");
+            assertNotNull(pscMetadataClient);
+            PscConfigurationInternal pscConfigurationInternal = (PscConfigurationInternal) Whitebox.getInternalState(pscMetadataClient, "pscConfigurationInternal");
+            assertNotNull(pscConfigurationInternal);
+            assertTrue(pscConfigurationInternal.getMetadataClientId().startsWith(clientIdPrefix));
+            // TODO: potentially test defaultApiTimeoutMs when it is exposed (it is currently not exposed)
         }
     }
 
@@ -336,7 +342,7 @@ public class PscEnumeratorTest {
             final PscSourceEnumState state2 = enumerator.snapshotState(1L);
             verifySplitAssignmentWithPartitions(
                     getExpectedAssignments(
-                            new HashSet<>(Arrays.asList(READER0, READER1)), PRE_EXISTING_TOPICS),
+                            new HashSet<>(Arrays.asList(READER0, READER1)), PRE_EXISTING_TOPIC_URIS),
                     state2.assignedPartitions());
         }
     }
@@ -351,12 +357,12 @@ public class PscEnumeratorTest {
             runOneTimePartitionDiscovery(context);
             registerReader(context, enumerator, READER0);
             verifyLastReadersAssignments(
-                    context, Collections.singleton(READER0), PRE_EXISTING_TOPICS, 1);
+                    context, Collections.singleton(READER0), PRE_EXISTING_TOPIC_URIS, 1);
 
             // All partitions of TOPIC1 and TOPIC2 should have been discovered now
 
             // Check partition change using only DYNAMIC_TOPIC_NAME-0
-            TopicUriPartition newPartition = new TopicUriPartition(DYNAMIC_TOPIC_NAME, 0);
+            TopicUriPartition newPartition = new TopicUriPartition(KafkaTopicUri.validate(BaseTopicUri.validate(DYNAMIC_TOPIC_URI)), 0);
             Set<TopicUriPartition> fetchedPartitions = new HashSet<>();
             fetchedPartitions.add(newPartition);
             final PscSourceEnumerator.PartitionChange partitionChange =
@@ -369,8 +375,8 @@ public class PscEnumeratorTest {
             // removed
             Set<TopicUriPartition> expectedRemovedPartitions = new HashSet<>();
             for (int i = 0; i < PscSourceTestEnv.NUM_PARTITIONS; i++) {
-                expectedRemovedPartitions.add(new TopicUriPartition(TOPIC1, i));
-                expectedRemovedPartitions.add(new TopicUriPartition(TOPIC2, i));
+                expectedRemovedPartitions.add(new TopicUriPartition(KafkaTopicUri.validate(BaseTopicUri.validate(TOPIC_URI1)), i));
+                expectedRemovedPartitions.add(new TopicUriPartition(KafkaTopicUri.validate(BaseTopicUri.validate(TOPIC_URI2)), i));
             }
 
             assertEquals(expectedNewPartitions, partitionChange.getNewPartitions());
@@ -395,12 +401,12 @@ public class PscEnumeratorTest {
         // Run the partition discover callable and check the partition assignment.
         runPeriodicPartitionDiscovery(context);
         verifyLastReadersAssignments(
-                context, Collections.singleton(READER0), PRE_EXISTING_TOPICS, 1);
+                context, Collections.singleton(READER0), PRE_EXISTING_TOPIC_URIS, 1);
 
         // Register reader 1 after first partition discovery.
         registerReader(context, enumerator, READER1);
         verifyLastReadersAssignments(
-                context, Collections.singleton(READER1), PRE_EXISTING_TOPICS, 2);
+                context, Collections.singleton(READER1), PRE_EXISTING_TOPIC_URIS, 2);
     }
 
     // ----------------------------------------
@@ -455,6 +461,7 @@ public class PscEnumeratorTest {
         props.setProperty(
                 PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
                 partitionDiscoverInterval);
+        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
 
         return new PscSourceEnumerator(
                 subscriber,
@@ -479,10 +486,10 @@ public class PscEnumeratorTest {
     private void verifyLastReadersAssignments(
             MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context,
             Collection<Integer> readers,
-            Set<String> topics,
-            int expectedAssignmentSeqSize) {
+            Set<String> topicUris,
+            int expectedAssignmentSeqSize) throws TopicUriSyntaxException {
         verifyAssignments(
-                getExpectedAssignments(new HashSet<>(readers), topics),
+                getExpectedAssignments(new HashSet<>(readers), topicUris),
                 context.getSplitsAssignmentSequence()
                         .get(expectedAssignmentSeqSize - 1)
                         .assignment());
@@ -505,18 +512,18 @@ public class PscEnumeratorTest {
     }
 
     private Map<Integer, Set<TopicUriPartition>> getExpectedAssignments(
-            Set<Integer> readers, Set<String> topics) {
+            Set<Integer> readers, Set<String> topicUriStrings) throws TopicUriSyntaxException {
         Map<Integer, Set<TopicUriPartition>> expectedAssignments = new HashMap<>();
         Set<TopicUriPartition> allPartitions = new HashSet<>();
 
-        if (topics.contains(DYNAMIC_TOPIC_NAME)) {
+        if (topicUriStrings.contains(DYNAMIC_TOPIC_URI)) {
             for (int i = 0; i < NUM_PARTITIONS_DYNAMIC_TOPIC; i++) {
-                allPartitions.add(new TopicUriPartition(DYNAMIC_TOPIC_NAME, i));
+                allPartitions.add(new TopicUriPartition(KafkaTopicUri.validate(BaseTopicUri.validate(DYNAMIC_TOPIC_URI)), i));
             }
         }
 
-        for (TopicUriPartition tp : PscSourceTestEnv.getPartitionsForTopics(PRE_EXISTING_TOPICS)) {
-            if (topics.contains(tp.getTopicUriAsString())) {
+        for (TopicUriPartition tp : PscSourceTestEnv.getPartitionsForTopics(PRE_EXISTING_TOPIC_URIS)) {
+            if (topicUriStrings.contains(tp.getTopicUriAsString())) {
                 allPartitions.add(tp);
             }
         }
