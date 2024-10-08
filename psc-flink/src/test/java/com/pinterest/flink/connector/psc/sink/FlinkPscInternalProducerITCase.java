@@ -90,7 +90,7 @@ class FlinkPscInternalProducerITCase {
                     reuse.abortTransaction();
                 }
                 assertNumTransactions(i);
-                assertThat(readRecords(topicUriStr).asList().size()).isEqualTo(i / 2);
+                assertThat(readRecords(topicUriStr).asIterable().getMessages().size()).isEqualTo(i / 2);
             }
         } catch (ConfigurationException | ProducerException | TopicUriSyntaxException | ConsumerException e) {
             throw new RuntimeException(e);

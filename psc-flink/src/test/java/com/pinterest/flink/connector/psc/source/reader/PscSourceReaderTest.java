@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.connector.psc.source.reader;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
 import com.pinterest.flink.connector.psc.source.PscSourceOptions;
@@ -26,6 +27,7 @@ import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsIn
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.producer.PscProducerMessage;
@@ -46,7 +48,6 @@ import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.testutils.MetricListener;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
-
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
@@ -80,12 +81,14 @@ import static com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMe
 import static com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP;
 import static com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics.TOPIC_URI_GROUP;
 import static com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv.NUM_PARTITIONS;
+import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static org.apache.flink.core.testutils.CommonTestUtils.waitUtil;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Unit tests for {@link PscSourceReader}. */
 public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartitionSplit> {
-    private static final String TOPIC = "KafkaSourceReaderTest";
+    private static final String TOPIC = "PscSourceReaderTest";
+    private static final String TOPIC_URI_STR = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC;
 
     @BeforeAll
     public static void setup() throws Throwable {
@@ -135,7 +138,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                 (PscSourceReader<Integer>)
                         createReader(Boundedness.CONTINUOUS_UNBOUNDED, groupId)) {
             PscTopicUriPartitionSplit split =
-                    new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC, 0), 0, NUM_RECORDS_PER_SPLIT);
+                    new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC_URI_STR, 0), 0, NUM_RECORDS_PER_SPLIT);
             reader.addSplits(Collections.singletonList(split));
             reader.notifyNoMoreSplits();
             ReaderOutput<Integer> output = new TestingReaderOutput<>();
@@ -158,7 +161,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             reader.addSplits(
                     Collections.singletonList(
                             new PscTopicUriPartitionSplit(
-                                    new TopicUriPartition(TOPIC, 0), NUM_RECORDS_PER_SPLIT)));
+                                    new TopicUriPartition(TOPIC_URI_STR, 0), NUM_RECORDS_PER_SPLIT)));
             pollUntil(
                     reader,
                     output,
@@ -175,7 +178,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             assertThat(committedOffsets).hasSize(1);
             assertThat(committedOffsets.values())
                     .extracting(OffsetAndMetadata::offset)
-                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT);
+                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT + 1);
         }
     }
 
@@ -246,7 +249,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             assertThat(committedOffsets).hasSize(numSplits);
             assertThat(committedOffsets.values())
                     .extracting(OffsetAndMetadata::offset)
-                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT);
+                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT + 1);
         }
     }
 
@@ -256,7 +259,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
         try (PscSourceReader<Integer> reader = (PscSourceReader<Integer>) createReader()) {
             PscTopicUriPartitionSplit split =
                     new PscTopicUriPartitionSplit(
-                            new TopicUriPartition(TOPIC, 0), PscTopicUriPartitionSplit.EARLIEST_OFFSET);
+                            new TopicUriPartition(TOPIC_URI_STR, 0), PscTopicUriPartitionSplit.EARLIEST_OFFSET);
             reader.addSplits(Collections.singletonList(split));
             reader.snapshotState(checkpointId);
             assertThat(reader.getOffsetsToCommit()).hasSize(1);
@@ -294,8 +297,8 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
     void testPscSourceMetrics() throws Exception {
         final MetricListener metricListener = new MetricListener();
         final String groupId = "testKafkaSourceMetrics";
-        final TopicUriPartition tp0 = new TopicUriPartition(TOPIC, 0);
-        final TopicUriPartition tp1 = new TopicUriPartition(TOPIC, 1);
+        final TopicUriPartition tp0 = new TopicUriPartition(TOPIC_URI_STR, 0);
+        final TopicUriPartition tp1 = new TopicUriPartition(TOPIC_URI_STR, 1);
 
         try (PscSourceReader<Integer> reader =
                 (PscSourceReader<Integer>)
@@ -377,11 +380,11 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
         // Normal split with NUM_RECORDS_PER_SPLIT records
         final PscTopicUriPartitionSplit normalSplit =
                 new PscTopicUriPartitionSplit(
-                        new TopicUriPartition(TOPIC, 0), 0, PscTopicUriPartitionSplit.LATEST_OFFSET);
+                        new TopicUriPartition(TOPIC_URI_STR, 0), 0, PscTopicUriPartitionSplit.LATEST_OFFSET);
         // Empty split with no record
         final PscTopicUriPartitionSplit emptySplit =
                 new PscTopicUriPartitionSplit(
-                        new TopicUriPartition(TOPIC, 1), NUM_RECORDS_PER_SPLIT, NUM_RECORDS_PER_SPLIT);
+                        new TopicUriPartition(TOPIC_URI_STR, 1), NUM_RECORDS_PER_SPLIT, NUM_RECORDS_PER_SPLIT);
         // Split finished hook for listening finished splits
         final Set<String> finishedSplits = new HashSet<>();
         final Consumer<Collection<String>> splitFinishedHook = finishedSplits::addAll;
@@ -412,10 +415,10 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
         // Empty split with no record
         PscTopicUriPartitionSplit emptySplit0 =
                 new PscTopicUriPartitionSplit(
-                        new TopicUriPartition(TOPIC, 0), NUM_RECORDS_PER_SPLIT, NUM_RECORDS_PER_SPLIT);
+                        new TopicUriPartition(TOPIC_URI_STR, 0), NUM_RECORDS_PER_SPLIT, NUM_RECORDS_PER_SPLIT);
         PscTopicUriPartitionSplit emptySplit1 =
                 new PscTopicUriPartitionSplit(
-                        new TopicUriPartition(TOPIC, 1), NUM_RECORDS_PER_SPLIT, NUM_RECORDS_PER_SPLIT);
+                        new TopicUriPartition(TOPIC_URI_STR, 1), NUM_RECORDS_PER_SPLIT, NUM_RECORDS_PER_SPLIT);
         // Split finished hook for listening finished splits
         final Set<String> finishedSplits = new HashSet<>();
         final Consumer<Collection<String>> splitFinishedHook = finishedSplits::addAll;
@@ -462,7 +465,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                 boundedness == Boundedness.BOUNDED
                         ? NUM_RECORDS_PER_SPLIT
                         : PscTopicUriPartitionSplit.NO_STOPPING_OFFSET;
-        return new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC, splitId), 0L, stoppingOffset);
+        return new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC_URI_STR, splitId), 0L, stoppingOffset);
     }
 
     @Override
@@ -504,13 +507,15 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             Consumer<Collection<String>> splitFinishedHook,
             Properties props)
             throws Exception {
+        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         PscSourceBuilder<Integer> builder =
                 PscSource.<Integer>builder()
-                        .setClientIdPrefix("KafkaSourceReaderTest")
+                        .setClientIdPrefix("PscSourceReaderTest")
                         .setDeserializer(
                                 PscRecordDeserializationSchema.valueOnly(
                                         IntegerDeserializer.class))
-                        .setPartitions(Collections.singleton(new TopicUriPartition("AnyTopic", 0)))
+                        .setPartitions(Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "AnyTopic", 0)))
 //                        .setProperty(
 //                                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
 //                                KafkaSourceTestEnv.brokerConnectionStrings)
@@ -587,7 +592,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             for (int i = 0; i < NUM_RECORDS_PER_SPLIT; i++) {
                 records.add(
                         new PscProducerMessage<>(
-                                TOPIC, part, TOPIC + "-" + part, part * NUM_RECORDS_PER_SPLIT + i));
+                                TOPIC_URI_STR, part, TOPIC + "-" + part, part * NUM_RECORDS_PER_SPLIT + i));
             }
         }
         return records;

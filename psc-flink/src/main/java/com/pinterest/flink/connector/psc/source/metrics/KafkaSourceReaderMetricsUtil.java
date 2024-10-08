@@ -12,7 +12,7 @@ class KafkaSourceReaderMetricsUtil {
     // Kafka raw metric names and group names
     public static final String CONSUMER_FETCH_MANAGER_GROUP = "consumer-fetch-manager-metrics";
     public static final String BYTES_CONSUMED_TOTAL = "bytes-consumed-total";
-    public static final String RECORDS_LAG = "records-lag";
+    public static final String RECORDS_LAG = "records-lag-max";
 
     protected static Predicate<Map.Entry<MetricName, ? extends Metric>> createRecordLagFilter(TopicUriPartition tp) {
         final String resolvedTopic = tp.getTopicUriAsString().replace('.', '_');
@@ -22,11 +22,11 @@ class KafkaSourceReaderMetricsUtil {
             final Map<String, String> tags = metricName.tags();
 
             return metricName.group().equals(CONSUMER_FETCH_MANAGER_GROUP)
-                    && metricName.name().equals(RECORDS_LAG)
-                    && tags.containsKey("topic")
-                    && tags.get("topic").equals(resolvedTopic)
-                    && tags.containsKey("partition")
-                    && tags.get("partition").equals(resolvedPartition);
+                    && metricName.name().equals(RECORDS_LAG);
+//                    && tags.containsKey("topic")
+//                    && tags.get("topic").equals(resolvedTopic)
+//                    && tags.containsKey("partition")
+//                    && tags.get("partition").equals(resolvedPartition);
         };
     }
 

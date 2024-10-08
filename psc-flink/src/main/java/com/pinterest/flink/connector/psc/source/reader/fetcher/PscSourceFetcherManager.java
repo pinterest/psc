@@ -72,7 +72,7 @@ public class PscSourceFetcherManager
 
     public void commitOffsets(
             Collection<MessageId> offsetsToCommit, OffsetCommitCallback callback) {
-        LOG.debug("Committing offsets {}", offsetsToCommit);
+        LOG.info("Committing offsets {}", offsetsToCommit);
         if (offsetsToCommit.isEmpty()) {
             return;
         }

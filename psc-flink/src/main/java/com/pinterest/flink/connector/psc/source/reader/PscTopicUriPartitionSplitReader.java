@@ -28,6 +28,7 @@ import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.OffsetCommitCallback;
 import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
+import com.pinterest.psc.consumer.PscConsumerMessagesIterable;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.consumer.ConsumerException;
@@ -77,11 +78,13 @@ public class PscTopicUriPartitionSplitReader
 
     // Tracking empty splits that has not been added to finished splits in fetch()
     private final Set<String> emptySplits = new HashSet<>();
+    private final Properties props;
 
     public PscTopicUriPartitionSplitReader(
             Properties props,
             SourceReaderContext context,
             PscSourceReaderMetrics pscSourceReaderMetrics) throws ConfigurationException, ClientException {
+        this.props = props;
         this.subtaskId = context.getIndexOfSubtask();
         this.pscSourceReaderMetrics = pscSourceReaderMetrics;
         Properties consumerProps = new Properties();
@@ -90,17 +93,13 @@ public class PscTopicUriPartitionSplitReader
         this.consumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(consumerProps));
         this.stoppingOffsets = new HashMap<>();
         this.groupId = consumerProps.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-
-        // Metric registration
-        maybeRegisterKafkaConsumerMetrics(props, pscSourceReaderMetrics, consumer);
-        this.pscSourceReaderMetrics.registerNumBytesIn(consumer);
     }
 
     @Override
     public RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> fetch() throws IOException {
-        PscConsumerPollMessageIterator<byte[], byte[]> consumerMessageIterator;
+        PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable;
         try {
-            consumerMessageIterator = consumer.poll(Duration.ofMillis(POLL_TIMEOUT));
+            consumerMessagesIterable = new PscConsumerMessagesIterable<>(consumer.poll(Duration.ofMillis(POLL_TIMEOUT)));
         } catch (ConsumerException e) {
             // IllegalStateException will be thrown if the consumer is not assigned any partitions.
             // This happens if all assigned partitions are invalid or empty (starting offset >=
@@ -108,17 +107,17 @@ public class PscTopicUriPartitionSplitReader
             // record container, and this consumer will be closed by SplitFetcherManager.
             PscPartitionSplitRecords recordsBySplits =
                     new PscPartitionSplitRecords(
-                            PscConsumerPollMessageIterator.emptyIterator(), pscSourceReaderMetrics);
+                            PscConsumerMessagesIterable.emptyIterable(), pscSourceReaderMetrics);
             markEmptySplitsAsFinished(recordsBySplits);
             return recordsBySplits;
         }
         PscPartitionSplitRecords recordsBySplits =
-                new PscPartitionSplitRecords(consumerMessageIterator, pscSourceReaderMetrics);
+                new PscPartitionSplitRecords(consumerMessagesIterable, pscSourceReaderMetrics);
         List<TopicUriPartition> finishedPartitions = new ArrayList<>();
-        for (TopicUriPartition tp : consumerMessageIterator.getTopicUriPartitions()) {
+        for (TopicUriPartition tp : consumerMessagesIterable.getTopicUriPartitions()) {
             long stoppingOffset = getStoppingOffset(tp);
             final List<PscConsumerMessage<byte[], byte[]>> recordsFromPartition =
-                    consumerMessageIterator.iteratorFor(tp).asList();
+                    consumerMessagesIterable.getMessagesForTopicUriPartition(tp);
 
             if (recordsFromPartition.size() > 0) {
                 final PscConsumerMessage<byte[], byte[]> lastRecord =
@@ -170,6 +169,7 @@ public class PscTopicUriPartitionSplitReader
 
     @Override
     public void handleSplitsChanges(SplitsChange<PscTopicUriPartitionSplit> splitsChange) {
+        System.out.println("handling splits changes");
         // Get all the partition assignments and stopping offsets.
         if (!(splitsChange instanceof SplitsAddition)) {
             throw new UnsupportedOperationException(
@@ -213,6 +213,14 @@ public class PscTopicUriPartitionSplitReader
             throw new RuntimeException("Failed to assign PscConsumer", e);
         }
 
+        // Metric registration
+        try {
+            maybeRegisterKafkaConsumerMetrics(props, pscSourceReaderMetrics, consumer);
+            this.pscSourceReaderMetrics.registerNumBytesIn(consumer);
+        } catch (ClientException e) {
+            throw new RuntimeException("Failed to register metrics for PscConsumer", e);
+        }
+
         try {
             // Seek on the newly assigned partitions to their stating offsets.
             seekToStartingOffsets(
@@ -246,6 +254,7 @@ public class PscTopicUriPartitionSplitReader
     public void notifyCheckpointComplete(
             Collection<MessageId> offsetsToCommit,
             OffsetCommitCallback offsetCommitCallback) throws ConfigurationException, ConsumerException {
+        System.out.println("commitAsync: " + offsetsToCommit);
         consumer.commitAsync(offsetsToCommit, offsetCommitCallback);
     }
 
@@ -492,7 +501,7 @@ public class PscTopicUriPartitionSplitReader
 
         private final Set<String> finishedSplits = new HashSet<>();
         private final Map<TopicUriPartition, Long> stoppingOffsets = new HashMap<>();
-        private final PscConsumerPollMessageIterator<byte[], byte[]> consumerMessageIterator;
+        private final PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable;
         private final PscSourceReaderMetrics metrics;
         private final Iterator<TopicUriPartition> splitIterator;
         private Iterator<PscConsumerMessage<byte[], byte[]>> recordIterator;
@@ -500,9 +509,9 @@ public class PscTopicUriPartitionSplitReader
         private Long currentSplitStoppingOffset;
 
         private PscPartitionSplitRecords(
-                PscConsumerPollMessageIterator<byte[], byte[]> consumerMessageIterator, PscSourceReaderMetrics metrics) {
-            this.consumerMessageIterator = consumerMessageIterator;
-            this.splitIterator = consumerMessageIterator.getTopicUriPartitions().iterator();
+                PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable, PscSourceReaderMetrics metrics) {
+            this.consumerMessagesIterable = consumerMessagesIterable;
+            this.splitIterator = consumerMessagesIterable.getTopicUriPartitions().iterator();
             this.metrics = metrics;
         }
 
@@ -520,7 +529,7 @@ public class PscTopicUriPartitionSplitReader
         public String nextSplit() {
             if (splitIterator.hasNext()) {
                 currentTopicPartition = splitIterator.next();
-                recordIterator = consumerMessageIterator.iteratorFor(currentTopicPartition);
+                recordIterator = consumerMessagesIterable.getMessagesForTopicUriPartition(currentTopicPartition).iterator();
                 currentSplitStoppingOffset =
                         stoppingOffsets.getOrDefault(currentTopicPartition, Long.MAX_VALUE);
                 return currentTopicPartition.toString();
@@ -539,6 +548,7 @@ public class PscTopicUriPartitionSplitReader
                     currentTopicPartition,
                     "Make sure nextSplit() did not return null before "
                             + "iterate over the records split.");
+            System.out.println("recordIteratorClass: " + recordIterator.getClass().getName());
             if (recordIterator.hasNext()) {
                 final PscConsumerMessage<byte[], byte[]> message = recordIterator.next();
                 // Only emit records before stopping offset

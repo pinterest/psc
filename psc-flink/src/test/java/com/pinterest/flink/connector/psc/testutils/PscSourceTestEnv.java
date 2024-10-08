@@ -293,4 +293,8 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
             setupCommittedOffsets(topicUriString);
         }
     }
+
+    public static String getBrokerConnectionStrings() {
+        return brokerConnectionStrings;
+    }
 }

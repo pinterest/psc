@@ -44,12 +44,21 @@ public abstract class PscConsumerPollMessageIterator<K, V> implements
         };
     }
 
-    public List<PscConsumerMessage<K, V>> asList() {
+    protected List<PscConsumerMessage<K, V>> asList() {
         List<PscConsumerMessage<K, V>> list = new ArrayList<>();
         while (hasNext()) {
             list.add(next());
         }
         return list;
+    }
+
+    /**
+     * This API can be used to convert this message iterator into an iterable. Note that this API will consume this entire
+     * iterator and this iterator can no longer be used after calling asIterable().
+     * @return an iterable that can be used to traverse the messages in this iterator.
+     */
+    public PscConsumerMessagesIterable<K, V> asIterable() {
+        return new PscConsumerMessagesIterable<>(this);
     }
 
     /**

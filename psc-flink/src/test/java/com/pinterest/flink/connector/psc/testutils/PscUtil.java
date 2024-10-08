@@ -173,7 +173,7 @@ public class PscUtil {
                 if (topicPartitions.removeAll(finishedPartitions)) {
                     consumer.assign(topicPartitions);
                 }
-                consumerRecords.addAll(records.asList());
+                consumerRecords.addAll(records.asIterable().getMessages());
             }
             return consumerRecords;
         }

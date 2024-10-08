@@ -150,13 +150,13 @@ public class PscSource<OUT>
                         return readerContext.getUserCodeClassLoader();
                     }
                 });
-        final PscSourceReaderMetrics kafkaSourceReaderMetrics =
+        final PscSourceReaderMetrics pscSourceReaderMetrics =
                 new PscSourceReaderMetrics(readerContext.metricGroup());
 
         Supplier<PscTopicUriPartitionSplitReader> splitReaderSupplier =
                 () -> {
                     try {
-                        return new PscTopicUriPartitionSplitReader(props, readerContext, kafkaSourceReaderMetrics);
+                        return new PscTopicUriPartitionSplitReader(props, readerContext, pscSourceReaderMetrics);
                     } catch (ConfigurationException | ClientException e) {
                         throw new RuntimeException("Failed to create new PscTopicUriParititionSplitReader", e);
                     }
@@ -170,7 +170,7 @@ public class PscSource<OUT>
                 recordEmitter,
                 toConfiguration(props),
                 readerContext,
-                kafkaSourceReaderMetrics);
+                pscSourceReaderMetrics);
     }
 
     @Internal
