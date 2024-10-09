@@ -480,15 +480,17 @@ public class PscTopicUriPartitionSplitReader
      * <p>Under this case we need to catch the {@link } and retry the operation.
      */
     private <V> V retryOnWakeup(Supplier<V> consumerCall, String description) {
-        return consumerCall.get();
-//        try {
-//            return consumerCall.get();
-//        } catch (WakeupException we) {
-//            LOG.info(
-//                    "Caught WakeupException while executing Kafka consumer call for {}. Will retry the consumer call.",
-//                    description);
-//            return consumerCall.get();
-//        }
+        try {
+            return consumerCall.get();
+        } catch (RuntimeException we) {
+            if (!(we.getCause() instanceof WakeupException)) {
+                throw we;
+            }
+            LOG.info(
+                    "Caught WakeupException while executing PSC consumer call for {}. Will retry the consumer call.",
+                    description);
+            return consumerCall.get();
+        }
     }
 
     // ---------------- private helper class ------------------------
