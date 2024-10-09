@@ -296,7 +296,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
     @Test
     void testPscSourceMetrics() throws Exception {
         final MetricListener metricListener = new MetricListener();
-        final String groupId = "testKafkaSourceMetrics";
+        final String groupId = "testPscSourceMetrics";
         final TopicUriPartition tp0 = new TopicUriPartition(TOPIC_URI_STR, 0);
         final TopicUriPartition tp1 = new TopicUriPartition(TOPIC_URI_STR, 1);
 
@@ -320,7 +320,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                     () -> output.getEmittedRecords().size() == NUM_RECORDS_PER_SPLIT * 2,
                     String.format(
                             "Failed to poll %d records until timeout", NUM_RECORDS_PER_SPLIT * 2));
-
+            Thread.sleep(100); // Wait for the metric to be updated
             // Metric "records-consumed-total" of KafkaConsumer should be NUM_RECORDS_PER_SPLIT
             assertThat(getPscConsumerMetric("records-consumed-total", metricListener))
                     .isEqualTo(NUM_RECORDS_PER_SPLIT * 2);
@@ -427,7 +427,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                 (PscSourceReader<Integer>)
                         createReader(
                                 Boundedness.BOUNDED,
-                                "KafkaSourceReaderTestGroup",
+                                "PscSourceReaderTestGroup",
                                 new TestingReaderContext(),
                                 splitFinishedHook)) {
             reader.addSplits(Arrays.asList(emptySplit0, emptySplit1));
@@ -437,8 +437,10 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                     () -> reader.getNumAliveFetchers() == 0,
                     "The split fetcher did not exit before timeout.");
             assertThat(reader.getNumAliveFetchers()).isEqualTo(0);
+
+            // upstream asserts containsExactly (in order) but that is not necessary given that finishedSplits is a Set
             assertThat(finishedSplits)
-                    .containsExactly(emptySplit0.splitId(), emptySplit1.splitId());
+                    .contains(emptySplit0.splitId(), emptySplit1.splitId());
         }
     }
 
@@ -508,6 +510,10 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             Properties props)
             throws Exception {
         props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        props.setProperty(PscConfiguration.PSC_METRICS_FREQUENCY_MS, "100");
+        if (!props.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID)) {
+            props.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "test-group-id");
+        }
         putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         PscSourceBuilder<Integer> builder =
                 PscSource.<Integer>builder()

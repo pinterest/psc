@@ -29,7 +29,6 @@ import com.pinterest.psc.consumer.OffsetCommitCallback;
 import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.consumer.PscConsumerMessagesIterable;
-import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.consumer.WakeupException;
@@ -169,7 +168,6 @@ public class PscTopicUriPartitionSplitReader
 
     @Override
     public void handleSplitsChanges(SplitsChange<PscTopicUriPartitionSplit> splitsChange) {
-        System.out.println("handling splits changes");
         // Get all the partition assignments and stopping offsets.
         if (!(splitsChange instanceof SplitsAddition)) {
             throw new UnsupportedOperationException(
@@ -215,7 +213,7 @@ public class PscTopicUriPartitionSplitReader
 
         // Metric registration
         try {
-            maybeRegisterKafkaConsumerMetrics(props, pscSourceReaderMetrics, consumer);
+            maybeRegisterPscConsumerMetrics(props, pscSourceReaderMetrics, consumer);
             this.pscSourceReaderMetrics.registerNumBytesIn(consumer);
         } catch (ClientException e) {
             throw new RuntimeException("Failed to register metrics for PscConsumer", e);
@@ -254,7 +252,6 @@ public class PscTopicUriPartitionSplitReader
     public void notifyCheckpointComplete(
             Collection<MessageId> offsetsToCommit,
             OffsetCommitCallback offsetCommitCallback) throws ConfigurationException, ConsumerException {
-        System.out.println("commitAsync: " + offsetsToCommit);
         consumer.commitAsync(offsetsToCommit, offsetCommitCallback);
     }
 
@@ -452,7 +449,7 @@ public class PscTopicUriPartitionSplitReader
         return stoppingOffsets.getOrDefault(tp, Long.MAX_VALUE);
     }
 
-    private void maybeRegisterKafkaConsumerMetrics(
+    private void maybeRegisterPscConsumerMetrics(
             Properties props,
             PscSourceReaderMetrics pscSourceReaderMetrics,
             PscConsumer<?, ?> consumer) throws ClientException {
@@ -548,7 +545,6 @@ public class PscTopicUriPartitionSplitReader
                     currentTopicPartition,
                     "Make sure nextSplit() did not return null before "
                             + "iterate over the records split.");
-            System.out.println("recordIteratorClass: " + recordIterator.getClass().getName());
             if (recordIterator.hasNext()) {
                 final PscConsumerMessage<byte[], byte[]> message = recordIterator.next();
                 // Only emit records before stopping offset
