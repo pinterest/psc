@@ -22,6 +22,7 @@ import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.ByteArraySerializer;
@@ -52,9 +53,10 @@ import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
 
+import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static org.apache.commons.lang3.RandomStringUtils.randomAlphanumeric;
 
-/** External context for testing {@link KafkaSource}. */
+/** External context for testing {@link PscSource}. */
 public class PscSourceExternalContext implements DataStreamSourceExternalContext<String> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceExternalContext.class);
@@ -67,6 +69,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
     private final List<URL> connectorJarPaths;
     private final String bootstrapServers;
     private final String topicName;
+    private final String topicUriStr;
     private final SplitMappingMode splitMappingMode;
     private final AdminClient adminClient;
     private final List<PscTopicUriPartitionDataWriter> writers = new ArrayList<>();
@@ -78,6 +81,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
         this.connectorJarPaths = connectorJarPaths;
         this.bootstrapServers = bootstrapServers;
         this.topicName = randomize(TOPIC_NAME_PREFIX);
+        this.topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + this.topicName;
         this.splitMappingMode = splitMappingMode;
         this.adminClient = createAdminClient();
     }
@@ -91,8 +95,14 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
     public Source<String, ?, ?> createSource(TestingSourceSettings sourceSettings) {
         final PscSourceBuilder<String> builder = PscSource.builder();
 
+        Properties props = new Properties();
+        props.setProperty(PscConfiguration.PSC_AUTO_RESOLUTION_ENABLED, "false");
+        injectDiscoveryConfigs(props, bootstrapServers, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+
         builder
 //                .setBootstrapServers(bootstrapServers)
+                .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                .setProperties(props)
                 .setTopicUriPattern(TOPIC_NAME_PATTERN)
                 .setGroupId(randomize(GROUP_ID_PREFIX))
                 .setDeserializer(
@@ -182,16 +192,18 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
 
     private PscTopicUriPartitionDataWriter createSinglePartitionTopic(int topicIndex) throws Exception {
         String newTopicName = topicName + "-" + topicIndex;
+        String newTopicUriStr = topicUriStr + "-" + topicIndex;
         LOG.info("Creating topic '{}'", newTopicName);
         adminClient
                 .createTopics(Collections.singletonList(new NewTopic(newTopicName, 1, (short) 1)))
                 .all()
                 .get();
         return new PscTopicUriPartitionDataWriter(
-                getPscProducerProperties(topicIndex), new TopicUriPartition(newTopicName, 0));
+                getPscProducerProperties(topicIndex), new TopicUriPartition(newTopicUriStr, 0));
     }
 
     private PscTopicUriPartitionDataWriter scaleOutTopic(String topicName) throws Exception {
+        final String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topicName;
         final Set<String> topics = adminClient.listTopics().names().get();
         if (topics.contains(topicName)) {
             final Map<String, TopicDescription> topicDescriptions =
@@ -206,7 +218,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
                     .get();
             return new PscTopicUriPartitionDataWriter(
                     getPscProducerProperties(numPartitions),
-                    new TopicUriPartition(topicName, numPartitions));
+                    new TopicUriPartition(topicUriStr, numPartitions));
         } else {
             LOG.info("Creating topic '{}'", topicName);
             adminClient
@@ -214,7 +226,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
                     .all()
                     .get();
             return new PscTopicUriPartitionDataWriter(
-                    getPscProducerProperties(0), new TopicUriPartition(topicName, 0));
+                    getPscProducerProperties(0), new TopicUriPartition(topicUriStr, 0));
         }
     }
 
@@ -226,13 +238,14 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
                 PscConfiguration.PSC_PRODUCER_CLIENT_ID,
                 String.join(
                         "-",
-                        "flink-kafka-split-writer",
+                        "flink-psc-split-writer",
                         Integer.toString(producerId),
                         Long.toString(ThreadLocalRandom.current().nextLong(Long.MAX_VALUE))));
         pscProducerProperties.setProperty(
                 PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
         pscProducerProperties.setProperty(
                 PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
+        injectDiscoveryConfigs(pscProducerProperties, bootstrapServers, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         return pscProducerProperties;
     }
 

@@ -396,7 +396,6 @@ public class PscSourceEnumerator
                         removedPartitions.add(tp);
                     }
                 };
-
         assignedPartitions.forEach(dedupOrMarkAsRemoved);
         pendingPartitionSplitAssignment.forEach(
                 (reader, splits) ->

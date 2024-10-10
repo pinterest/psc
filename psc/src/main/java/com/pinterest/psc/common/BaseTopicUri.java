@@ -130,8 +130,12 @@ public class BaseTopicUri implements TopicUri {
         if (this == other) {
             return true;
         }
-        if (other == null || getClass() != other.getClass()) {
+        if (other == null) {
             return false;
+        }
+        if (getClass() != other.getClass()) {
+            if (!(other instanceof TopicUri))   // this allows for comparison with other implementations of TopicUri
+                return false;
         }
         BaseTopicUri otherBaseTopicUri = (BaseTopicUri) other;
         return PscCommon.equals(topicUriAsString, otherBaseTopicUri.topicUriAsString) &&

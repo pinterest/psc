@@ -311,17 +311,17 @@ public class PscTopicUriPartitionSplitReader
             Map<TopicUriPartition, Long> partitionsStartingFromSpecifiedOffsets) throws ConsumerException {
 
         if (!partitionsStartingFromEarliest.isEmpty()) {
-            LOG.trace("Seeking starting offsets to beginning: {}", partitionsStartingFromEarliest);
+            LOG.info("Seeking starting offsets to beginning: {}", partitionsStartingFromEarliest);
             consumer.seekToBeginning(partitionsStartingFromEarliest);
         }
 
         if (!partitionsStartingFromLatest.isEmpty()) {
-            LOG.trace("Seeking starting offsets to end: {}", partitionsStartingFromLatest);
+            LOG.info("Seeking starting offsets to end: {}", partitionsStartingFromLatest);
             consumer.seekToEnd(partitionsStartingFromLatest);
         }
 
         if (!partitionsStartingFromSpecifiedOffsets.isEmpty()) {
-            LOG.trace(
+            LOG.info(
                     "Seeking starting offsets to specified offsets: {}",
                     partitionsStartingFromSpecifiedOffsets);
             partitionsStartingFromSpecifiedOffsets.forEach((tup, offset) -> {
