@@ -26,7 +26,6 @@ import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.ClientException;
-import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.consumer.DeserializerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.serde.ByteArrayDeserializer;
@@ -45,8 +44,8 @@ import org.apache.flink.metrics.testutils.MetricListener;
 import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
-
 import org.apache.flink.util.ExceptionUtils;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.NoOffsetForPartitionException;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.MatcherAssert;
@@ -206,7 +205,8 @@ public class PscTopicUriPartitionSplitReaderTest {
     @ParameterizedTest
     @EmptySource
     @ValueSource(strings = {"_underscore.period-minus"})
-    @Disabled("This test is flaky due to metric reporting interval")
+    @Disabled("This test is flaky due to records-lag metric not present, instead we use records-lag-max in a 30 second window." +
+            " Concurrency of validations and metric updates in native KafkaConsumer causes flakiness.")
     public void testPendingRecordsGauge(String topicSuffix) throws Throwable {
         final String topic1UriStr = TOPIC_URI1 + topicSuffix;
         final String topic2UriStr = TOPIC_URI2 + topicSuffix;
@@ -220,6 +220,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         final Properties props = new Properties();
         props.setProperty(PscConfiguration.PSC_CONSUMER_POLL_MESSAGES_MAX, "1");
         props.setProperty(PscConfiguration.PSC_METRICS_FREQUENCY_MS, "100");
+        props.setProperty("psc.consumer." + ConsumerConfig.METRICS_SAMPLE_WINDOW_MS_CONFIG, "500");
         PscTopicUriPartitionSplitReader reader =
                 createReader(
                         props,
