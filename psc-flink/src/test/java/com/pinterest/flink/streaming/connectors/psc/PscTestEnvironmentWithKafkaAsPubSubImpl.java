@@ -31,6 +31,7 @@ import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metrics.NullMetricsReporter;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
@@ -238,8 +239,18 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
             NewTopic topicObj = new NewTopic(BaseTopicUri.validate(topicUriString).getTopic(), numberOfPartitions, (short) replicationFactor);
             adminClient.createTopics(Collections.singleton(topicObj)).all().get();
         } catch (Exception e) {
-            e.printStackTrace();
-            fail("Create test topic : " + topicUriString + " failed, " + e.getMessage());
+            // try to create it assuming that it's not a topicUriString
+            if (e instanceof TopicUriSyntaxException) {
+                LOG.warn("Trying to create assuming that {} is just the topicName", topicUriString);
+                try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
+                    NewTopic topicObj = new NewTopic(topicUriString, numberOfPartitions, (short) replicationFactor);
+                    adminClient.createTopics(Collections.singleton(topicObj)).all().get();
+                } catch (Exception e2) {
+                    fail("Create test topic : " + topicUriString + " failed, " + e.getMessage());
+                }
+            } else {
+                fail("Create test topic : " + topicUriString + " failed, " + e.getMessage());
+            }
         }
     }
 

@@ -191,7 +191,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
     public void testProducerWhenCommitEmptyPartitionsToOutdatedTxnCoordinator() throws Exception {
         String topic = "flink-kafka-producer-txn-coordinator-changed";
         String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
-        createTestTopic(topic, 1, 2);
+        createTestTopic(topicUri, 1, 2);
         PscProducer<String, String> pscProducer = new FlinkPscInternalProducer<>(extraProducerProperties);
         try {
             // <added> a simple transactional call to launch a backend producer

@@ -27,7 +27,7 @@ public class BasicPscConsumerTest extends PscConsumerTestBaseWithKafkaAsPubSub {
 
         int numPartitions = parallelism;
         String topicName = "test_simple_count";
-        createTestTopic(topicName, numPartitions, 1);
+        createTestTopic(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topicName, numPartitions, 1);
         pscTestEnvWithKafka.produceToKafka(topicName, recordsInEachPartition, numPartitions, "hello");
 
         Properties readProps = new Properties();

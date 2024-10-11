@@ -4,6 +4,7 @@ import com.pinterest.psc.exception.startup.TopicRnSyntaxException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.logging.PscLogger;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -12,7 +13,7 @@ import java.util.regex.Pattern;
 
 // base topic URI only parses the URI down to topic RN; <protocol>:<separator>[topicRN]
 
-public class BaseTopicUri implements TopicUri {
+public class BaseTopicUri implements TopicUri, Serializable {
     private static final PscLogger logger = PscLogger.getLogger(BaseTopicUri.class);
     private static final String DEFAULT_PROTOCOL = "plaintext";
     private static final String[] SCHEMAS = {
@@ -23,6 +24,7 @@ public class BaseTopicUri implements TopicUri {
                     "((?<protocol>[a-zA-Z0-9-_.]+):%s)?(?<topicRn>[a-zA-Z0-9-_.:]+)", SEPARATOR
             ))
     };
+    private static final long serialVersionUID = 6728709313941136158L;
 
     private final String topicUriAsString;
     protected final String protocol;

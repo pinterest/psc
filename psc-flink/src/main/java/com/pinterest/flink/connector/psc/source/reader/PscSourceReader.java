@@ -91,7 +91,8 @@ public class PscSourceReader<T>
                     if (splitState.getCurrentOffset() >= 0) {
                         offsetsOfFinishedSplits.put(
                                 splitState.getTopicUriPartition(),
-                                new MessageId(splitState.getTopicUriPartition(), splitState.getCurrentOffset()));
+                                // last processed offset. split.getCurrentOffset() is the next offset to be processed
+                                new MessageId(splitState.getTopicUriPartition(), splitState.getCurrentOffset() - 1));
                     }
                 });
     }
@@ -115,7 +116,8 @@ public class PscSourceReader<T>
                 if (split.getStartingOffset() >= 0) {
                     offsetsMap.put(
                             split.getTopicUriPartition(),
-                            new MessageId(split.getTopicUriPartition(), split.getStartingOffset()));
+                            // last processed offset. split.getStartingOffset() is the next offset to be processed
+                            new MessageId(split.getTopicUriPartition(), split.getStartingOffset() - 1));
                 }
             }
             // Put offsets of all the finished splits.
@@ -162,7 +164,7 @@ public class PscSourceReader<T>
                                 committedPartitions.forEach(
                                         (tp, offset) ->
                                                 pscSourceReaderMetrics.recordCommittedOffset(
-                                                        tp, offset.getOffset()));
+                                                        tp, offset.getOffset() + 1));   // offset.getOffset() is the last processed offset
                                 offsetsOfFinishedSplits
                                         .entrySet()
                                         .removeIf(

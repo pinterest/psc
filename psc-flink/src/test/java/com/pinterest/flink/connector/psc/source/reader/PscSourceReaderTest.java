@@ -178,7 +178,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             assertThat(committedOffsets).hasSize(1);
             assertThat(committedOffsets.values())
                     .extracting(OffsetAndMetadata::offset)
-                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT + 1);
+                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT);
         }
     }
 
@@ -249,7 +249,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             assertThat(committedOffsets).hasSize(numSplits);
             assertThat(committedOffsets.values())
                     .extracting(OffsetAndMetadata::offset)
-                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT + 1);
+                    .allMatch(offset -> offset == NUM_RECORDS_PER_SPLIT);
         }
     }
 

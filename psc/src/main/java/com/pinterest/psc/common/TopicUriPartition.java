@@ -2,10 +2,13 @@ package com.pinterest.psc.common;
 
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 
+import java.io.Serializable;
+
 /**
  * A topic URI and partition pair to identify the most granular pub/sub concept plus the access protocol.
  */
-public class TopicUriPartition implements Comparable<TopicUriPartition> {
+public class TopicUriPartition implements Comparable<TopicUriPartition>, Serializable {
+    private static final long serialVersionUID = -7784054113828809322L;
     private final String topicUriStr;
     private final int partition;
     private TopicUri backendTopicUri;
