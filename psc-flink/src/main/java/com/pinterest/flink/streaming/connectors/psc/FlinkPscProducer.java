@@ -1158,7 +1158,7 @@ public class FlinkPscProducer<IN>
 
     @Override
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
-        supersSnapshotState(context);
+        super.snapshotState(context);
 
         nextTransactionalIdHintState.clear();
         // To avoid duplication only first subtask keeps track of next transactional id hint.
