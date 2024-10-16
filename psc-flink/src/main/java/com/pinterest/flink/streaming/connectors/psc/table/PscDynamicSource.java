@@ -61,6 +61,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -215,7 +216,7 @@ public class PscDynamicSource
                 context.createTypeInformation(producedDataType);
 
         final PscSource<RowData> kafkaSource =
-                createKafkaSource(keyDeserialization, valueDeserialization, producedTypeInfo);
+                createPscSource(keyDeserialization, valueDeserialization, producedTypeInfo);
 
         return new DataStreamScanProvider() {
             @Override
@@ -373,7 +374,7 @@ public class PscDynamicSource
 
     // --------------------------------------------------------------------------------------------
 
-    protected PscSource<RowData> createKafkaSource(
+    protected PscSource<RowData> createPscSource(
             DeserializationSchema<RowData> keyDeserialization,
             DeserializationSchema<RowData> valueDeserialization,
             TypeInformation<RowData> producedTypeInfo) {
@@ -402,6 +403,7 @@ public class PscDynamicSource
                         properties.getProperty(
                                 PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
                                 PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE);
+                offsetResetConfig = getResetStrategy(offsetResetConfig);
                 pscSourceBuilder.setStartingOffsets(
                         OffsetsInitializer.committedOffsets(offsetResetConfig));
                 break;
@@ -425,6 +427,23 @@ public class PscDynamicSource
                 .setDeserializer(PscRecordDeserializationSchema.of(pscDeserializer));
 
         return pscSourceBuilder.build();
+    }
+
+    private String getResetStrategy(String offsetResetConfig) {
+        final String[] validResetStrategies = {"EARLIEST", "LATEST", "NONE"};
+        return Arrays.stream(validResetStrategies)
+                .filter(ors -> ors.equals(offsetResetConfig.toUpperCase(Locale.ROOT)))
+                .findAny()
+                .orElseThrow(
+                        () ->
+                                new IllegalArgumentException(
+                                        String.format(
+                                                "%s can not be set to %s. Valid values: [%s]",
+                                                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
+                                                offsetResetConfig,
+                                                Arrays.stream(validResetStrategies)
+                                                        .map(String::toLowerCase)
+                                                        .collect(Collectors.joining(",")))));
     }
 
     private PscDeserializationSchema<RowData> createPscDeserializationSchema(

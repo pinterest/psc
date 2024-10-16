@@ -73,7 +73,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARTITIONER;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
-import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI_PATTERN;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_PATTERN;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TRANSACTIONAL_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FIELDS_INCLUDE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FORMAT;
@@ -128,7 +128,7 @@ public class PscDynamicTableFactory
         options.add(VALUE_FORMAT);
         options.add(VALUE_FIELDS_INCLUDE);
         options.add(TOPIC_URI);
-        options.add(TOPIC_URI_PATTERN);
+        options.add(TOPIC_PATTERN);
         options.add(PROPS_GROUP_ID);
         options.add(SCAN_STARTUP_MODE);
         options.add(SCAN_STARTUP_SPECIFIC_OFFSETS);
@@ -147,7 +147,7 @@ public class PscDynamicTableFactory
         return Stream.of(
                         PROPS_GROUP_ID,
                         TOPIC_URI,
-                        TOPIC_URI_PATTERN,
+                        TOPIC_PATTERN,
                         SCAN_STARTUP_MODE,
                         SCAN_STARTUP_SPECIFIC_OFFSETS,
                         SCAN_TOPIC_PARTITION_DISCOVERY,

@@ -18,16 +18,20 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.PscSink;
 import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceOptions;
 import com.pinterest.flink.connector.psc.source.PscSourceTestUtils;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.serde.ByteArraySerializer;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
@@ -69,7 +73,6 @@ import org.apache.flink.table.runtime.connector.source.ScanRuntimeProviderContex
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.util.TestLoggerExtension;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -88,6 +91,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.AVRO_CONFLUENT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.DEBEZIUM_AVRO_CONFLUENT;
@@ -104,10 +108,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class PscDynamicTableFactoryTest {
 
     private static final String TOPIC = "myTopic";
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC;
     private static final String TOPICS = "myTopic-1;myTopic-2;myTopic-3";
+    private static final String TOPIC_URIS = Arrays.stream(TOPICS.split(";")).map(topic -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic).reduce((a, b) -> a + ";" + b).get();
     private static final String TOPIC_REGEX = "myTopic-\\d+";
     private static final List<String> TOPIC_LIST =
             Arrays.asList("myTopic-1", "myTopic-2", "myTopic-3");
+    private static final List<String> TOPIC_URI_LIST = TOPIC_LIST.stream().map(topic -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic).collect(Collectors.toList());
     private static final String TEST_REGISTRY_URL = "http://localhost:8081";
     private static final String DEFAULT_VALUE_SUBJECT = TOPIC + "-value";
     private static final String DEFAULT_KEY_SUBJECT = TOPIC + "-key";
@@ -126,27 +133,27 @@ public class PscDynamicTableFactoryTest {
     private static final DataType COMPUTED_COLUMN_DATATYPE = DataTypes.DECIMAL(10, 3);
     private static final String DISCOVERY_INTERVAL = "1000 ms";
 
-    private static final Properties KAFKA_SOURCE_PROPERTIES = new Properties();
-    private static final Properties KAFKA_FINAL_SOURCE_PROPERTIES = new Properties();
-    private static final Properties KAFKA_SINK_PROPERTIES = new Properties();
-    private static final Properties KAFKA_FINAL_SINK_PROPERTIES = new Properties();
+    private static final Properties PSC_SOURCE_PROPERTIES = new Properties();
+    private static final Properties PSC_FINAL_SOURCE_PROPERTIES = new Properties();
+    private static final Properties PSC_SINK_PROPERTIES = new Properties();
+    private static final Properties PSC_FINAL_SINK_PROPERTIES = new Properties();
 
     static {
-        KAFKA_SOURCE_PROPERTIES.setProperty("group.id", "dummy");
-        KAFKA_SOURCE_PROPERTIES.setProperty("bootstrap.servers", "dummy");
-        KAFKA_SOURCE_PROPERTIES.setProperty("partition.discovery.interval.ms", "1000");
+        PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        PSC_SOURCE_PROPERTIES.setProperty("partition.discovery.interval.ms", "1000");
 
-        KAFKA_SINK_PROPERTIES.setProperty("group.id", "dummy");
-        KAFKA_SINK_PROPERTIES.setProperty("bootstrap.servers", "dummy");
+        PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
 
-        KAFKA_FINAL_SINK_PROPERTIES.putAll(KAFKA_SINK_PROPERTIES);
-        KAFKA_FINAL_SINK_PROPERTIES.setProperty(
-                "value.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-        KAFKA_FINAL_SINK_PROPERTIES.setProperty(
-                "key.serializer", "org.apache.kafka.common.serialization.ByteArraySerializer");
-        KAFKA_FINAL_SINK_PROPERTIES.put("transaction.timeout.ms", 3600000);
+        PSC_FINAL_SINK_PROPERTIES.putAll(PSC_SINK_PROPERTIES);
+        PSC_FINAL_SINK_PROPERTIES.setProperty(
+                PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
+        PSC_FINAL_SINK_PROPERTIES.setProperty(
+                PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
+        PSC_FINAL_SINK_PROPERTIES.put(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS, 3600000);
 
-        KAFKA_FINAL_SOURCE_PROPERTIES.putAll(KAFKA_SOURCE_PROPERTIES);
+        PSC_FINAL_SOURCE_PROPERTIES.putAll(PSC_SOURCE_PROPERTIES);
     }
 
     private static final String PROPS_SCAN_OFFSETS =
@@ -190,8 +197,8 @@ public class PscDynamicTableFactoryTest {
         final PscDynamicSource actualKafkaSource = (PscDynamicSource) actualSource;
 
         final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
-        specificOffsets.put(new PscTopicUriPartition(TOPIC, PARTITION_0), OFFSET_0);
-        specificOffsets.put(new PscTopicUriPartition(TOPIC, PARTITION_1), OFFSET_1);
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_0), OFFSET_0);
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_1), OFFSET_1);
 
         final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat =
                 new DecodingFormatMock(",", true);
@@ -205,9 +212,9 @@ public class PscDynamicTableFactoryTest {
                         new int[0],
                         new int[] {0, 1, 2},
                         null,
-                        Collections.singletonList(TOPIC),
+                        Collections.singletonList(TOPIC_URI),
                         null,
-                        KAFKA_SOURCE_PROPERTIES,
+                        PSC_SOURCE_PROPERTIES,
                         StartupMode.SPECIFIC_OFFSETS,
                         specificOffsets,
                         0);
@@ -224,7 +231,7 @@ public class PscDynamicTableFactoryTest {
                 getModifiedOptions(
                         getBasicSourceOptions(),
                         options -> {
-                            options.remove("topic");
+                            options.remove("topic-uri");
                             options.put("topic-pattern", TOPIC_REGEX);
                             options.put(
                                     "scan.startup.mode",
@@ -249,7 +256,7 @@ public class PscDynamicTableFactoryTest {
                         null,
                         null,
                         Pattern.compile(TOPIC_REGEX),
-                        KAFKA_SOURCE_PROPERTIES,
+                        PSC_SOURCE_PROPERTIES,
                         StartupMode.EARLIEST,
                         specificOffsets,
                         0);
@@ -288,9 +295,9 @@ public class PscDynamicTableFactoryTest {
                         new int[] {0},
                         new int[] {1, 2},
                         null,
-                        Collections.singletonList(TOPIC),
+                        Collections.singletonList(TOPIC_URI),
                         null,
-                        KAFKA_FINAL_SOURCE_PROPERTIES,
+                        PSC_FINAL_SOURCE_PROPERTIES,
                         StartupMode.GROUP_OFFSETS,
                         Collections.emptyMap(),
                         0);
@@ -339,9 +346,9 @@ public class PscDynamicTableFactoryTest {
                         new int[] {0},
                         new int[] {1},
                         null,
-                        Collections.singletonList(TOPIC),
+                        Collections.singletonList(TOPIC_URI),
                         null,
-                        KAFKA_FINAL_SOURCE_PROPERTIES,
+                        PSC_FINAL_SOURCE_PROPERTIES,
                         StartupMode.GROUP_OFFSETS,
                         Collections.emptyMap(),
                         0);
@@ -355,7 +362,7 @@ public class PscDynamicTableFactoryTest {
     public void testTableSourceCommitOnCheckpointDisabled() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
-                        getBasicSourceOptions(), options -> options.remove("properties.group.id"));
+                        getBasicSourceOptions(), options -> options.remove("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID));
         final DynamicTableSource tableSource = createTableSource(SCHEMA, modifiedOptions);
 
         assertThat(tableSource).isInstanceOf(PscDynamicSource.class);
@@ -371,7 +378,7 @@ public class PscDynamicTableFactoryTest {
         assertThat(configuration.get(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT)).isFalse();
         assertThat(
                         configuration.get(
-                                ConfigOptions.key(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG)
+                                ConfigOptions.key(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED)
                                         .booleanType()
                                         .noDefaultValue()))
                 .isFalse();
@@ -391,8 +398,8 @@ public class PscDynamicTableFactoryTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
                         String.format(
-                                "%s can not be set to %s. Valid values: [latest,earliest,none]",
-                                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, errorStrategy));
+                                "%s can not be set to %s. Valid values: [earliest,latest,none]",
+                                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, errorStrategy));
     }
 
     private void testSetOffsetResetForStartFromGroupOffsets(String value) {
@@ -405,7 +412,7 @@ public class PscDynamicTableFactoryTest {
                                 return;
                             }
                             options.put(
-                                    PROPERTIES_PREFIX + ConsumerConfig.AUTO_OFFSET_RESET_CONFIG,
+                                    PROPERTIES_PREFIX + PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
                                     value);
                         });
         final DynamicTableSource tableSource = createTableSource(SCHEMA, modifiedOptions);
@@ -419,10 +426,10 @@ public class PscDynamicTableFactoryTest {
                 PscSourceTestUtils.getPscSourceConfiguration(pscSource);
 
         if (value == null) {
-            assertThat(configuration.toMap().get(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG))
+            assertThat(configuration.toMap().get(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET))
                     .isEqualTo("none");
         } else {
-            assertThat(configuration.toMap().get(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG))
+            assertThat(configuration.toMap().get(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET))
                     .isEqualTo(value);
         }
     }
@@ -434,7 +441,7 @@ public class PscDynamicTableFactoryTest {
                         getBasicSinkOptions(),
                         options -> {
                             options.put("sink.delivery-guarantee", "exactly-once");
-                            options.put("sink.transactional-id-prefix", "kafka-sink");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
                         });
         final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
 
@@ -449,12 +456,12 @@ public class PscDynamicTableFactoryTest {
                         new int[0],
                         new int[] {0, 1, 2},
                         null,
-                        TOPIC,
-                        KAFKA_SINK_PROPERTIES,
+                        TOPIC_URI,
+                        PSC_SINK_PROPERTIES,
                         new FlinkFixedPartitioner<>(),
                         DeliveryGuarantee.EXACTLY_ONCE,
                         null,
-                        "kafka-sink");
+                        "psc-sink");
         assertThat(actualSink).isEqualTo(expectedSink);
 
         // Test kafka producer.
@@ -478,7 +485,7 @@ public class PscDynamicTableFactoryTest {
                             getBasicSinkOptions(),
                             options -> {
                                 options.put("sink.semantic", semantic);
-                                options.put("sink.transactional-id-prefix", "kafka-sink");
+                                options.put("sink.transactional-id-prefix", "psc-sink");
                             });
             final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
             final DynamicTableSink expectedSink =
@@ -489,12 +496,12 @@ public class PscDynamicTableFactoryTest {
                             new int[0],
                             new int[] {0, 1, 2},
                             null,
-                            TOPIC,
-                            KAFKA_SINK_PROPERTIES,
+                            TOPIC_URI,
+                            PSC_SINK_PROPERTIES,
                             new FlinkFixedPartitioner<>(),
                             DeliveryGuarantee.valueOf(semantic.toUpperCase().replace("-", "_")),
                             null,
-                            "kafka-sink");
+                            "psc-sink");
             assertThat(actualSink).isEqualTo(expectedSink);
         }
     }
@@ -506,7 +513,7 @@ public class PscDynamicTableFactoryTest {
                         getKeyValueOptions(),
                         options -> {
                             options.put("sink.delivery-guarantee", "exactly-once");
-                            options.put("sink.transactional-id-prefix", "kafka-sink");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
                         });
         final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
         final PscDynamicSink actualKafkaSink = (PscDynamicSink) actualSink;
@@ -532,12 +539,12 @@ public class PscDynamicTableFactoryTest {
                         new int[] {0},
                         new int[] {1, 2},
                         null,
-                        TOPIC,
-                        KAFKA_FINAL_SINK_PROPERTIES,
+                        TOPIC_URI,
+                        PSC_FINAL_SINK_PROPERTIES,
                         new FlinkFixedPartitioner<>(),
                         DeliveryGuarantee.EXACTLY_ONCE,
                         null,
-                        "kafka-sink");
+                        "psc-sink");
 
         assertThat(actualSink).isEqualTo(expectedSink);
     }
@@ -560,12 +567,12 @@ public class PscDynamicTableFactoryTest {
                         new int[0],
                         new int[] {0, 1, 2},
                         null,
-                        TOPIC,
-                        KAFKA_SINK_PROPERTIES,
+                        TOPIC_URI,
+                        PSC_SINK_PROPERTIES,
                         new FlinkFixedPartitioner<>(),
                         DeliveryGuarantee.EXACTLY_ONCE,
                         100,
-                        "kafka-sink");
+                        "psc-sink");
         assertThat(actualSink).isEqualTo(expectedSink);
 
         final DynamicTableSink.SinkRuntimeProvider provider =
@@ -584,7 +591,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("format", "debezium-avro-confluent");
                     options.put("debezium-avro-confluent.url", TEST_REGISTRY_URL);
                 },
-                DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "N/A");
 
         // only value.format
@@ -593,7 +600,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("value.format", "avro-confluent");
                     options.put("value.avro-confluent.url", TEST_REGISTRY_URL);
                 },
-                DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "N/A");
 
         // value.format + key.format
@@ -605,8 +612,9 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.avro-confluent.url", TEST_REGISTRY_URL);
                     options.put("key.fields", NAME);
                 },
-                DEFAULT_VALUE_SUBJECT,
-                DEFAULT_KEY_SUBJECT);
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DEFAULT_KEY_SUBJECT
+                );
 
         // value.format + non-avro key.format
         verifyEncoderSubject(
@@ -616,7 +624,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.format", "csv");
                     options.put("key.fields", NAME);
                 },
-                DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "N/A");
 
         // non-avro value.format + key.format
@@ -628,7 +636,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.fields", NAME);
                 },
                 "N/A",
-                DEFAULT_KEY_SUBJECT);
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DEFAULT_KEY_SUBJECT);
 
         // not override for 'format'
         verifyEncoderSubject(
@@ -650,7 +658,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.avro-confluent.subject", "sub2");
                     options.put("key.fields", NAME);
                 },
-                DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "sub2");
     }
 
@@ -659,11 +667,11 @@ public class PscDynamicTableFactoryTest {
             String expectedValueSubject,
             String expectedKeySubject) {
         Map<String, String> options = new HashMap<>();
-        // Kafka specific options.
+        // Psc specific options.
         options.put("connector", PscDynamicTableFactory.IDENTIFIER);
-        options.put("topic", TOPIC);
-        options.put("properties.group.id", "dummy");
-        options.put("properties.bootstrap.servers", "dummy");
+        options.put("topic-uri", TOPIC_URI);
+        options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         optionModifier.accept(options);
 
         final RowType rowType = (RowType) SCHEMA_DATA_TYPE.getLogicalType();
@@ -732,7 +740,7 @@ public class PscDynamicTableFactoryTest {
                                     getModifiedOptions(
                                             getBasicSourceOptions(),
                                             options -> {
-                                                options.put("topic", TOPICS);
+                                                options.put("topic-uri", TOPIC_URIS);
                                                 options.put("topic-pattern", TOPIC_REGEX);
                                             });
 
@@ -742,7 +750,7 @@ public class PscDynamicTableFactoryTest {
                 .satisfies(
                         containsCause(
                                 new ValidationException(
-                                        "Option 'topic' and 'topic-pattern' shouldn't be set together.")));
+                                        "Option 'topic-uri' and 'topic-pattern' shouldn't be set together.")));
     }
 
     @Test
@@ -857,12 +865,12 @@ public class PscDynamicTableFactoryTest {
                 getModifiedOptions(
                         getBasicSinkOptions(),
                         options -> {
-                            options.put("topic", TOPICS);
+                            options.put("topic-uri", TOPIC_URIS);
                             options.put("scan.startup.mode", "earliest-offset");
                             options.remove("specific-offsets");
                         });
         final String errorMessageTemp =
-                "Flink Kafka sink currently only supports single topic, but got %s: %s.";
+                "Flink PSC sink currently only supports single topic, but got %s: %s.";
 
         try {
             createTableSink(SCHEMA, modifiedOptions);
@@ -871,8 +879,8 @@ public class PscDynamicTableFactoryTest {
                     .isEqualTo(
                             String.format(
                                     errorMessageTemp,
-                                    "'topic'",
-                                    String.format("[%s]", String.join(", ", TOPIC_LIST))));
+                                    "'topic-uri'",
+                                    String.format("[%s]", String.join(", ", TOPIC_URI_LIST))));
         }
 
         modifiedOptions =
@@ -1027,9 +1035,10 @@ public class PscDynamicTableFactoryTest {
         Map<String, String> tableOptions = new HashMap<>();
         // Kafka specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
-        tableOptions.put("topic", TOPIC);
-        tableOptions.put("properties.group.id", "dummy");
-        tableOptions.put("properties.bootstrap.servers", "dummy");
+        tableOptions.put("topic-uri", TOPIC_URI);
+        tableOptions.put("properties.psc.consumer.group.id", "dummy");
+        tableOptions.put("properties.psc.cluster.uri", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+//        tableOptions.put("properties.bootstrap.servers", "dummy");
         tableOptions.put("scan.startup.mode", "specific-offsets");
         tableOptions.put("scan.startup.specific-offsets", PROPS_SCAN_OFFSETS);
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
@@ -1051,13 +1060,13 @@ public class PscDynamicTableFactoryTest {
         Map<String, String> tableOptions = new HashMap<>();
         // Kafka specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
-        tableOptions.put("topic", TOPIC);
-        tableOptions.put("properties.group.id", "dummy");
-        tableOptions.put("properties.bootstrap.servers", "dummy");
+        tableOptions.put("topic-uri", TOPIC_URI);
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         tableOptions.put(
                 "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);
         tableOptions.put("sink.delivery-guarantee", DeliveryGuarantee.EXACTLY_ONCE.toString());
-        tableOptions.put("sink.transactional-id-prefix", "kafka-sink");
+        tableOptions.put("sink.transactional-id-prefix", "psc-sink");
         // Format options.
         tableOptions.put("format", TestFormatFactory.IDENTIFIER);
         final String formatDelimiterKey =
@@ -1071,14 +1080,14 @@ public class PscDynamicTableFactoryTest {
         Map<String, String> tableOptions = new HashMap<>();
         // Kafka specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
-        tableOptions.put("topic", TOPIC);
-        tableOptions.put("properties.group.id", "dummy");
-        tableOptions.put("properties.bootstrap.servers", "dummy");
+        tableOptions.put("topic-uri", TOPIC_URI);
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
         tableOptions.put(
                 "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);
         tableOptions.put("sink.delivery-guarantee", DeliveryGuarantee.EXACTLY_ONCE.toString());
-        tableOptions.put("sink.transactional-id-prefix", "kafka-sink");
+        tableOptions.put("sink.transactional-id-prefix", "psc-sink");
         // Format options.
         tableOptions.put("key.format", TestFormatFactory.IDENTIFIER);
         tableOptions.put(

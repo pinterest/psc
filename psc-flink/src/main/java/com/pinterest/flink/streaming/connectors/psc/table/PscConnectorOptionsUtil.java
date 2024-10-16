@@ -59,7 +59,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARTITIONER;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
-import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI_PATTERN;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_PATTERN;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TRANSACTIONAL_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FIELDS_INCLUDE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FORMAT;
@@ -108,11 +108,11 @@ class PscConnectorOptionsUtil {
 
     public static void validateSourceTopic(ReadableConfig tableOptions) {
         Optional<List<String>> topic = tableOptions.getOptional(TOPIC_URI);
-        Optional<String> pattern = tableOptions.getOptional(TOPIC_URI_PATTERN);
+        Optional<String> pattern = tableOptions.getOptional(TOPIC_PATTERN);
 
         if (topic.isPresent() && pattern.isPresent()) {
             throw new ValidationException(
-                    "Option 'topic' and 'topic-pattern' shouldn't be set together.");
+                    "Option 'topic-uri' and 'topic-pattern' shouldn't be set together.");
         }
 
         if (!topic.isPresent() && !pattern.isPresent()) {
@@ -122,17 +122,17 @@ class PscConnectorOptionsUtil {
 
     public static void validateSinkTopic(ReadableConfig tableOptions) {
         String errorMessageTemp =
-                "Flink Kafka sink currently only supports single topic, but got %s: %s.";
+                "Flink PSC sink currently only supports single topic, but got %s: %s.";
         if (!isSingleTopicUri(tableOptions)) {
-            if (tableOptions.getOptional(TOPIC_URI_PATTERN).isPresent()) {
+            if (tableOptions.getOptional(TOPIC_PATTERN).isPresent()) {
                 throw new ValidationException(
                         String.format(
                                 errorMessageTemp,
                                 "'topic-pattern'",
-                                tableOptions.get(TOPIC_URI_PATTERN)));
+                                tableOptions.get(TOPIC_PATTERN)));
             } else {
                 throw new ValidationException(
-                        String.format(errorMessageTemp, "'topic'", tableOptions.get(TOPIC_URI)));
+                        String.format(errorMessageTemp, "'topic-uri'", tableOptions.get(TOPIC_URI)));
             }
         }
     }
@@ -208,7 +208,7 @@ class PscConnectorOptionsUtil {
     }
 
     public static Pattern getSourceTopicUriPattern(ReadableConfig tableOptions) {
-        return tableOptions.getOptional(TOPIC_URI_PATTERN).map(Pattern::compile).orElse(null);
+        return tableOptions.getOptional(TOPIC_PATTERN).map(Pattern::compile).orElse(null);
     }
 
     private static boolean isSingleTopicUri(ReadableConfig tableOptions) {

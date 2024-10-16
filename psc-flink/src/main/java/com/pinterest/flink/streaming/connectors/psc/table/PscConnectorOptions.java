@@ -121,8 +121,8 @@ public class PscConnectorOptions {
                             "Topic names from which the table is read. Either 'topic-uri' or 'topic-uri-pattern' must be set for source. "
                                     + "Option 'topic-uri' is required for sink.");
 
-    public static final ConfigOption<String> TOPIC_URI_PATTERN =
-            ConfigOptions.key("topic-uri-pattern")
+    public static final ConfigOption<String> TOPIC_PATTERN =
+            ConfigOptions.key("topic-pattern")
                     .stringType()
                     .noDefaultValue()
                     .withDescription(
