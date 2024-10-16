@@ -1160,6 +1160,13 @@ public class FlinkPscProducer<IN>
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
         super.snapshotState(context);
 
+        PscMetricRegistryManager.getInstance().updateHistogramMetric(
+                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_PENDING_TRANSACTIONS, pendingCommitTransactions.size(), pscConfigurationInternal
+        );
+        PscMetricRegistryManager.getInstance().updateHistogramMetric(
+                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_STATE_SIZE, getSize(state), pscConfigurationInternal
+        );
+
         nextTransactionalIdHintState.clear();
         // To avoid duplication only first subtask keeps track of next transactional id hint.
         // Otherwise all of the
@@ -1252,13 +1259,6 @@ public class FlinkPscProducer<IN>
         } catch (InvocationTargetException exception) {
             throw (Exception) exception.getTargetException();
         }
-
-        PscMetricRegistryManager.getInstance().updateHistogramMetric(
-                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_PENDING_TRANSACTIONS, pendingCommitTransactions.size(), pscConfigurationInternal
-        );
-        PscMetricRegistryManager.getInstance().updateHistogramMetric(
-                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_STATE_SIZE, getSize(state), pscConfigurationInternal
-        );
     }
 
     @Override

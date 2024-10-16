@@ -104,7 +104,7 @@ public class PscDynamicTableFactory
                     .noDefaultValue()
                     .withDescription("Optional semantic when committing.");
 
-    public static final String IDENTIFIER = "kafka";
+    public static final String IDENTIFIER = "psc";
 
     @Override
     public String factoryIdentifier() {

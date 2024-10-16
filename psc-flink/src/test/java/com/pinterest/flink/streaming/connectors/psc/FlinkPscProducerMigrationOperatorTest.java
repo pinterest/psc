@@ -20,6 +20,7 @@ package com.pinterest.flink.streaming.connectors.psc;
 
 import org.apache.flink.FlinkVersion;
 import org.junit.Ignore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.runners.Parameterized;
 
 import java.util.Arrays;
@@ -33,6 +34,7 @@ import java.util.Collection;
  * by the {@link #getOperatorSnapshotPath(FlinkVersion)} method then copy the resource to the path
  * also specified by the {@link #getOperatorSnapshotPath(FlinkVersion)} method.
  */
+@Disabled("PSC does not support migration from FlinkKafkaProducer011")
 public class FlinkPscProducerMigrationOperatorTest extends FlinkPscProducerMigrationTest {
     @Parameterized.Parameters(name = "Migration Savepoint: {0}")
     public static Collection<FlinkVersion> parameters() {

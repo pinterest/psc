@@ -18,6 +18,9 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
@@ -53,6 +56,8 @@ import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.stream.Collectors;
+
+import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 
 /** Base class for Kafka Table IT Cases. */
 public abstract class PscTableTestBase extends AbstractTestBase {
@@ -115,12 +120,16 @@ public abstract class PscTableTestBase extends AbstractTestBase {
     public Properties getStandardProps() {
         Properties standardProps = new Properties();
         standardProps.put("bootstrap.servers", KAFKA_CONTAINER.getBootstrapServers());
-        standardProps.put("group.id", "flink-tests");
-        standardProps.put("enable.auto.commit", false);
-        standardProps.put("auto.offset.reset", "earliest");
-        standardProps.put("max.partition.fetch.bytes", 256);
+        standardProps.put(PscConfiguration.PSC_CONSUMER_GROUP_ID, "flink-tests");
+        standardProps.put(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, false);
+        standardProps.put(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, "earliest");
+        standardProps.put(PscConfiguration.PSC_CONSUMER_PARTITION_FETCH_MAX_BYTES, 256);
         standardProps.put("zookeeper.session.timeout.ms", zkTimeoutMills);
         standardProps.put("zookeeper.connection.timeout.ms", zkTimeoutMills);
+        standardProps.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "flink-tests-client");
+        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        standardProps.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+
         return standardProps;
     }
 

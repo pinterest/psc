@@ -74,7 +74,7 @@ import java.util.stream.Stream;
 public class PscDynamicSource
         implements ScanTableSource, SupportsReadingMetadata, SupportsWatermarkPushDown {
 
-    private static final String KAFKA_TRANSFORMATION = "kafka";
+    private static final String PSC_TRANSFORMATION = "psc";
 
     // --------------------------------------------------------------------------------------------
     // Mutable attributes
@@ -227,7 +227,7 @@ public class PscDynamicSource
                 DataStreamSource<RowData> sourceStream =
                         execEnv.fromSource(
                                 kafkaSource, watermarkStrategy, "KafkaSource-" + tableIdentifier);
-                providerContext.generateUid(KAFKA_TRANSFORMATION).ifPresent(sourceStream::uid);
+                providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
                 return sourceStream;
             }
 

@@ -47,7 +47,6 @@ import org.apache.flink.table.types.utils.DataTypeUtils;
 
 import javax.annotation.Nullable;
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -64,7 +63,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 @Internal
 public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata {
 
-    private static final String UPSERT_KAFKA_TRANSFORMATION = "upsert-kafka";
+    private static final String UPSERT_PSC_TRANSFORMATION = "upsert-psc";
 
     // --------------------------------------------------------------------------------------------
     // Mutable attributes
@@ -226,7 +225,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
                                     flushMode,
                                     objectReuse ? createRowDataTypeSerializer(context, dataStream.getExecutionConfig())::copy : rowData -> rowData);
                     final DataStreamSink<RowData> end = dataStream.sinkTo(sink);
-                    providerContext.generateUid(UPSERT_KAFKA_TRANSFORMATION).ifPresent(end::uid);
+                    providerContext.generateUid(UPSERT_PSC_TRANSFORMATION).ifPresent(end::uid);
                     if (parallelism != null) {
                         end.setParallelism(parallelism);
                     }
