@@ -18,7 +18,9 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.testutils.FlinkAssertions;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -88,14 +90,15 @@ public class PscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaSourceSink() throws Exception {
+    public void testPscSourceSink() throws Exception {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "tstopic_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
 
         final String createTable =
@@ -111,14 +114,21 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  watermark for ts as ts\n"
                                 + ") with (\n"
                                 + "  'connector' = '%s',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  %s\n"
                                 + ")",
                         PscDynamicTableFactory.IDENTIFIER,
-                        topic,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
                         bootstraps,
                         groupId,
                         formatOptions());
@@ -179,20 +189,25 @@ public class PscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaTableWithMultipleTopics() throws Exception {
+    public void testPscTableWithMultipleTopics() throws Exception {
         // ---------- create source and sink tables -------------------
         String tableTemp =
                 "create table %s (\n"
                         + "  currency string\n"
                         + ") with (\n"
                         + "  'connector' = '%s',\n"
-                        + "  'topic' = '%s',\n"
-                        + "  'properties.bootstrap.servers' = '%s',\n"
-                        + "  'properties.group.id' = '%s',\n"
+                        + "  'topic-uri' = '%s',\n"
+                        + "  'properties.psc.cluster.uri' = '%s',\n"
+                        + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                        + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                        + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                        + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                        + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                        + "  'properties.psc.consumer.group.id' = '%s',\n"
                         + "  'scan.startup.mode' = 'earliest-offset',\n"
                         + "  %s\n"
                         + ")";
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
         List<String> currencies = Arrays.asList("Euro", "Dollar", "Yen", "Dummy");
         List<String> topics =
@@ -202,6 +217,7 @@ public class PscTableITCase extends PscTableTestBase {
                                         String.format(
                                                 "%s_%s_%s", currency, format, UUID.randomUUID()))
                         .collect(Collectors.toList());
+        List<String> topicUris = topics.stream().map(t -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + t).collect(Collectors.toList());
         // Because kafka connector currently doesn't support write data into multiple topic
         // together,
         // we have to create multiple sink tables.
@@ -214,7 +230,9 @@ public class PscTableITCase extends PscTableTestBase {
                                             tableTemp,
                                             currencies.get(index).toLowerCase(),
                                             PscDynamicTableFactory.IDENTIFIER,
-                                            topics.get(index),
+                                            topicUris.get(index),
+                                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
                                             bootstraps,
                                             groupId,
                                             formatOptions()));
@@ -225,7 +243,9 @@ public class PscTableITCase extends PscTableTestBase {
                         tableTemp,
                         "currencies_topic_list",
                         PscDynamicTableFactory.IDENTIFIER,
-                        String.join(";", topics),
+                        String.join(";", topicUris),
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
                         bootstraps,
                         groupId,
                         formatOptions()));
@@ -272,14 +292,15 @@ public class PscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaSourceSinkWithMetadata() throws Exception {
+    public void testPscSourceSinkWithMetadata() throws Exception {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "metadata_topic_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
 
         final String createTable =
@@ -289,22 +310,28 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  `physical_2` INT,\n"
                                 // metadata fields are out of order on purpose
                                 // offset is ignored because it might not be deterministic
-                                + "  `timestamp-type` STRING METADATA VIRTUAL,\n"
+//                                + "  `timestamp-type` STRING METADATA VIRTUAL,\n"
                                 + "  `timestamp` TIMESTAMP(3) METADATA,\n"
-                                + "  `leader-epoch` INT METADATA VIRTUAL,\n"
+//                                + "  `leader-epoch` INT METADATA VIRTUAL,\n"
                                 + "  `headers` MAP<STRING, BYTES> METADATA,\n"
                                 + "  `partition` INT METADATA VIRTUAL,\n"
-                                + "  `topic` STRING METADATA VIRTUAL,\n"
+                                + "  `topic-uri` STRING METADATA VIRTUAL,\n"
                                 + "  `physical_3` BOOLEAN\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  %s\n"
                                 + ")",
-                        topic, bootstraps, groupId, formatOptions());
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, formatOptions());
         tEnv.executeSql(createTable);
 
         String initialValues =
@@ -324,36 +351,30 @@ public class PscTableITCase extends PscTableTestBase {
                         Row.of(
                                 "data 1",
                                 1,
-                                "CreateTime",
                                 LocalDateTime.parse("2020-03-08T13:12:11.123"),
-                                0,
                                 map(
                                         entry("k1", EncodingUtils.decodeHex("C0FFEE")),
                                         entry("k2", EncodingUtils.decodeHex("BABE01"))),
                                 0,
-                                topic,
+                                topicUri,
                                 true),
                         Row.of(
                                 "data 2",
                                 2,
-                                "CreateTime",
                                 LocalDateTime.parse("2020-03-09T13:12:11.123"),
-                                0,
                                 Collections.emptyMap(),
                                 0,
-                                topic,
+                                topicUri,
                                 false),
                         Row.of(
                                 "data 3",
                                 3,
-                                "CreateTime",
                                 LocalDateTime.parse("2020-03-10T13:12:11.123"),
-                                0,
                                 map(
                                         entry("k1", EncodingUtils.decodeHex("102030")),
                                         entry("k2", EncodingUtils.decodeHex("203040"))),
                                 0,
-                                topic,
+                                topicUri,
                                 true));
 
         assertThat(result, deepEqualTo(expected, true));
@@ -364,14 +385,15 @@ public class PscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaSourceSinkWithKeyAndPartialValue() throws Exception {
+    public void testPscSourceSinkWithKeyAndPartialValue() throws Exception {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_partial_value_topic_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
 
         // k_user_id and user_id have different data types to verify the correct mapping,
@@ -386,10 +408,15 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  `user_id` INT,\n"
                                 + "  `payload` STRING\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields' = 'k_event_id; k_user_id',\n"
@@ -397,7 +424,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'\n"
                                 + ")",
-                        topic, bootstraps, groupId, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -445,14 +472,15 @@ public class PscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaSourceSinkWithKeyAndFullValue() throws Exception {
+    public void testPscSourceSinkWithKeyAndFullValue() throws Exception {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_full_value_topic_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
 
         // compared to the partial value test we cannot support both k_user_id and user_id in a full
@@ -468,17 +496,22 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  `event_id` BIGINT,\n"
                                 + "  `payload` STRING\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields' = 'event_id; user_id',\n"
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'ALL'\n"
                                 + ")",
-                        topic, bootstraps, groupId, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -523,7 +556,7 @@ public class PscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaTemporalJoinChangelog() throws Exception {
+    public void testPscTemporalJoinChangelog() throws Exception {
         // Set the session time zone to UTC, because the next `METADATA FROM
         // 'value.source.timestamp'` DDL
         // will use the session time zone when convert the changelog time from milliseconds to
@@ -533,14 +566,16 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String orderTopic = "temporal_join_topic_order_" + format + "_" + UUID.randomUUID();
+        final String orderTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + orderTopic;
         createTestTopic(orderTopic, 1, 1);
 
         final String productTopic =
                 "temporal_join_topic_product_" + format + "_" + UUID.randomUUID();
+        final String productTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + productTopic;
         createTestTopic(productTopic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
 
         // create order table and set initial values
@@ -554,14 +589,19 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  purchaser STRING,\n"
                                 + "  WATERMARK FOR order_time AS order_time - INTERVAL '1' SECOND\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
                                 + "  'format' = '%s'\n"
                                 + ")",
-                        orderTopic, bootstraps, groupId, format);
+                        orderTopicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, format);
         tEnv.executeSql(orderTableDDL);
         String orderInitialValues =
                 "INSERT INTO ordersTable\n"
@@ -586,18 +626,23 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  PRIMARY KEY(product_id) NOT ENFORCED,\n"
                                 + "  WATERMARK FOR update_time AS update_time - INTERVAL '1' SECOND\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
                                 + "  'value.format' = 'debezium-json'\n"
                                 + ")",
-                        productTopic, bootstraps, groupId);
+                        productTopicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId);
         tEnv.executeSql(productTableDDL);
 
         // use raw format to initial the changelog data
-        initialProductChangelog(productTopic, bootstraps);
+        initialProductChangelog(productTopicUri, bootstraps);
 
         // ---------- query temporal join result from Kafka -------------------
         final List<String> result =
@@ -645,13 +690,19 @@ public class PscTableITCase extends PscTableTestBase {
                         "CREATE TABLE productChangelog (\n"
                                 + "  changelog STRING"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
                                 + "  'format' = 'raw'\n"
                                 + ")",
-                        topic, bootstraps);
+                        topic, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps);
         tEnv.executeSql(productChangelogDDL);
         String[] allChangelog = readLines("product_changelog.txt").toArray(new String[0]);
 
@@ -666,14 +717,15 @@ public class PscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testPerPartitionWatermarkKafka() throws Exception {
+    public void testPerPartitionWatermarkPsc() throws Exception {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "per_partition_watermark_topic_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 4, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
 
         final String createTable =
@@ -684,15 +736,20 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  `timestamp` TIMESTAMP(3),\n"
                                 + "  WATERMARK FOR `timestamp` AS `timestamp`\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'sink.partitioner' = '%s',\n"
                                 + "  'format' = '%s'\n"
                                 + ")",
-                        topic, bootstraps, groupId, TestPartitioner.class.getName(), format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, TestPartitioner.class.getName(), format);
 
         tEnv.executeSql(createTable);
 
@@ -760,10 +817,11 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "idle_partition_watermark_topic_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 4, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
-        String groupId = getStandardProps().getProperty("group.id");
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
         tEnv.getConfig().set(TABLE_EXEC_SOURCE_IDLE_TIMEOUT, Duration.ofMillis(100));
 
@@ -775,15 +833,20 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  `timestamp` TIMESTAMP(3),\n"
                                 + "  WATERMARK FOR `timestamp` AS `timestamp`\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
-                                + "  'properties.group.id' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'sink.partitioner' = '%s',\n"
                                 + "  'format' = '%s'\n"
                                 + ")",
-                        topic, bootstraps, groupId, TestPartitioner.class.getName(), format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, TestPartitioner.class.getName(), format);
 
         tEnv.executeSql(createTable);
 
@@ -875,6 +938,7 @@ public class PscTableITCase extends PscTableTestBase {
     private TableResult startFromGroupOffset(
             String tableName, String topic, String groupId, String resetStrategy, String sinkName)
             throws ExecutionException, InterruptedException {
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         createTestTopic(topic, 4, 1);
@@ -888,21 +952,28 @@ public class PscTableITCase extends PscTableTestBase {
                         + "  `partition_id` INT,\n"
                         + "  `value` INT\n"
                         + ") WITH (\n"
-                        + "  'connector' = 'kafka',\n"
-                        + "  'topic' = '%s',\n"
-                        + "  'properties.bootstrap.servers' = '%s',\n"
-                        + "  'properties.group.id' = '%s',\n"
+                        + "  'connector' = 'psc',\n"
+                        + "  'topic-uri' = '%s',\n"
+                        + "  'properties.psc.cluster.uri' = '%s',\n"
+                        + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                        + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                        + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                        + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                        + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                        + "  'properties.psc.consumer.group.id' = '%s',\n"
                         + "  'scan.startup.mode' = 'group-offsets',\n"
-                        + "  'properties.auto.offset.reset' = '%s',\n"
-                        + "  'properties.enable.auto.commit' = 'true',\n"
-                        + "  'properties.auto.commit.interval.ms' = '1000',\n"
+                        + "  'properties.psc.consumer.offset.auto.reset' = '%s',\n"
+                        + "  'properties.psc.consumer.commit.auto.enabled' = 'true',\n"
+                        + "  'properties.psc.consumer.auto.commit.interval.ms' = '1000',\n"
                         + "  'format' = '%s'\n"
                         + ")";
         tEnv.executeSql(
                 String.format(
                         createTableSql,
                         tableName,
-                        topic,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
                         bootstraps,
                         groupId,
                         resetStrategy,

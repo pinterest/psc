@@ -509,8 +509,8 @@ public class PscDynamicSource
     // --------------------------------------------------------------------------------------------
 
     enum ReadableMetadata {
-        TOPIC(
-                "topic",
+        TOPIC_URI(
+                "topic-uri",
                 DataTypes.STRING().notNull(),
                 new DynamicPscDeserializationSchema.MetadataConverter() {
                     private static final long serialVersionUID = 1L;
@@ -545,12 +545,32 @@ public class PscDynamicSource
                     public Object read(PscConsumerMessage<?, ?> record) {
                         final Map<StringData, byte[]> map = new HashMap<>();
                         for (Map.Entry<String, byte[]> header : record.getHeaders().entrySet()) {
-                            map.put(StringData.fromString(header.getKey()), header.getValue());
+                            if (!header.getKey().startsWith("psc."))
+                                map.put(StringData.fromString(header.getKey()), header.getValue());                        }
+                        return new GenericMapData(map);
+                    }
+                }),
+
+        PSC_HEADERS(
+                "psc-headers",
+                // key and value of the map are nullable to make handling easier in queries
+                DataTypes.MAP(DataTypes.STRING().nullable(), DataTypes.BYTES().nullable())
+                        .notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        final Map<StringData, byte[]> map = new HashMap<>();
+                        for (Map.Entry<String, byte[]> header : record.getHeaders().entrySet()) {
+                            if (header.getKey().startsWith("psc."))
+                                map.put(StringData.fromString(header.getKey()), header.getValue());
                         }
                         return new GenericMapData(map);
                     }
                 }),
 
+        // leader epoch is not supported
         LEADER_EPOCH(
                 "leader-epoch",
                 DataTypes.INT().nullable(),
@@ -587,6 +607,7 @@ public class PscDynamicSource
                     }
                 }),
 
+        // timestamp_type is not supported
         TIMESTAMP_TYPE(
                 "timestamp-type",
                 DataTypes.STRING().notNull(),
