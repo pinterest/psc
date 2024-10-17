@@ -262,7 +262,7 @@ public class TestAutoRemediation {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testAutoResolutionConfiguration() throws ConfigurationException, ConsumerException, ProducerException {
+    public void testAutoResolutionConfiguration() throws ConfigurationException, ConsumerException, ProducerException, IOException {
         // default configs
         PscConsumer<byte[], byte[]> pscConsumer = new PscConsumer<>(pscConsumerConfiguration);
         PscConfigurationInternal pscConfigurationInternal = PscConsumerUtils.getPscConfigurationInternal(pscConsumer);

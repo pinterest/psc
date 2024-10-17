@@ -20,6 +20,7 @@ import com.pinterest.psc.metrics.PscMetrics;
 
 import java.lang.reflect.InvocationTargetException;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -289,6 +290,16 @@ public abstract class PscBackendConsumer<K, V> extends PscBackendClient<K, V> {
      */
     public abstract MessageId committed(TopicUriPartition topicUriPartition) throws ConsumerException, WakeupException;
 
+    /**
+     * Returns a collection of MessageIds associated with the last committed offset of the given topic URI partitions.
+     *
+     * @param topicUriPartitions collection of topic URI partition.
+     * @return MessageIds that corresponds to last committed offset.
+     * @throws ConsumerException if there are validation issues or backend failures.
+     * @throws WakeupException   if there was a prior {@link PscConsumer#wakeup()} call not actioned on by this backend
+     *                           consumer yet.
+     */
+    public abstract Collection<MessageId> committed(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException, WakeupException;
     /**
      * Returns the start offset for each of the given topic URI partitions.
      *

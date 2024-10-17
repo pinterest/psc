@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.UUID;
@@ -111,7 +112,7 @@ public class TestPscConfiguration {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testConfigLogging() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException {
+    public void testConfigLogging() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException, IOException {
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "true");

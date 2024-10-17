@@ -13,6 +13,7 @@ import com.pinterest.psc.metadata.TopicRnMetadata;
 import com.pinterest.psc.metadata.creation.PscBackendMetadataClientCreator;
 import com.pinterest.psc.metadata.creation.PscMetadataClientCreatorManager;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -136,6 +137,11 @@ public class PscMetadataClient implements AutoCloseable {
         return backendMetadataClient.listOffsetsForConsumerGroup(consumerGroup, topicUriPartitions, duration);
     }
 
+    public Map<TopicUriPartition, Long> listOffsetsForTimestamps(TopicUri clusterUri, Map<TopicUriPartition, Long> topicUriPartitionsAndTimes, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
+        PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
+        return backendMetadataClient.listOffsetsForTimestamps(topicUriPartitionsAndTimes, duration);
+    }
+
     @VisibleForTesting
     protected PscBackendMetadataClient getBackendMetadataClient(TopicUri clusterUri) {
         String topicUriPrefix = clusterUri.getTopicUriPrefix();
@@ -151,7 +157,7 @@ public class PscMetadataClient implements AutoCloseable {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws IOException {
         for (PscBackendMetadataClient client : pscBackendMetadataClientByTopicUriPrefix.values()) {
             client.close();
         }

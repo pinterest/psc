@@ -13,5 +13,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-org.apache.flink.streaming.connectors.kafka.table.KafkaDynamicTableFactory
 com.pinterest.flink.streaming.connectors.psc.table.PscDynamicTableFactory
+com.pinterest.flink.streaming.connectors.psc.table.UpsertPscDynamicTableFactory

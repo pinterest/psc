@@ -33,6 +33,8 @@ import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
+
+import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.commons.lang3.mutable.MutableInt;
@@ -610,6 +612,11 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
             return committedOffset == -1L ? null : new MemqMessageId(topicUriPartition, new MemqOffset(committedOffset, 0).toLong(), true);
         }
         throw new ConsumerException("[Memq] Failed to retrieve committed offsets for unassociated TopicUriPartition: " + topicUriPartition);
+    }
+
+    @Override
+    public Collection<MessageId> committed(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException, WakeupException {
+        throw new UnsupportedOperationException("[Memq] Consumer does not support batch committed offsets retrieval.");
     }
 
     @Override

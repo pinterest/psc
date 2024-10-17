@@ -4,7 +4,9 @@ import com.pinterest.psc.common.CloseableIterator;
 import com.pinterest.psc.common.TopicUriPartition;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 public abstract class PscConsumerPollMessageIterator<K, V> implements
@@ -40,6 +42,23 @@ public abstract class PscConsumerPollMessageIterator<K, V> implements
 
             }
         };
+    }
+
+    protected List<PscConsumerMessage<K, V>> asList() {
+        List<PscConsumerMessage<K, V>> list = new ArrayList<>();
+        while (hasNext()) {
+            list.add(next());
+        }
+        return list;
+    }
+
+    /**
+     * This API can be used to convert this message iterator into an iterable. Note that this API will consume this entire
+     * iterator and this iterator can no longer be used after calling asIterable().
+     * @return an iterable that can be used to traverse the messages in this iterator.
+     */
+    public PscConsumerMessagesIterable<K, V> asIterable() {
+        return new PscConsumerMessagesIterable<>(this);
     }
 
     /**

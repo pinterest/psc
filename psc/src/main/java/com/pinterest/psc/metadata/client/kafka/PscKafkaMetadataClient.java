@@ -1,7 +1,6 @@
 package com.pinterest.psc.metadata.client.kafka;
 
 import com.pinterest.psc.common.BaseTopicUri;
-import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -27,6 +26,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -111,7 +111,14 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
             topicPartitionOffsets.put(
                     new TopicPartition(topicUriPartition.getTopicUri().getTopic(), topicUriPartition.getPartition()), offsetSpec);
         }
-        ListOffsetsResult listOffsetsResult = kafkaAdminClient.listOffsets(topicPartitionOffsets);
+        return listOffsetsInternal(topicPartitionOffsets, duration);
+    }
+
+    private Map<TopicUriPartition, Long> listOffsetsInternal(
+            Map<TopicPartition, OffsetSpec> topicPartitionOffsetSpecMap,
+            Duration duration
+    ) throws ExecutionException, InterruptedException, TimeoutException {
+        ListOffsetsResult listOffsetsResult = kafkaAdminClient.listOffsets(topicPartitionOffsetSpecMap);
         Map<TopicUriPartition, Long> result = new HashMap<>();
         listOffsetsResult.all().get(duration.toMillis(), TimeUnit.MILLISECONDS).entrySet().forEach(e -> {
             TopicPartition tp = e.getKey();
@@ -123,6 +130,21 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
             );
         });
         return result;
+    }
+
+    @Override
+    public Map<TopicUriPartition, Long> listOffsetsForTimestamps(
+            Map<TopicUriPartition, Long> topicUriPartitionsAndTimes,
+            Duration duration
+    ) throws ExecutionException, InterruptedException, TimeoutException {
+        Map<TopicPartition, OffsetSpec> topicPartitionTimes = new HashMap<>();
+        for (Map.Entry<TopicUriPartition, Long> entry : topicUriPartitionsAndTimes.entrySet()) {
+            TopicUriPartition topicUriPartition = entry.getKey();
+            Long time = entry.getValue();
+            topicPartitionTimes.put(
+                    new TopicPartition(topicUriPartition.getTopicUri().getTopic(), topicUriPartition.getPartition()), OffsetSpec.forTimestamp(time));
+        }
+        return listOffsetsInternal(topicPartitionTimes, duration);
     }
 
     @Override
@@ -141,8 +163,11 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
         Map<TopicUriPartition, Long> result = new HashMap<>();
         offsets.forEach((tp, offsetAndMetadata) -> {
             TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, tp.topic());
-            TopicUriPartition tup = createKafkaTopicUriPartition(topicRn, tp.partition());
             Long offset = offsetAndMetadata == null ? null : offsetAndMetadata.offset();
+            if (offset == null) {
+                logger.warn("Consumer group {} has no committed offset for topic partition {}", consumerGroupId, tp);
+                return;
+            }
             result.put(
                     createKafkaTopicUriPartition(topicRn, tp.partition()),
                     offset
@@ -156,7 +181,7 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() throws IOException {
         if (kafkaAdminClient != null)
             kafkaAdminClient.close();
         logger.info("Closed PscKafkaMetadataClient");

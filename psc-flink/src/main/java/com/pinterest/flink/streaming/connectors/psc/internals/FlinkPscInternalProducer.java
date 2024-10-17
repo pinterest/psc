@@ -41,6 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -133,7 +134,7 @@ public class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     }
 
     @Override
-    public void close(Duration duration) throws ProducerException {
+    public void close(Duration duration) throws IOException {
         super.close(duration);
         if (LOG.isDebugEnabled()) {
             LOG.debug(
