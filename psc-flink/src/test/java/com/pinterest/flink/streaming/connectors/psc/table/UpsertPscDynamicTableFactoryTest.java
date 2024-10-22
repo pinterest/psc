@@ -18,11 +18,14 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.PscSink;
 import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
+import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
@@ -87,12 +90,14 @@ import static org.junit.Assert.assertTrue;
 public class UpsertPscDynamicTableFactoryTest extends TestLogger {
 
     private static final String SOURCE_TOPIC = "sourceTopic_1";
+    private static final String SOURCE_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + SOURCE_TOPIC;
 
     private static final String SINK_TOPIC = "sinkTopic";
+    private static final String SINK_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + SINK_TOPIC;
 
     private static final String TEST_REGISTRY_URL = "http://localhost:8081";
-    private static final String DEFAULT_VALUE_SUBJECT = SINK_TOPIC + "-value";
-    private static final String DEFAULT_KEY_SUBJECT = SINK_TOPIC + "-key";
+    private static final String DEFAULT_VALUE_SUBJECT = SINK_TOPIC_URI + "-value";
+    private static final String DEFAULT_KEY_SUBJECT = SINK_TOPIC_URI + "-key";
 
     private static final ResolvedSchema SOURCE_SCHEMA =
             new ResolvedSchema(
@@ -120,13 +125,13 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
 
     private static final int[] SINK_VALUE_FIELDS = new int[] {0, 1};
 
-    private static final Properties UPSERT_KAFKA_SOURCE_PROPERTIES = new Properties();
-    private static final Properties UPSERT_KAFKA_SINK_PROPERTIES = new Properties();
+    private static final Properties UPSERT_PSC_SOURCE_PROPERTIES = new Properties();
+    private static final Properties UPSERT_PSC_SINK_PROPERTIES = new Properties();
 
     static {
-        UPSERT_KAFKA_SOURCE_PROPERTIES.setProperty("bootstrap.servers", "dummy");
+        UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
 
-        UPSERT_KAFKA_SINK_PROPERTIES.setProperty("bootstrap.servers", "dummy");
+        UPSERT_PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
     }
 
     static EncodingFormat<SerializationSchema<RowData>> keyEncodingFormat =
@@ -158,8 +163,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         SOURCE_KEY_FIELDS,
                         SOURCE_VALUE_FIELDS,
                         null,
-                        SOURCE_TOPIC,
-                        UPSERT_KAFKA_SOURCE_PROPERTIES);
+                        SOURCE_TOPIC_URI,
+                        UPSERT_PSC_SOURCE_PROPERTIES);
         assertEquals(actualSource, expectedSource);
 
         final PscDynamicSource actualUpsertKafkaSource = (PscDynamicSource) actualSource;
@@ -181,8 +186,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         SINK_KEY_FIELDS,
                         SINK_VALUE_FIELDS,
                         null,
-                        SINK_TOPIC,
-                        UPSERT_KAFKA_SINK_PROPERTIES,
+                        SINK_TOPIC_URI,
+                        UPSERT_PSC_SINK_PROPERTIES,
                         DeliveryGuarantee.AT_LEAST_ONCE,
                         SinkBufferFlushMode.DISABLED,
                         null);
@@ -222,8 +227,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         SINK_KEY_FIELDS,
                         SINK_VALUE_FIELDS,
                         null,
-                        SINK_TOPIC,
-                        UPSERT_KAFKA_SINK_PROPERTIES,
+                        SINK_TOPIC_URI,
+                        UPSERT_PSC_SINK_PROPERTIES,
                         DeliveryGuarantee.AT_LEAST_ONCE,
                         new SinkBufferFlushMode(100, 1000L),
                         null);
@@ -270,8 +275,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         SINK_KEY_FIELDS,
                         SINK_VALUE_FIELDS,
                         null,
-                        SINK_TOPIC,
-                        UPSERT_KAFKA_SINK_PROPERTIES,
+                        SINK_TOPIC_URI,
+                        UPSERT_PSC_SINK_PROPERTIES,
                         DeliveryGuarantee.AT_LEAST_ONCE,
                         SinkBufferFlushMode.DISABLED,
                         100);
@@ -350,9 +355,9 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         // Kafka specific options.
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
-        options.put("topic", SINK_TOPIC);
-        options.put("properties.group.id", "dummy");
-        options.put("properties.bootstrap.servers", "dummy");
+        options.put("topic-uri", SINK_TOPIC_URI);
+        options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         optionModifier.accept(options);
 
         final RowType rowType = (RowType) SINK_SCHEMA.toSinkRowDataType().getLogicalType();
@@ -519,8 +524,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         // table options
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
-        options.put("topic", SOURCE_TOPIC);
-        options.put("properties.bootstrap.servers", "dummy");
+        options.put("topic-uri", SOURCE_TOPIC_URI);
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         // key format options
         options.put("key.format", TestFormatFactory.IDENTIFIER);
         options.put(
@@ -561,8 +566,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     private static Map<String, String> getFullSinkOptions() {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
-        options.put("topic", SINK_TOPIC);
-        options.put("properties.bootstrap.servers", "dummy");
+        options.put("topic-uri", SINK_TOPIC_URI);
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         // key format options
         options.put("value.format", TestFormatFactory.IDENTIFIER);
         options.put(
@@ -597,7 +602,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             int[] keyFields,
             int[] valueFields,
             String keyPrefix,
-            String topic,
+            String topicUri,
             Properties properties) {
         return new PscDynamicSource(
                 producedDataType,
@@ -606,7 +611,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 keyFields,
                 valueFields,
                 keyPrefix,
-                Collections.singletonList(topic),
+                Collections.singletonList(topicUri),
                 null,
                 properties,
                 StartupMode.EARLIEST,

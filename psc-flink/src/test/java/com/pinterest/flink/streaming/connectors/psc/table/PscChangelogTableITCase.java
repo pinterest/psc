@@ -88,7 +88,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " description STRING,"
                                 + " weight DECIMAL(10,3),"
                                 // test connector metadata
-                                + " origin_topic STRING METADATA FROM 'topic' VIRTUAL,"
+                                + " origin_topic STRING METADATA FROM 'topic-uri' VIRTUAL,"
                                 + " origin_partition STRING METADATA FROM 'partition' VIRTUAL" // unused
                                 + ") WITH ("
                                 + " 'connector' = 'psc',"
@@ -228,7 +228,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " description STRING,"
                                 + " weight DECIMAL(10,3),"
                                 // test connector metadata
-                                + " origin_topic STRING METADATA FROM 'topic' VIRTUAL,"
+                                + " origin_topic STRING METADATA FROM 'topic-uri' VIRTUAL,"
                                 + " origin_partition STRING METADATA FROM 'partition' VIRTUAL," // unused
                                 + " WATERMARK FOR origin_es AS origin_es - INTERVAL '5' SECOND"
                                 + ") WITH ("
@@ -374,7 +374,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " description STRING,"
                                 + " weight DECIMAL(10,3),"
                                 // test connector metadata
-                                + " origin_topic STRING METADATA FROM 'topic' VIRTUAL,"
+                                + " origin_topic STRING METADATA FROM 'topic-uri' VIRTUAL,"
                                 + " origin_partition STRING METADATA FROM 'partition' VIRTUAL" // unused
                                 + ") WITH ("
                                 + " 'connector' = 'psc',"

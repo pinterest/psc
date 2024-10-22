@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.Table;
@@ -50,7 +51,7 @@ import static org.apache.flink.table.planner.factories.TestValuesTableFactory.ch
 import static org.apache.flink.table.utils.TableTestMatchers.deepEqualTo;
 import static org.junit.Assert.assertThat;
 
-/** Upsert-kafka IT cases. */
+/** Upsert-psc IT cases. */
 @RunWith(Parameterized.class)
 public class UpsertPscTableITCase extends PscTableTestBase {
 
@@ -73,10 +74,11 @@ public class UpsertPscTableITCase extends PscTableTestBase {
     @Test
     public void testAggregate() throws Exception {
         String topic = WORD_COUNT_TOPIC + "_" + format;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 4, 1);
         // -------------   test   ---------------
-        wordCountToUpsertKafka(topic);
-        wordFreqToUpsertKafka(topic);
+        wordCountToUpsertPsc(topicUri, topic);
+        wordFreqToUpsertPsc(topicUri, topic);
         // ------------- clean up ---------------
         deleteTestTopic(topic);
     }
@@ -84,6 +86,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
     @Test
     public void testTemporalJoin() throws Exception {
         String topic = USERS_TOPIC + "_" + format;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 2, 1);
         // -------------   test   ---------------
         // Kafka DefaultPartitioner's hash strategy is slightly different from Flink
@@ -97,9 +100,9 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         // partition and
         // use the Kafka DefaultPartition to repartition the records.
         env.setParallelism(1);
-        writeChangelogToUpsertKafkaWithMetadata(topic);
+        writeChangelogToUpsertPscWithMetadata(topicUri, topic);
         env.setParallelism(2);
-        temporalJoinUpsertKafka(topic);
+        temporalJoinUpsertPsc(topic);
         // ------------- clean up ---------------
         deleteTestTopic(topic);
     }
@@ -107,6 +110,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
     @Test
     public void testBufferedUpsertSink() throws Exception {
         final String topic = "buffered_upsert_topic_" + format;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
         String bootstraps = getBootstrapServers();
         env.setParallelism(1);
@@ -151,9 +155,15 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  `payload` STRING,\n"
                                 + "  PRIMARY KEY (k_id) NOT ENFORCED"
                                 + ") WITH (\n"
-                                + "  'connector' = 'upsert-kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields-prefix' = 'k_',\n"
                                 + "  'sink.buffer-flush.max-rows' = '2',\n"
@@ -161,7 +171,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'\n"
                                 + ")",
-                        topic, bootstraps, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -198,6 +208,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_partial_value_topic_" + format;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1); // use single partition to guarantee orders in tests
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -216,15 +227,21 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  `payload` STRING,\n"
                                 + "  PRIMARY KEY (k_event_id, k_user_id) NOT ENFORCED"
                                 + ") WITH (\n"
-                                + "  'connector' = 'upsert-kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields-prefix' = 'k_',\n"
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'\n"
                                 + ")",
-                        topic, bootstraps, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -296,6 +313,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_full_value_topic_" + format;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1); // use single partition to guarantee orders in tests
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -315,16 +333,22 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  `payload` STRING,\n"
                                 + "  PRIMARY KEY (event_id, user_id) NOT ENFORCED"
                                 + ") WITH (\n"
-                                + "  'connector' = 'upsert-kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'ALL',\n"
                                 + "  'sink.parallelism' = '4'" // enable different parallelism to
                                 // check ordering
                                 + ")",
-                        topic, bootstraps, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -386,7 +410,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         deleteTestTopic(topic);
     }
 
-    private void wordCountToUpsertKafka(String wordCountTable) throws Exception {
+    private void wordCountToUpsertPsc(String topicUri, String wordCountTable) throws Exception {
         String bootstraps = getBootstrapServers();
 
         // ------------- test data ---------------
@@ -415,13 +439,19 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  `count` BIGINT,\n"
                                 + "  PRIMARY KEY (`word`) NOT ENFORCED\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'upsert-kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s'"
                                 + ")",
-                        wordCountTable, wordCountTable, bootstraps, format, format);
+                        wordCountTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, format, format);
         tEnv.executeSql(createSinkTable);
         String initialValues =
                 "INSERT INTO "
@@ -469,9 +499,15 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  `word` STRING NOT NULL,\n"
                                 + "  `count` BIGINT\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields' = 'key_word',\n"
@@ -479,7 +515,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'"
                                 + ")",
-                        rawWordCountTable, wordCountTable, bootstraps, format, format));
+                        rawWordCountTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, format, format));
 
         final List<Row> result2 =
                 collectRows(tEnv.sqlQuery("SELECT * FROM " + rawWordCountTable), 8);
@@ -499,7 +535,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         comparedWithKeyAndOrder(expected2, result2, new int[] {0});
     }
 
-    private void wordFreqToUpsertKafka(String wordCountTable) throws Exception {
+    private void wordFreqToUpsertPsc(String topicUri, String wordCountTable) throws Exception {
         // ------------- test data ---------------
 
         final List<String> expectedData = Arrays.asList("3,1", "2,1");
@@ -536,7 +572,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         query.getJobClient().get().cancel();
     }
 
-    private void writeChangelogToUpsertKafkaWithMetadata(String userTable) throws Exception {
+    private void writeChangelogToUpsertPscWithMetadata(String topicUri, String userTable) throws Exception {
         String bootstraps = getBootstrapServers();
 
         // ------------- test data ---------------
@@ -648,13 +684,19 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  watermark for modification_time as modification_time,\n"
                                 + "  PRIMARY KEY (`user_id`) NOT ENFORCED\n"
                                 + ") WITH (\n"
-                                + "  'connector' = 'upsert-kafka',\n"
-                                + "  'topic' = '%s',\n"
-                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s'"
                                 + ")",
-                        userTable, userTable, bootstraps, format, format);
+                        userTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, format, format);
         tEnv.executeSql(createSinkTable);
         String initialValues =
                 "INSERT INTO " + userTable + " " + "SELECT * " + "FROM users_changelog_" + format;
@@ -784,7 +826,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         assertThat(result, deepEqualTo(expected, true));
     }
 
-    private void temporalJoinUpsertKafka(String userTable) throws Exception {
+    private void temporalJoinUpsertPsc(String userTable) throws Exception {
         // ------------- test data ---------------
         List<Row> input =
                 Arrays.asList(

@@ -74,7 +74,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 public class UpsertPscDynamicTableFactory
         implements DynamicTableSourceFactory, DynamicTableSinkFactory {
 
-    public static final String IDENTIFIER = "upsert-kafka";
+    public static final String IDENTIFIER = "upsert-psc";
 
     @Override
     public String factoryIdentifier() {
