@@ -1,5 +1,6 @@
 package com.pinterest.psc.example.migration.producer;
 
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.pinterest.psc.config.PscConfiguration;
@@ -11,7 +12,7 @@ import com.pinterest.psc.serde.ByteArraySerializer;
 
 public class Psc {
     
-    static public void main(String[] args) throws ConfigurationException, ProducerException {
+    static public void main(String[] args) throws ConfigurationException, ProducerException, IOException {
         String topicUri = "plaintext:/rn:kafka:dev:local-cloud_local-region::local-cluster:my_test_topic";
 
         PscConfiguration pscConfiguration = new PscConfiguration();
