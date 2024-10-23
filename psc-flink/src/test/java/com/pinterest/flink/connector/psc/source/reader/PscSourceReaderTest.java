@@ -511,6 +511,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             throws Exception {
         props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         props.setProperty(PscConfiguration.PSC_METRICS_FREQUENCY_MS, "100");
+        props.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         if (!props.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID)) {
             props.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "test-group-id");
         }

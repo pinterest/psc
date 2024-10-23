@@ -135,7 +135,7 @@ public class PscCommitterTest {
         properties.setProperty("psc.discovery.connection.urls", "http://localhost:1");
         properties.setProperty("psc.discovery.security.protocols",
                 StringUtils.repeat("plaintext", ",", 1));
-
+        properties.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         return properties;
     }
 }
