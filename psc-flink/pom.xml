@@ -431,12 +431,6 @@
             <artifactId>flink-avro-confluent-registry</artifactId>
             <version>${flink.version}</version>
             <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>io.confluent</groupId>
-                    <artifactId>kafka-schema-registry-client</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
