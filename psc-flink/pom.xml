@@ -479,9 +479,6 @@
                 <configuration>
                     <threadCount>1</threadCount>
                     <reuseForks>false</reuseForks>
-                    <includes>
-                        <include>**/*ITCase.java</include>
-                    </includes>
                 </configuration>
             </plugin>
             <plugin>
