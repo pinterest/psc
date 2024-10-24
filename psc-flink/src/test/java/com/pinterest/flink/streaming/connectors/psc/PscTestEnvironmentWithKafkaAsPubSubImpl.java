@@ -498,6 +498,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         kafkaProperties.put("message.max.bytes", String.valueOf(50 * 1024 * 1024));
         kafkaProperties.put("replica.fetch.max.bytes", String.valueOf(50 * 1024 * 1024));
         kafkaProperties.put("transaction.max.timeout.ms", Integer.toString(1000 * 60 * 60 * 2)); // 2hours
+        kafkaProperties.put("log.retention.check.interval.ms", Long.MAX_VALUE); // disable Kafka log segment rotation
 
         // for CI stability, increase zookeeper session timeout
         kafkaProperties.put("zookeeper.session.timeout.ms", zkTimeout);
