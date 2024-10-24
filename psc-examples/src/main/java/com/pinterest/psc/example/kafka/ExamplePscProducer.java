@@ -9,12 +9,14 @@ import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.IntegerSerializer;
 import com.pinterest.psc.serde.StringSerializer;
 
+import java.io.IOException;
+
 public class ExamplePscProducer {
 
     private static final PscLogger logger = PscLogger.getLogger(ExamplePscProducer.class);
     private static final int NUM_MESSAGES = 10;
 
-    public static void main(String[] args) throws ConfigurationException, ProducerException {
+    public static void main(String[] args) throws ConfigurationException, ProducerException, IOException {
         if (args.length < 1) {
             logger.error("ExamplePscProducer needs one argument: topicUri");
             return;

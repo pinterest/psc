@@ -780,10 +780,7 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     public Map<MetricName, ? extends Metric> metrics() throws ProducerException {
         if (kafkaProducer == null)
             handleUninitializedKafkaProducer("metrics()");
-
-        if (metricValueProvider.getMetrics().isEmpty()) {
-            reportProducerMetrics();
-        }
+        reportProducerMetrics();
         return metricValueProvider.getMetrics();
     }
 

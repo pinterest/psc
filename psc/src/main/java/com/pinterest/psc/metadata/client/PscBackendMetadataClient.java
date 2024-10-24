@@ -1,7 +1,6 @@
 package com.pinterest.psc.metadata.client;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.ServiceDiscoveryConfig;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
@@ -12,6 +11,7 @@ import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.metadata.TopicRnMetadata;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -49,13 +49,18 @@ public abstract class PscBackendMetadataClient implements AutoCloseable {
             Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException;
 
+    public abstract Map<TopicUriPartition, Long> listOffsetsForTimestamps(
+            Map<TopicUriPartition, Long> topicUriPartitionsAndTimes,
+            Duration duration
+    ) throws ExecutionException, InterruptedException, TimeoutException;
+
     public abstract Map<TopicUriPartition, Long> listOffsetsForConsumerGroup(
             String consumerGroupId,
             Collection<TopicUriPartition> topicUriPartitions,
             Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException;
 
-    public abstract void close() throws Exception;
+    public abstract void close() throws IOException;
 
     @VisibleForTesting
     protected TopicUri getTopicUri() {

@@ -4,8 +4,8 @@ import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 import com.pinterest.psc.producer.transaction.kafka.KafkaTransactionManagerOperator;
 import org.apache.kafka.clients.producer.internals.TransactionManager;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 
 /**
@@ -21,7 +21,7 @@ import java.util.concurrent.Future;
  */
 public class TransactionManagerUtils {
 
-    private static final Map<String, TransactionManagerOperator> TXN_MANAGER_CLASSNAME_TO_OPERATOR = new HashMap<>();
+    private static final Map<String, TransactionManagerOperator> TXN_MANAGER_CLASSNAME_TO_OPERATOR = new ConcurrentHashMap<>();
 
     private static TransactionManagerOperator getOrCreateTransactionManagerOperator(Object transactionManager) {
         return TXN_MANAGER_CLASSNAME_TO_OPERATOR.computeIfAbsent(transactionManager.getClass().getName(), className -> {

@@ -22,3 +22,6 @@ buildNumber.properties
 
 # vscode
 .vscode
+
+#test files
+psc-flink/orgapacheflinkutilNetUtils*

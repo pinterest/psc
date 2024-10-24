@@ -98,7 +98,7 @@ public class TestMultiKafkaClusterBackends {
      * @throws ProducerException
      */
    @Test
-    public void testTransactionalProducersStates() throws ConfigurationException, ProducerException {
+    public void testTransactionalProducersStates() throws ConfigurationException, ProducerException, IOException {
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, IntegerSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, IntegerSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_TRANSACTIONAL_ID, "test-transactional-id");

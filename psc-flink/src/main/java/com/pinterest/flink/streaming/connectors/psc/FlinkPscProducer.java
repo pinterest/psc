@@ -1081,7 +1081,7 @@ public class FlinkPscProducer<IN>
                                 transaction,
                                 ProducerConfig.TRANSACTIONAL_ID_CONFIG,
                                 ProducerConfig.TRANSACTION_TIMEOUT_CONFIG,
-                                producerConfig.getProperty("psc.producer.transaction.timeout.ms"),
+                                producerConfig.getProperty(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS),
                                 e);
                     }
                 }
@@ -1158,7 +1158,14 @@ public class FlinkPscProducer<IN>
 
     @Override
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
-        supersSnapshotState(context);
+        super.snapshotState(context);
+
+        PscMetricRegistryManager.getInstance().updateHistogramMetric(
+                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_PENDING_TRANSACTIONS, pendingCommitTransactions.size(), pscConfigurationInternal
+        );
+        PscMetricRegistryManager.getInstance().updateHistogramMetric(
+                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_STATE_SIZE, getSize(state), pscConfigurationInternal
+        );
 
         nextTransactionalIdHintState.clear();
         // To avoid duplication only first subtask keeps track of next transactional id hint.
@@ -1252,13 +1259,6 @@ public class FlinkPscProducer<IN>
         } catch (InvocationTargetException exception) {
             throw (Exception) exception.getTargetException();
         }
-
-        PscMetricRegistryManager.getInstance().updateHistogramMetric(
-                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_PENDING_TRANSACTIONS, pendingCommitTransactions.size(), pscConfigurationInternal
-        );
-        PscMetricRegistryManager.getInstance().updateHistogramMetric(
-                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_STATE_SIZE, getSize(state), pscConfigurationInternal
-        );
     }
 
     @Override
@@ -1903,7 +1903,7 @@ public class FlinkPscProducer<IN>
     private void closeProducer(FlinkPscInternalProducer producer) {
         try {
             producer.close(Duration.ZERO);
-        } catch (ProducerException e) {
+        } catch (IOException e) {
             LOG.warn("Failed to close FlinkPscInternalProducer with id {}", producer.getClientId(), e);
         }
     }
