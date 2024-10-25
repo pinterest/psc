@@ -67,7 +67,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
@@ -236,7 +238,9 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
                                 Properties properties) {
         LOG.info("Creating topic {}", topicUriString);
         try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
-            NewTopic topicObj = new NewTopic(BaseTopicUri.validate(topicUriString).getTopic(), numberOfPartitions, (short) replicationFactor);
+            Map<String, String> topicConfigs = new HashMap<>();
+            topicConfigs.put("retention.ms", Long.toString(Long.MAX_VALUE));
+            NewTopic topicObj = new NewTopic(BaseTopicUri.validate(topicUriString).getTopic(), numberOfPartitions, (short) replicationFactor).configs(topicConfigs);
             adminClient.createTopics(Collections.singleton(topicObj)).all().get();
         } catch (Exception e) {
             // try to create it assuming that it's not a topicUriString
