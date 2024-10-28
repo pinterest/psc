@@ -29,7 +29,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Kafka consumer allows a few different ways to consume from the topics, including:
+ * PSC consumer allows a few different ways to consume from the topics, including:
  *
  * <ol>
  *   <li>Subscribe from a collection of topics.
@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
  *   <li>Assign specific partitions.
  * </ol>
  *
- * <p>The KafkaSubscriber provides a unified interface for the Kafka source to support all these
+ * <p>The PscSubscriber provides a unified interface for the PSC source to support all these
  * three types of subscribing mode.
  */
 @Internal

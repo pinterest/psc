@@ -321,7 +321,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                     String.format(
                             "Failed to poll %d records until timeout", NUM_RECORDS_PER_SPLIT * 2));
             Thread.sleep(100); // Wait for the metric to be updated
-            // Metric "records-consumed-total" of KafkaConsumer should be NUM_RECORDS_PER_SPLIT
+            // Metric "records-consumed-total" of PscConsumer should be NUM_RECORDS_PER_SPLIT
             assertThat(getPscConsumerMetric("records-consumed-total", metricListener))
                     .isEqualTo(NUM_RECORDS_PER_SPLIT * 2);
 
@@ -354,7 +354,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                             "Offsets are not committed successfully. Dangling offsets: %s",
                             reader.getOffsetsToCommit()));
 
-            // Metric "commit-total" of KafkaConsumer should be greater than 0
+            // Metric "commit-total" of PscConsumer should be greater than 0
             // It's hard to know the exactly number of commit because of the retry
             MatcherAssert.assertThat(
                     getPscConsumerMetric("commit-total", metricListener),
@@ -393,7 +393,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                 (PscSourceReader<Integer>)
                         createReader(
                                 Boundedness.BOUNDED,
-                                "KafkaSourceReaderTestGroup",
+                                "PscSourceReaderTestGroup",
                                 new TestingReaderContext(),
                                 splitFinishedHook)) {
             reader.addSplits(Arrays.asList(normalSplit, emptySplit));
@@ -448,7 +448,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
 
     @Override
     protected SourceReader<Integer, PscTopicUriPartitionSplit> createReader() throws Exception {
-        return createReader(Boundedness.BOUNDED, "KafkaSourceReaderTestGroup");
+        return createReader(Boundedness.BOUNDED, "PscSourceReaderTestGroup");
     }
 
     @Override
@@ -523,9 +523,6 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                                 PscRecordDeserializationSchema.valueOnly(
                                         IntegerDeserializer.class))
                         .setPartitions(Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "AnyTopic", 0)))
-//                        .setProperty(
-//                                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
-//                                KafkaSourceTestEnv.brokerConnectionStrings)
                         .setProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false")
                         .setProperties(props);
         if (boundedness == Boundedness.BOUNDED) {
@@ -558,11 +555,11 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
     }
 
     private long getPscConsumerMetric(String name, MetricListener listener) {
-        final Optional<Gauge<Object>> kafkaConsumerGauge =
+        final Optional<Gauge<Object>> pscConsumerGauge =
                 listener.getGauge(
                         PSC_SOURCE_READER_METRIC_GROUP, PSC_CONSUMER_METRIC_GROUP, name);
-        assertThat(kafkaConsumerGauge).isPresent();
-        return ((Double) kafkaConsumerGauge.get().getValue()).longValue();
+        assertThat(pscConsumerGauge).isPresent();
+        return ((Double) pscConsumerGauge.get().getValue()).longValue();
     }
 
     private long getCurrentOffsetMetric(TopicUriPartition tp, MetricListener listener) {

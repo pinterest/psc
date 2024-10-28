@@ -63,12 +63,12 @@ public class PscSourceEnumStateSerializerTest {
         final Map<Integer, Set<PscTopicUriPartitionSplit>> splitAssignments =
                 toSplitAssignments(topicPartitions);
 
-        // Create bytes in the way of KafkaEnumStateSerializer version 0 doing serialization
+        // Create bytes in the way of PscEnumStateSerializer version 0 doing serialization
         final byte[] bytes =
                 SerdeUtils.serializeSplitAssignments(
                         splitAssignments, new PscTopicUriPartitionSplitSerializer());
 
-        // Deserialize above bytes with KafkaEnumStateSerializer version 1 to check backward
+        // Deserialize above bytes with PscEnumStateSerializer version 1 to check backward
         // compatibility
         final PscSourceEnumState pscSourceEnumState =
                 new PscSourceEnumStateSerializer().deserialize(0, bytes);

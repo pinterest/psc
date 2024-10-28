@@ -19,7 +19,6 @@
 package com.pinterest.flink.connector.psc.testutils;
 
 import org.apache.flink.connector.testframe.external.ExternalContextFactory;
-
 import org.testcontainers.containers.KafkaContainer;
 
 import java.net.URL;

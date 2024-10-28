@@ -63,7 +63,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static org.apache.flink.streaming.api.CheckpointingMode.EXACTLY_ONCE;
 
-/** A Kafka external context that will create only one topic and use partitions in that topic. */
+/** A PSC external context that will create only one topic and use partitions in that topic. */
 public class PscSinkExternalContext implements DataStreamSinkV2ExternalContext<String> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSinkExternalContext.class);

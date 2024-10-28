@@ -166,7 +166,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
     }
 
     @Test
-    public void testKafkaKeySerializerWrapperWithoutConfigurable() throws Exception {
+    public void testPscKeySerializerWrapperWithoutConfigurable() throws Exception {
         final Map<String, String> config = ImmutableMap.of("simpleKey", "simpleValue");
         final PscRecordSerializationSchema<String> schema =
                 PscRecordSerializationSchema.builder()
@@ -183,7 +183,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
     }
 
     @Test
-    public void testKafkaValueSerializerWrapperWithoutConfigurable() throws Exception {
+    public void tesPscValueSerializerWrapperWithoutConfigurable() throws Exception {
         final Map<String, String> config = ImmutableMap.of("simpleKey", "simpleValue");
         final PscRecordSerializationSchema<String> schema =
                 PscRecordSerializationSchema.builder()
@@ -197,7 +197,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
     }
 
     @Test
-    public void testSerializeRecordWithKafkaSerializer() throws Exception {
+    public void testSerializeRecordWithPscSerializer() throws Exception {
         final Map<String, String> config = ImmutableMap.of("configKey", "configValue");
         final PscRecordSerializationSchema<String> schema =
                 PscRecordSerializationSchema.builder()
@@ -289,7 +289,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
     }
 
     /**
-     * Serializer based on Kafka's serialization stack. This is the special case that implements
+     * Serializer based on PSC's serialization stack. This is the special case that implements
      * {@link PscPlugin}
      *
      * <p>This class must be public to make it instantiable by the tests.
@@ -303,7 +303,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
     }
 
     /**
-     * Serializer based on Kafka's serialization stack.
+     * Serializer based on PSC's serialization stack.
      *
      * <p>This class must be public to make it instantiable by the tests.
      */

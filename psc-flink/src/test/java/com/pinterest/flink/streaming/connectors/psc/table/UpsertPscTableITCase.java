@@ -92,8 +92,8 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         // Kafka DefaultPartitioner's hash strategy is slightly different from Flink
         // KeyGroupStreamPartitioner,
         // which causes the records in the different Flink partitions are written into the same
-        // Kafka partition.
-        // When reading from the out-of-order Kafka partition, we need to set suitable watermark
+        // PubSub partition.
+        // When reading from the out-of-order PubSub partition, we need to set suitable watermark
         // interval to
         // tolerate the disorderliness.
         // For convenience, we just set the parallelism 1 to make all records are in the same Flink
@@ -309,7 +309,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaSourceSinkWithKeyAndFullValue() throws Exception {
+    public void testPscSourceSinkWithKeyAndFullValue() throws Exception {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_full_value_topic_" + format;

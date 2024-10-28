@@ -31,7 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Properties;
 
-/** Source split data writer for writing test data into Kafka topic partitions. */
+/** Source split data writer for writing test data into PSC topicUriPartitions. */
 public class PscTopicUriPartitionDataWriter implements ExternalSystemSplitDataWriter<String> {
 
     private final PscProducer<byte[], byte[]> pscProducer;

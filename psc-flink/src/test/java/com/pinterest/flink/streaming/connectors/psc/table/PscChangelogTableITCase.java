@@ -43,7 +43,7 @@ import java.util.Properties;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.readLines;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.waitingExpectedResults;
 
-/** IT cases for Kafka with changelog format for Table API & SQL. */
+/** IT cases for Psc with changelog format for Table API & SQL. */
 public class PscChangelogTableITCase extends PscTableTestBase {
 
     @Before
@@ -54,7 +54,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaDebeziumChangelogSource() throws Exception {
+    public void testPscDebeziumChangelogSource() throws Exception {
         final String topic = "changelog_topic";
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
@@ -67,15 +67,15 @@ public class PscChangelogTableITCase extends PscTableTestBase {
         tableConf.set(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE, 5000L);
         tableConf.set(OptimizerConfigOptions.TABLE_OPTIMIZER_AGG_PHASE_STRATEGY, "TWO_PHASE");
 
-        // ---------- Write the Debezium json into Kafka -------------------
+        // ---------- Write the Debezium json into Psc -------------------
         List<String> lines = readLines("debezium-data-schema-exclude.txt");
         try {
-            writeRecordsToKafka(topicUri, lines);
+            writeRecordsToPsc(topicUri, lines);
         } catch (Exception e) {
-            throw new Exception("Failed to write debezium data to Kafka.", e);
+            throw new Exception("Failed to write debezium data to PSC.", e);
         }
 
-        // ---------- Produce an event time stream into Kafka -------------------
+        // ---------- Produce an event time stream into PSC -------------------
         String bootstraps = getBootstrapServers();
         String sourceDDL =
                 String.format(
@@ -203,15 +203,15 @@ public class PscChangelogTableITCase extends PscTableTestBase {
         tableConf.set(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE, 5000L);
         tableConf.set(OptimizerConfigOptions.TABLE_OPTIMIZER_AGG_PHASE_STRATEGY, "TWO_PHASE");
 
-        // ---------- Write the Canal json into Kafka -------------------
+        // ---------- Write the Canal json into PSC -------------------
         List<String> lines = readLines("canal-data.txt");
         try {
-            writeRecordsToKafka(topicUri, lines);
+            writeRecordsToPsc(topicUri, lines);
         } catch (Exception e) {
             throw new Exception("Failed to write canal data to PSC.", e);
         }
 
-        // ---------- Produce an event time stream into Kafka -------------------
+        // ---------- Produce an event time stream into PSC -------------------
         String bootstraps = getBootstrapServers();
         String sourceDDL =
                 String.format(
@@ -336,7 +336,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     }
 
     @Test
-    public void testKafkaMaxwellChangelogSource() throws Exception {
+    public void testPscMaxwellChangelogSource() throws Exception {
         final String topic = "changelog_maxwell";
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
@@ -351,15 +351,15 @@ public class PscChangelogTableITCase extends PscTableTestBase {
         tableConf.set(ExecutionConfigOptions.TABLE_EXEC_MINIBATCH_SIZE, 5000L);
         tableConf.set(OptimizerConfigOptions.TABLE_OPTIMIZER_AGG_PHASE_STRATEGY, "TWO_PHASE");
 
-        // ---------- Write the Maxwell json into Kafka -------------------
+        // ---------- Write the Maxwell json into PSC -------------------
         List<String> lines = readLines("maxwell-data.txt");
         try {
-            writeRecordsToKafka(topicUri, lines);
+            writeRecordsToPsc(topicUri, lines);
         } catch (Exception e) {
             throw new Exception("Failed to write maxwell data to PSC.", e);
         }
 
-        // ---------- Produce an event time stream into Kafka -------------------
+        // ---------- Produce an event time stream into PSC -------------------
         String bootstraps = getBootstrapServers();
         String sourceDDL =
                 String.format(
@@ -478,7 +478,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
         deleteTestTopic(topic);
     }
 
-    private void writeRecordsToKafka(String topic, List<String> lines) throws Exception {
+    private void writeRecordsToPsc(String topic, List<String> lines) throws Exception {
         DataStreamSource<String> stream = env.fromCollection(lines);
         SerializationSchema<String> serSchema = new SimpleStringSchema();
         FlinkPscPartitioner<String> partitioner = new FlinkFixedPartitioner<>();
@@ -488,9 +488,6 @@ public class PscChangelogTableITCase extends PscTableTestBase {
         producerProperties.setProperty("retries", "0");
         stream.sinkTo(
                 PscSink.<String>builder()
-//                        .setBootstrapServers(
-//                                producerProperties.getProperty(
-//                                        ProducerConfig.BOOTSTRAP_SERVERS_CONFIG))
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
                                         .setTopicUriString(topic)

@@ -25,7 +25,7 @@ import org.apache.flink.configuration.ConfigOptions;
 import java.util.Properties;
 import java.util.function.Function;
 
-/** Configurations for KafkaSource. */
+/** Configurations for PscSource. */
 @Internal
 public class PscSourceOptions {
 

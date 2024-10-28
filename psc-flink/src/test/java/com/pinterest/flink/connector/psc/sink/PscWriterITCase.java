@@ -82,7 +82,7 @@ import static com.pinterest.flink.connector.psc.testutils.PscUtil.drainAllRecord
 import static org.apache.flink.util.DockerImageVersions.KAFKA;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Tests for the standalone KafkaWriter. */
+/** Tests for the standalone PscWriter. */
 @ExtendWith(TestLoggerExtension.class)
 public class PscWriterITCase {
 
@@ -134,8 +134,8 @@ public class PscWriterITCase {
     @ParameterizedTest
     @EnumSource(DeliveryGuarantee.class)
     public void testNotRegisterMetrics(DeliveryGuarantee guarantee) throws Exception {
-        assertKafkaMetricNotPresent(guarantee, "flink.disable-metrics", "true");
-        assertKafkaMetricNotPresent(guarantee, "register.producer.metrics", "false");
+        assertPscMetricNotPresent(guarantee, "flink.disable-metrics", "true");
+        assertPscMetricNotPresent(guarantee, "register.producer.metrics", "false");
     }
 
     @Test
@@ -185,7 +185,7 @@ public class PscWriterITCase {
                                         writer.flush(false);
                                     }
                                 } catch (IOException | InterruptedException e) {
-                                    throw new RuntimeException("Failed writing Kafka record.");
+                                    throw new RuntimeException("Failed writing PSC record.");
                                 }
                             });
             Thread.sleep(500L);
@@ -330,7 +330,7 @@ public class PscWriterITCase {
                     .as("Expected different producer")
                     .isTrue();
 
-            // recycle first producer, KafkaCommitter would commit it and then return it
+            // recycle first producer, PscCommitter would commit it and then return it
             assertThat(writer.getProducerPool()).hasSize(0);
             firstProducer.commitTransaction();
             committable.getProducer().get().close();
@@ -383,7 +383,7 @@ public class PscWriterITCase {
         }
     }
 
-    private void assertKafkaMetricNotPresent(
+    private void assertPscMetricNotPresent(
             DeliveryGuarantee guarantee, String configKey, String configValue) throws Exception {
         final Properties config = getPscClientConfiguration();
         config.put(configKey, configValue);

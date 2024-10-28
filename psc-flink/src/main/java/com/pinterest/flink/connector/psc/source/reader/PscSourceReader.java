@@ -49,7 +49,7 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-/** The source reader for Kafka partitions. */
+/** The source reader for PSC TopicUriPartitions. */
 @Internal
 public class PscSourceReader<T>
         extends SingleThreadMultiplexSourceReaderBase<
@@ -80,7 +80,7 @@ public class PscSourceReader<T>
         if (!commitOffsetsOnCheckpoint) {
             LOG.warn(
                     "Offset commit on checkpoint is disabled. "
-                            + "Consuming offset will not be reported back to Kafka cluster.");
+                            + "Consuming offset will not be reported back to PubSub cluster.");
         }
     }
 

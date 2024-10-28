@@ -30,9 +30,9 @@ import java.util.Properties;
 public interface OffsetsInitializerValidator {
 
     /**
-     * Validate offsets initializer with properties of Kafka source.
+     * Validate offsets initializer with properties of PSC source.
      *
-     * @param pscSourceProperties Properties of Kafka source
+     * @param pscSourceProperties Properties of PSC source
      * @throws IllegalStateException if validation fails
      */
     void validate(Properties pscSourceProperties) throws IllegalStateException;

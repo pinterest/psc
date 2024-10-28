@@ -49,15 +49,15 @@ class PscTransactionLog {
     private final String clusterUriStr;
 
     /**
-     * Constructor creating a KafkaTransactionLog.
+     * Constructor creating a PscTransactionLog.
      *
-     * @param kafkaConfig used to configure the {@link com.pinterest.psc.consumer.PscConsumer} to query the topic containing
+     * @param pscConfig used to configure the {@link com.pinterest.psc.consumer.PscConsumer} to query the topic containing
      *     the transaction information
      */
-    PscTransactionLog(String clusterUriStr, Properties kafkaConfig) {
+    PscTransactionLog(String clusterUriStr, Properties pscConfig) {
         this.clusterUriStr = checkNotNull(clusterUriStr);
         this.consumerConfig = new Properties();
-        consumerConfig.putAll(checkNotNull(kafkaConfig, "kafkaConfig"));
+        consumerConfig.putAll(checkNotNull(pscConfig, "pscConfig"));
         consumerConfig.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, ByteArrayDeserializer.class.getName());
         consumerConfig.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, ByteArrayDeserializer.class.getName());
         consumerConfig.put(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, false);

@@ -109,7 +109,7 @@ public class PscConnectorOptions {
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
     // --------------------------------------------------------------------------------------------
-    // Kafka specific options
+    // Psc specific options
     // --------------------------------------------------------------------------------------------
 
     public static final ConfigOption<List<String>> TOPIC_URI =
@@ -133,7 +133,7 @@ public class PscConnectorOptions {
                     .stringType()
                     .noDefaultValue()
                     .withDescription(
-                            "Required consumer group in Kafka consumer, no need for Kafka producer");
+                            "Required consumer group in PSC consumer, no need for PSC producer");
 
     // --------------------------------------------------------------------------------------------
     // Scan specific options
@@ -143,7 +143,7 @@ public class PscConnectorOptions {
             ConfigOptions.key("scan.startup.mode")
                     .enumType(ScanStartupMode.class)
                     .defaultValue(ScanStartupMode.GROUP_OFFSETS)
-                    .withDescription("Startup mode for Kafka consumer.");
+                    .withDescription("Startup mode for PSC consumer.");
 
     public static final ConfigOption<String> SCAN_STARTUP_SPECIFIC_OFFSETS =
             ConfigOptions.key("scan.startup.specific-offsets")
@@ -164,7 +164,7 @@ public class PscConnectorOptions {
                     .durationType()
                     .noDefaultValue()
                     .withDescription(
-                            "Optional interval for consumer to discover dynamically created Kafka partitions periodically.");
+                            "Optional interval for consumer to discover dynamically created backend partitions periodically.");
 
     // --------------------------------------------------------------------------------------------
     // Sink specific options
@@ -177,16 +177,16 @@ public class PscConnectorOptions {
                     .withDescription(
                             Description.builder()
                                     .text(
-                                            "Optional output partitioning from Flink's partitions into Kafka's partitions. Valid enumerations are")
+                                            "Optional output partitioning from Flink's partitions into PSC's backend partitions. Valid enumerations are")
                                     .list(
                                             text(
-                                                    "'default' (use kafka default partitioner to partition records)"),
+                                                    "'default' (use PSC default partitioner to partition records)"),
                                             text(
-                                                    "'fixed' (each Flink partition ends up in at most one Kafka partition)"),
+                                                    "'fixed' (each Flink partition ends up in at most one PubSub partition)"),
                                             text(
-                                                    "'round-robin' (a Flink partition is distributed to Kafka partitions round-robin when 'key.fields' is not specified)"),
+                                                    "'round-robin' (a Flink partition is distributed to PubSub partitions round-robin when 'key.fields' is not specified)"),
                                             text(
-                                                    "custom class name (use custom FlinkKafkaPartitioner subclass)"))
+                                                    "custom class name (use custom FlinkPscPartitioner subclass)"))
                                     .build());
 
     // Disable this feature by default
@@ -200,7 +200,7 @@ public class PscConnectorOptions {
                                             "The max size of buffered records before flushing. "
                                                     + "When the sink receives many updates on the same key, "
                                                     + "the buffer will retain the last records of the same key. "
-                                                    + "This can help to reduce data shuffling and avoid possible tombstone messages to the Kafka topic.")
+                                                    + "This can help to reduce data shuffling and avoid possible tombstone messages to the PubSub topic.")
                                     .linebreak()
                                     .text("Can be set to '0' to disable it.")
                                     .linebreak()
@@ -241,7 +241,7 @@ public class PscConnectorOptions {
                     .withDescription(
                             "If the delivery guarantee is configured as "
                                     + DeliveryGuarantee.EXACTLY_ONCE
-                                    + " this value is used a prefix for the identifier of all opened Kafka transactions.");
+                                    + " this value is used a prefix for the identifier of all opened transactions.");
 
     // --------------------------------------------------------------------------------------------
     // Enums
@@ -253,14 +253,14 @@ public class PscConnectorOptions {
         EXCEPT_KEY
     }
 
-    /** Startup mode for the Kafka consumer, see {@link #SCAN_STARTUP_MODE}. */
+    /** Startup mode for the PSC consumer, see {@link #SCAN_STARTUP_MODE}. */
     public enum ScanStartupMode implements DescribedEnum {
         EARLIEST_OFFSET("earliest-offset", text("Start from the earliest offset possible.")),
         LATEST_OFFSET("latest-offset", text("Start from the latest offset.")),
         GROUP_OFFSETS(
                 "group-offsets",
                 text(
-                        "Start from committed offsets in ZooKeeper / Kafka brokers of a specific consumer group.")),
+                        "Start from committed offsets in ZooKeeper / PubSub brokers of a specific consumer group.")),
         TIMESTAMP("timestamp", text("Start from user-supplied timestamp for each partition.")),
         SPECIFIC_OFFSETS(
                 "specific-offsets",

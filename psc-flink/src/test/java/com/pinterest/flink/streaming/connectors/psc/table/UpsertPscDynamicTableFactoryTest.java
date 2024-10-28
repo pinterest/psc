@@ -167,10 +167,10 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         UPSERT_PSC_SOURCE_PROPERTIES);
         assertEquals(actualSource, expectedSource);
 
-        final PscDynamicSource actualUpsertKafkaSource = (PscDynamicSource) actualSource;
+        final PscDynamicSource actualUpsertPscSource = (PscDynamicSource) actualSource;
         ScanTableSource.ScanRuntimeProvider provider =
-                actualUpsertKafkaSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
-        assertKafkaSource(provider);
+                actualUpsertPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertPscSource(provider);
     }
 
     @Test
@@ -193,12 +193,12 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         null);
 
         // Test sink format.
-        final PscDynamicSink actualUpsertKafkaSink = (PscDynamicSink) actualSink;
+        final PscDynamicSink actualUpsertPscSink = (PscDynamicSink) actualSink;
         assertEquals(expectedSink, actualSink);
 
-        // Test kafka producer.
+        // Test PSC producer.
         DynamicTableSink.SinkRuntimeProvider provider =
-                actualUpsertKafkaSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+                actualUpsertPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
         assertThat(provider, instanceOf(SinkV2Provider.class));
         final SinkV2Provider sinkFunctionProvider = (SinkV2Provider) provider;
         final Sink<RowData> sink = sinkFunctionProvider.createSink();
@@ -234,12 +234,12 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         null);
 
         // Test sink format.
-        final PscDynamicSink actualUpsertKafkaSink = (PscDynamicSink) actualSink;
+        final PscDynamicSink actualUpsertPscSink = (PscDynamicSink) actualSink;
         assertEquals(expectedSink, actualSink);
 
-        // Test kafka producer.
+        // Test PSC producer.
         DynamicTableSink.SinkRuntimeProvider provider =
-                actualUpsertKafkaSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+                actualUpsertPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
         assertThat(provider, instanceOf(DataStreamSinkProvider.class));
         final DataStreamSinkProvider sinkProvider = (DataStreamSinkProvider) provider;
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -353,7 +353,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             String expectedValueSubject,
             String expectedKeySubject) {
         Map<String, String> options = new HashMap<>();
-        // Kafka specific options.
+        // PSC specific options.
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
@@ -407,9 +407,9 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         thrown.expect(
                 containsCause(
                         new ValidationException(
-                                "'upsert-kafka' tables require to define a PRIMARY KEY constraint. "
-                                        + "The PRIMARY KEY specifies which columns should be read from or write to the Kafka message key. "
-                                        + "The PRIMARY KEY also defines records in the 'upsert-kafka' table should update or delete on which keys.")));
+                                "'upsert-psc' tables require to define a PRIMARY KEY constraint. "
+                                        + "The PRIMARY KEY specifies which columns should be read from or write to the PubSub message key. "
+                                        + "The PRIMARY KEY also defines records in the 'upsert-psc' table should update or delete on which keys.")));
 
         ResolvedSchema illegalSchema =
                 ResolvedSchema.of(
@@ -425,9 +425,9 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         thrown.expect(
                 containsCause(
                         new ValidationException(
-                                "'upsert-kafka' tables require to define a PRIMARY KEY constraint. "
-                                        + "The PRIMARY KEY specifies which columns should be read from or write to the Kafka message key. "
-                                        + "The PRIMARY KEY also defines records in the 'upsert-kafka' table should update or delete on which keys.")));
+                                "'upsert-psc' tables require to define a PRIMARY KEY constraint. "
+                                        + "The PRIMARY KEY specifies which columns should be read from or write to the PubSub message key. "
+                                        + "The PRIMARY KEY also defines records in the 'upsert-psc' table should update or delete on which keys.")));
 
         ResolvedSchema illegalSchema =
                 ResolvedSchema.of(
@@ -443,7 +443,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 containsCause(
                         new ValidationException(
                                 String.format(
-                                        "'upsert-kafka' connector doesn't support '%s' as value format, "
+                                        "'upsert-psc' connector doesn't support '%s' as value format, "
                                                 + "because '%s' is not in insert-only mode.",
                                         TestFormatFactory.IDENTIFIER,
                                         TestFormatFactory.IDENTIFIER))));
@@ -468,7 +468,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 containsCause(
                         new ValidationException(
                                 String.format(
-                                        "'upsert-kafka' connector doesn't support '%s' as value format, "
+                                        "'upsert-psc' connector doesn't support '%s' as value format, "
                                                 + "because '%s' is not in insert-only mode.",
                                         TestFormatFactory.IDENTIFIER,
                                         TestFormatFactory.IDENTIFIER))));
@@ -651,7 +651,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 null);
     }
 
-    private void assertKafkaSource(ScanTableSource.ScanRuntimeProvider provider) {
+    private void assertPscSource(ScanTableSource.ScanRuntimeProvider provider) {
         assertThat(provider, instanceOf(DataStreamScanProvider.class));
         final DataStreamScanProvider dataStreamScanProvider = (DataStreamScanProvider) provider;
         final Transformation<RowData> transformation =

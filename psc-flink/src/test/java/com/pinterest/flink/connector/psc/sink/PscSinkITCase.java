@@ -210,18 +210,18 @@ public class PscSinkITCase extends TestLogger {
     }
 
     @Test
-    public void testWriteRecordsToKafkaWithAtLeastOnceGuarantee() throws Exception {
-        writeRecordsToKafka(DeliveryGuarantee.AT_LEAST_ONCE, emittedRecordsCount);
+    public void testWriteRecordsToPscWithAtLeastOnceGuarantee() throws Exception {
+        writeRecordsToPsc(DeliveryGuarantee.AT_LEAST_ONCE, emittedRecordsCount);
     }
 
     @Test
-    public void testWriteRecordsToKafkaWithNoneGuarantee() throws Exception {
-        writeRecordsToKafka(DeliveryGuarantee.NONE, emittedRecordsCount);
+    public void testWriteRecordsToPscWithNoneGuarantee() throws Exception {
+        writeRecordsToPsc(DeliveryGuarantee.NONE, emittedRecordsCount);
     }
 
     @Test
-    public void testWriteRecordsToKafkaWithExactlyOnceGuarantee() throws Exception {
-        writeRecordsToKafka(DeliveryGuarantee.EXACTLY_ONCE, emittedRecordsWithCheckpoint);
+    public void testWriteRecordsToPscWithExactlyOnceGuarantee() throws Exception {
+        writeRecordsToPsc(DeliveryGuarantee.EXACTLY_ONCE, emittedRecordsWithCheckpoint);
     }
 
     @Test
@@ -390,7 +390,7 @@ public class PscSinkITCase extends TestLogger {
         checkProducerLeak();
     }
 
-    private void writeRecordsToKafka(
+    private void writeRecordsToPsc(
             DeliveryGuarantee deliveryGuarantee, SharedReference<AtomicLong> expectedRecords)
             throws Exception {
         final StreamExecutionEnvironment env = new LocalStreamEnvironment();

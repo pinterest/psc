@@ -59,7 +59,7 @@ import java.util.stream.Stream;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
-/** A version-agnostic Kafka {@link DynamicTableSink}. */
+/** A version-agnostic PSC {@link DynamicTableSink}. */
 @Internal
 public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata {
 
@@ -82,10 +82,10 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
     /** Data type to configure the formats. */
     protected final DataType physicalDataType;
 
-    /** Optional format for encoding keys to Kafka. */
+    /** Optional format for encoding keys to PSC. */
     protected final @Nullable EncodingFormat<SerializationSchema<RowData>> keyEncodingFormat;
 
-    /** Format for encoding values to Kafka. */
+    /** Format for encoding values to PSC. */
     protected final EncodingFormat<SerializationSchema<RowData>> valueEncodingFormat;
 
     /** Indices that determine the key fields and the source position in the consumed row. */
@@ -98,7 +98,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
     protected final @Nullable String keyPrefix;
 
     // --------------------------------------------------------------------------------------------
-    // Kafka-specific attributes
+    // PSC-specific attributes
     // --------------------------------------------------------------------------------------------
 
     /** The defined delivery guarantee. */
@@ -106,17 +106,17 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
 
     /**
      * If the {@link #deliveryGuarantee} is {@link DeliveryGuarantee#EXACTLY_ONCE} the value is the
-     * prefix for all ids of opened Kafka transactions.
+     * prefix for all ids of opened PubSub transactions.
      */
     @Nullable private final String transactionalIdPrefix;
 
-    /** The Kafka topic to write to. */
+    /** The PubSub topic to write to. */
     protected final String topic;
 
-    /** Properties for the Kafka producer. */
+    /** Properties for the PSC producer. */
     protected final Properties properties;
 
-    /** Partitioner to select Kafka partition for each item. */
+    /** Partitioner to select PubSub partition for each item. */
     protected final @Nullable FlinkPscPartitioner<RowData> partitioner;
 
     /**
@@ -128,7 +128,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
     /** Sink buffer flush config which only supported in upsert mode now. */
     protected final SinkBufferFlushMode flushMode;
 
-    /** Parallelism of the physical Kafka producer. * */
+    /** Parallelism of the physical PubSub producer. * */
     protected final @Nullable Integer parallelism;
 
     public PscDynamicSink(
@@ -161,7 +161,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
         this.transactionalIdPrefix = transactionalIdPrefix;
         // Mutable attributes
         this.metadataKeys = Collections.emptyList();
-        // Kafka-specific attributes
+        // PSC-specific attributes
         this.topic = checkNotNull(topic, "Topic must not be null.");
         this.properties = checkNotNull(properties, "Properties must not be null.");
         this.partitioner = partitioner;
@@ -171,7 +171,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
         this.flushMode = checkNotNull(flushMode);
         if (flushMode.isEnabled() && !upsertMode) {
             throw new IllegalArgumentException(
-                    "Sink buffer flush is only supported in upsert-kafka.");
+                    "Sink buffer flush is only supported in upsert-psc.");
         }
         this.parallelism = parallelism;
     }
@@ -275,7 +275,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
 
     @Override
     public String asSummaryString() {
-        return "Kafka table sink";
+        return "PSC table sink";
     }
 
     @Override

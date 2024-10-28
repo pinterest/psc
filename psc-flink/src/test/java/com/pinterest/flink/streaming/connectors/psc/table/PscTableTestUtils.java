@@ -45,7 +45,7 @@ import java.util.concurrent.TimeoutException;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
-/** Utils for kafka table tests. */
+/** Utils for psc table tests. */
 public class PscTableTestUtils {
     public static List<Row> collectRows(Table table, int expectedSize) throws Exception {
         final TableResult result = table.execute();

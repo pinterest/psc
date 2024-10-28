@@ -70,7 +70,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-/** A version-agnostic Kafka {@link ScanTableSource}. */
+/** A version-agnostic PSC {@link ScanTableSource}. */
 @Internal
 public class PscDynamicSource
         implements ScanTableSource, SupportsReadingMetadata, SupportsWatermarkPushDown {
@@ -99,10 +99,10 @@ public class PscDynamicSource
     /** Data type to configure the formats. */
     protected final DataType physicalDataType;
 
-    /** Optional format for decoding keys from Kafka. */
+    /** Optional format for decoding keys from PSC. */
     protected final @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat;
 
-    /** Format for decoding values from Kafka. */
+    /** Format for decoding values from PSC. */
     protected final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat;
 
     /** Indices that determine the key fields and the target position in the produced row. */
@@ -115,16 +115,16 @@ public class PscDynamicSource
     protected final @Nullable String keyPrefix;
 
     // --------------------------------------------------------------------------------------------
-    // Kafka-specific attributes
+    // PSC-specific attributes
     // --------------------------------------------------------------------------------------------
 
-    /** The Kafka topics to consume. */
+    /** The PSC topics to consume. */
     protected final List<String> topicUris;
 
-    /** The Kafka topic pattern to consume. */
+    /** The PSC topic pattern to consume. */
     protected final Pattern topicUriPattern;
 
-    /** Properties for the Kafka consumer. */
+    /** Properties for the PSC consumer. */
     protected final Properties properties;
 
     /**
@@ -181,7 +181,7 @@ public class PscDynamicSource
         this.producedDataType = physicalDataType;
         this.metadataKeys = Collections.emptyList();
         this.watermarkStrategy = null;
-        // Kafka-specific attributes
+        // PSC-specific attributes
         Preconditions.checkArgument(
                 (topics != null && topicPattern == null)
                         || (topics == null && topicPattern != null),
@@ -215,7 +215,7 @@ public class PscDynamicSource
         final TypeInformation<RowData> producedTypeInfo =
                 context.createTypeInformation(producedDataType);
 
-        final PscSource<RowData> kafkaSource =
+        final PscSource<RowData> pscSource =
                 createPscSource(keyDeserialization, valueDeserialization, producedTypeInfo);
 
         return new DataStreamScanProvider() {
@@ -227,14 +227,14 @@ public class PscDynamicSource
                 }
                 DataStreamSource<RowData> sourceStream =
                         execEnv.fromSource(
-                                kafkaSource, watermarkStrategy, "KafkaSource-" + tableIdentifier);
+                                pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
                 providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
                 return sourceStream;
             }
 
             @Override
             public boolean isBounded() {
-                return kafkaSource.getBoundedness() == Boundedness.BOUNDED;
+                return pscSource.getBoundedness() == Boundedness.BOUNDED;
             }
         };
     }
@@ -319,7 +319,7 @@ public class PscDynamicSource
 
     @Override
     public String asSummaryString() {
-        return "Kafka table source";
+        return "PSC table source";
     }
 
     @Override

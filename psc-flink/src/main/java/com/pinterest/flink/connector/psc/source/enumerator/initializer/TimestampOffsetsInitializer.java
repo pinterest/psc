@@ -47,7 +47,7 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
 
         // First get the current end offsets of the partitions. This is going to be used
         // in case we cannot find a suitable offsets based on the timestamp, i.e. the message
-        // meeting the requirement of the timestamp have not been produced to Kafka yet, in
+        // meeting the requirement of the timestamp have not been produced to PSC yet, in
         // this case, we just use the latest offset.
         // We need to get the latest offsets before querying offsets by time to ensure that
         // no message is going to be missed.

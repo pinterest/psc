@@ -119,10 +119,10 @@ public class PscSourceReaderMetricsTest {
     @Test
     public void testFailedCommit() {
         MetricListener metricListener = new MetricListener();
-        final PscSourceReaderMetrics kafkaSourceReaderMetrics =
+        final PscSourceReaderMetrics pscSourceReaderMetrics =
                 new PscSourceReaderMetrics(
                         InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
-        kafkaSourceReaderMetrics.recordFailedCommit();
+        pscSourceReaderMetrics.recordFailedCommit();
         final Optional<Counter> commitsFailedCounter =
                 metricListener.getCounter(
                         PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP,

@@ -340,7 +340,7 @@ public class PscDynamicTableFactory
                             .orElse(configuration.get(VALUE_FORMAT));
             throw new ValidationException(
                     String.format(
-                            "The Kafka table '%s' with '%s' format doesn't support defining PRIMARY KEY constraint"
+                            "The PSC table '%s' with '%s' format doesn't support defining PRIMARY KEY constraint"
                                     + " on the table, because it can't guarantee the semantic of primary key.",
                             tableName.asSummaryString(), formatName));
         }

@@ -194,7 +194,7 @@ public class PscDynamicTableFactoryTest {
     @Test
     public void testTableSource() {
         final DynamicTableSource actualSource = createTableSource(SCHEMA, getBasicSourceOptions());
-        final PscDynamicSource actualKafkaSource = (PscDynamicSource) actualSource;
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
 
         final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
         specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_0), OFFSET_0);
@@ -204,7 +204,7 @@ public class PscDynamicTableFactoryTest {
                 new DecodingFormatMock(",", true);
 
         // Test scan source equals
-        final PscDynamicSource expectedKafkaSource =
+        final PscDynamicSource expectedPscSource =
                 createExpectedScanSource(
                         SCHEMA_DATA_TYPE,
                         null,
@@ -218,10 +218,10 @@ public class PscDynamicTableFactoryTest {
                         StartupMode.SPECIFIC_OFFSETS,
                         specificOffsets,
                         0);
-        assertThat(actualKafkaSource).isEqualTo(expectedKafkaSource);
+        assertThat(actualPscSource).isEqualTo(expectedPscSource);
 
         ScanTableSource.ScanRuntimeProvider provider =
-                actualKafkaSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+                actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
         assertPscSource(provider);
     }
 
@@ -246,7 +246,7 @@ public class PscDynamicTableFactoryTest {
                 new DecodingFormatMock(",", true);
 
         // Test scan source equals
-        final PscDynamicSource expectedKafkaSource =
+        final PscDynamicSource expectedPscSource =
                 createExpectedScanSource(
                         SCHEMA_DATA_TYPE,
                         null,
@@ -260,11 +260,11 @@ public class PscDynamicTableFactoryTest {
                         StartupMode.EARLIEST,
                         specificOffsets,
                         0);
-        final PscDynamicSource actualKafkaSource = (PscDynamicSource) actualSource;
-        assertThat(actualKafkaSource).isEqualTo(expectedKafkaSource);
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        assertThat(actualPscSource).isEqualTo(expectedPscSource);
 
         ScanTableSource.ScanRuntimeProvider provider =
-                actualKafkaSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+                actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
 
         assertPscSource(provider);
     }
@@ -272,9 +272,9 @@ public class PscDynamicTableFactoryTest {
     @Test
     public void testTableSourceWithKeyValue() {
         final DynamicTableSource actualSource = createTableSource(SCHEMA, getKeyValueOptions());
-        final PscDynamicSource actualKafkaSource = (PscDynamicSource) actualSource;
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
         // initialize stateful testing formats
-        actualKafkaSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
 
         final DecodingFormatMock keyDecodingFormat = new DecodingFormatMock("#", false);
         keyDecodingFormat.producedDataType =
@@ -287,7 +287,7 @@ public class PscDynamicTableFactoryTest {
                                 DataTypes.FIELD(TIME, DataTypes.TIMESTAMP(3)))
                         .notNull();
 
-        final PscDynamicSource expectedKafkaSource =
+        final PscDynamicSource expectedPscSource =
                 createExpectedScanSource(
                         SCHEMA_DATA_TYPE,
                         keyDecodingFormat,
@@ -302,7 +302,7 @@ public class PscDynamicTableFactoryTest {
                         Collections.emptyMap(),
                         0);
 
-        assertThat(actualSource).isEqualTo(expectedKafkaSource);
+        assertThat(actualSource).isEqualTo(expectedPscSource);
     }
 
     @Test
@@ -311,12 +311,12 @@ public class PscDynamicTableFactoryTest {
         options.put("value.test-format.readable-metadata", "metadata_1:INT, metadata_2:STRING");
 
         final DynamicTableSource actualSource = createTableSource(SCHEMA_WITH_METADATA, options);
-        final PscDynamicSource actualKafkaSource = (PscDynamicSource) actualSource;
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
         // initialize stateful testing formats
-        actualKafkaSource.applyReadableMetadata(
+        actualPscSource.applyReadableMetadata(
                 Arrays.asList("timestamp", "value.metadata_2"),
                 SCHEMA_WITH_METADATA.toSourceRowDataType());
-        actualKafkaSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
 
         final DecodingFormatMock expectedKeyFormat =
                 new DecodingFormatMock(
@@ -464,10 +464,10 @@ public class PscDynamicTableFactoryTest {
                         "psc-sink");
         assertThat(actualSink).isEqualTo(expectedSink);
 
-        // Test kafka producer.
-        final PscDynamicSink actualKafkaSink = (PscDynamicSink) actualSink;
+        // Test PSC producer.
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
         DynamicTableSink.SinkRuntimeProvider provider =
-                actualKafkaSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+                actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
         assertThat(provider).isInstanceOf(SinkV2Provider.class);
         final SinkV2Provider sinkProvider = (SinkV2Provider) provider;
         final Sink<RowData> sinkFunction = sinkProvider.createSink();
@@ -516,9 +516,9 @@ public class PscDynamicTableFactoryTest {
                             options.put("sink.transactional-id-prefix", "psc-sink");
                         });
         final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
-        final PscDynamicSink actualKafkaSink = (PscDynamicSink) actualSink;
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
         // initialize stateful testing formats
-        actualKafkaSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+        actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
 
         final EncodingFormatMock keyEncodingFormat = new EncodingFormatMock("#");
         keyEncodingFormat.consumedDataType =
@@ -921,7 +921,7 @@ public class PscDynamicTableFactoryTest {
                 .isThrownBy(() -> createTableSink(pkSchema, getBasicSinkOptions()))
                 .havingRootCause()
                 .withMessage(
-                        "The Kafka table 'default.default.t1' with 'test-format' format"
+                        "The PSC table 'default.default.t1' with 'test-format' format"
                                 + " doesn't support defining PRIMARY KEY constraint on the table, because it can't"
                                 + " guarantee the semantic of primary key.");
 
@@ -929,7 +929,7 @@ public class PscDynamicTableFactoryTest {
                 .isThrownBy(() -> createTableSink(pkSchema, getKeyValueOptions()))
                 .havingRootCause()
                 .withMessage(
-                        "The Kafka table 'default.default.t1' with 'test-format' format"
+                        "The PSC table 'default.default.t1' with 'test-format' format"
                                 + " doesn't support defining PRIMARY KEY constraint on the table, because it can't"
                                 + " guarantee the semantic of primary key.");
 
@@ -950,7 +950,7 @@ public class PscDynamicTableFactoryTest {
                 .isThrownBy(() -> createTableSource(pkSchema, getBasicSourceOptions()))
                 .havingRootCause()
                 .withMessage(
-                        "The Kafka table 'default.default.t1' with 'test-format' format"
+                        "The PSC table 'default.default.t1' with 'test-format' format"
                                 + " doesn't support defining PRIMARY KEY constraint on the table, because it can't"
                                 + " guarantee the semantic of primary key.");
     }
@@ -1033,12 +1033,11 @@ public class PscDynamicTableFactoryTest {
 
     private static Map<String, String> getBasicSourceOptions() {
         Map<String, String> tableOptions = new HashMap<>();
-        // Kafka specific options.
+        // PSC specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties.psc.consumer.group.id", "dummy");
         tableOptions.put("properties.psc.cluster.uri", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
-//        tableOptions.put("properties.bootstrap.servers", "dummy");
         tableOptions.put("scan.startup.mode", "specific-offsets");
         tableOptions.put("scan.startup.specific-offsets", PROPS_SCAN_OFFSETS);
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
@@ -1058,7 +1057,7 @@ public class PscDynamicTableFactoryTest {
 
     private static Map<String, String> getBasicSinkOptions() {
         Map<String, String> tableOptions = new HashMap<>();
-        // Kafka specific options.
+        // PSC specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
@@ -1078,7 +1077,7 @@ public class PscDynamicTableFactoryTest {
 
     private static Map<String, String> getKeyValueOptions() {
         Map<String, String> tableOptions = new HashMap<>();
-        // Kafka specific options.
+        // PSC specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");

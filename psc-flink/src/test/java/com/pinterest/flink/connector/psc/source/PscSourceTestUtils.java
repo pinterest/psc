@@ -30,9 +30,9 @@ public class PscSourceTestUtils {
 
     /**
      * Create {@link PscSourceReader} with a custom hook handling IDs of finished {@link
-     * org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit}.
+     * com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit}.
      *
-     * @param pscSource Kafka source
+     * @param pscSource PSC source
      * @param sourceReaderContext Context for SourceReader
      * @param splitFinishedHook Hook for handling finished splits
      * @param <T> Type of emitting records
@@ -46,7 +46,7 @@ public class PscSourceTestUtils {
                 pscSource.createReader(sourceReaderContext, splitFinishedHook));
     }
 
-    /** Get configuration of KafkaSource. */
+    /** Get configuration of PscSource. */
     public static Configuration getPscSourceConfiguration(PscSource<?> pscSource) {
         return pscSource.getConfiguration();
     }

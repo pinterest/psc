@@ -42,8 +42,8 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * The SplitFetcherManager for Kafka source. This class is needed to help commit the offsets to
- * Kafka using the KafkaConsumer inside the {@link
+ * The SplitFetcherManager for PSC source. This class is needed to help commit the offsets to
+ * PSC using the PscConsumer inside the {@link
  * PscTopicUriPartitionSplitReader}.
  */
 @Internal

@@ -60,9 +60,9 @@ import static org.apache.commons.lang3.RandomStringUtils.randomAlphanumeric;
 public class PscSourceExternalContext implements DataStreamSourceExternalContext<String> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSourceExternalContext.class);
-    private static final String TOPIC_NAME_PREFIX = "kafka-test-topic-";
+    private static final String TOPIC_NAME_PREFIX = "psc-test-topic-";
     private static final Pattern TOPIC_NAME_PATTERN = Pattern.compile(TOPIC_NAME_PREFIX + ".*");
-    private static final String GROUP_ID_PREFIX = "kafka-source-external-context-";
+    private static final String GROUP_ID_PREFIX = "psc-source-external-context-";
     private static final int NUM_RECORDS_UPPER_BOUND = 500;
     private static final int NUM_RECORDS_LOWER_BOUND = 100;
 
@@ -177,7 +177,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
 
     @Override
     public String toString() {
-        return "KafkaSource-" + splitMappingMode.toString();
+        return "PscSource-" + splitMappingMode.toString();
     }
 
     private String randomize(String prefix) {
@@ -232,8 +232,6 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
 
     private Properties getPscProducerProperties(int producerId) {
         Properties pscProducerProperties = new Properties();
-//        kafkaProducerProperties.setProperty(
-//                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         pscProducerProperties.setProperty(
                 PscConfiguration.PSC_PRODUCER_CLIENT_ID,
                 String.join(
@@ -249,7 +247,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
         return pscProducerProperties;
     }
 
-    /** Mode of mapping split to Kafka components. */
+    /** Mode of mapping split to PSC components. */
     public enum SplitMappingMode {
         /** Use a single-partitioned topic as a split. */
         TOPIC,

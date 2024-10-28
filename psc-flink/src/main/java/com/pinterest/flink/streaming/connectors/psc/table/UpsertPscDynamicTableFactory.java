@@ -70,7 +70,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUriPattern;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUris;
 
-/** Upsert-Kafka factory. */
+/** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
         implements DynamicTableSourceFactory, DynamicTableSinkFactory {
 
@@ -176,7 +176,6 @@ public class UpsertPscDynamicTableFactory
         SinkBufferFlushMode flushMode =
                 new SinkBufferFlushMode(batchSize, batchInterval.toMillis());
 
-        // use {@link org.apache.kafka.clients.producer.internals.DefaultPartitioner}.
         // it will use hash partition if key is set else in round-robin behaviour.
         return new PscDynamicSink(
                 context.getPhysicalRowDataType(),
@@ -203,7 +202,7 @@ public class UpsertPscDynamicTableFactory
         DataType physicalDataType = schema.toPhysicalRowDataType();
 
         Configuration tableOptions = Configuration.fromMap(catalogTable.getOptions());
-        // upsert-kafka will set key.fields to primary key fields by default
+        // upsert-psc will set key.fields to primary key fields by default
         tableOptions.set(KEY_FIELDS, keyFields);
 
         int[] keyProjection = createKeyFormatProjection(tableOptions, physicalDataType);
@@ -241,7 +240,7 @@ public class UpsertPscDynamicTableFactory
         List<String> topic = tableOptions.get(TOPIC_URI);
         if (topic.size() > 1) {
             throw new ValidationException(
-                    "The 'upsert-kafka' connector doesn't support topic list now. "
+                    "The 'upsert-psc' connector doesn't support topic list now. "
                             + "Please use single topic as the value of the parameter 'topic'.");
         }
     }
@@ -252,7 +251,7 @@ public class UpsertPscDynamicTableFactory
             String identifier = tableOptions.get(KEY_FORMAT);
             throw new ValidationException(
                     String.format(
-                            "'upsert-kafka' connector doesn't support '%s' as key format, "
+                            "'upsert-psc' connector doesn't support '%s' as key format, "
                                     + "because '%s' is not in insert-only mode.",
                             identifier, identifier));
         }
@@ -260,7 +259,7 @@ public class UpsertPscDynamicTableFactory
             String identifier = tableOptions.get(VALUE_FORMAT);
             throw new ValidationException(
                     String.format(
-                            "'upsert-kafka' connector doesn't support '%s' as value format, "
+                            "'upsert-psc' connector doesn't support '%s' as value format, "
                                     + "because '%s' is not in insert-only mode.",
                             identifier, identifier));
         }
@@ -269,9 +268,9 @@ public class UpsertPscDynamicTableFactory
     private static void validatePKConstraints(int[] schema) {
         if (schema.length == 0) {
             throw new ValidationException(
-                    "'upsert-kafka' tables require to define a PRIMARY KEY constraint. "
-                            + "The PRIMARY KEY specifies which columns should be read from or write to the Kafka message key. "
-                            + "The PRIMARY KEY also defines records in the 'upsert-kafka' table should update or delete on which keys.");
+                    "'upsert-psc' tables require to define a PRIMARY KEY constraint. "
+                            + "The PRIMARY KEY specifies which columns should be read from or write to the PubSub message key. "
+                            + "The PRIMARY KEY also defines records in the 'upsert-psc' table should update or delete on which keys.");
         }
     }
 

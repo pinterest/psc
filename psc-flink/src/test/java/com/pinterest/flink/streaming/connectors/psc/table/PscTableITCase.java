@@ -97,7 +97,7 @@ public class PscTableITCase extends PscTableTestBase {
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
-        // ---------- Produce an event time stream into Kafka -------------------
+        // ---------- Produce an event time stream into PSC -------------------
         String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String bootstraps = getBootstrapServers();
 
@@ -218,7 +218,7 @@ public class PscTableITCase extends PscTableTestBase {
                                                 "%s_%s_%s", currency, format, UUID.randomUUID()))
                         .collect(Collectors.toList());
         List<String> topicUris = topics.stream().map(t -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + t).collect(Collectors.toList());
-        // Because kafka connector currently doesn't support write data into multiple topic
+        // Because psc connector currently doesn't support write data into multiple topic
         // together,
         // we have to create multiple sink tables.
         IntStream.range(0, 4)

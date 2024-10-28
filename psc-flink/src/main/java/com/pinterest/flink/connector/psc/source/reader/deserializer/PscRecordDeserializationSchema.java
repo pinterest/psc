@@ -32,7 +32,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.Map;
 
-/** An interface for the deserialization of Kafka records. */
+/** An interface for the deserialization of PSC messages. */
 @PublicEvolving
 public interface PscRecordDeserializationSchema<T> extends Serializable, ResultTypeQueryable<T> {
 
@@ -97,7 +97,7 @@ public interface PscRecordDeserializationSchema<T> extends Serializable, ResultT
     }
 
     /**
-     * Wraps a Kafka {@link Deserializer} to a {@link PscRecordDeserializationSchema}.
+     * Wraps a PSC {@link Deserializer} to a {@link PscRecordDeserializationSchema}.
      *
      * @param valueDeserializerClass the deserializer class used to deserialize the value.
      * @param <V> the value type.
@@ -110,12 +110,12 @@ public interface PscRecordDeserializationSchema<T> extends Serializable, ResultT
     }
 
     /**
-     * Wraps a Kafka {@link Deserializer} to a {@link PscRecordDeserializationSchema}.
+     * Wraps a PSC {@link Deserializer} to a {@link PscRecordDeserializationSchema}.
      *
      * @param valueDeserializerClass the deserializer class used to deserialize the value.
      * @param config the configuration of the value deserializer. If the deserializer is an
      *     implementation of {@code Configurable}, the configuring logic will be handled by {@link
-     *     org.apache.kafka.common.Configurable#configure(Map)} with the given config,
+     *     com.pinterest.psc.common.PscPlugin#configure(PscConfiguration)} with the given config,
      *     otherwise {@link Deserializer#configure(com.pinterest.psc.config.PscConfiguration, boolean)} will be invoked.
      * @param <V> the value type.
      * @param <D> the type of the deserializer.

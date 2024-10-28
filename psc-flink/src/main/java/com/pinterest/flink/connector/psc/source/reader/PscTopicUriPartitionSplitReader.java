@@ -389,7 +389,7 @@ public class PscTopicUriPartitionSplitReader
                     emptyPartitions.stream()
                             .map(PscTopicUriPartitionSplit::toSplitId)
                             .collect(Collectors.toSet()));
-            // Un-assign partitions from Kafka consumer
+            // Un-assign partitions from PSC consumer
             unassignPartitions(emptyPartitions);
         }
     }
@@ -464,7 +464,7 @@ public class PscTopicUriPartitionSplitReader
     }
 
     /**
-     * Catch {@link WakeupException} in Kafka consumer call and retry the invocation on exception.
+     * Catch {@link WakeupException} in PSC consumer call and retry the invocation on exception.
      *
      * <p>This helper function handles a race condition as below:
      *

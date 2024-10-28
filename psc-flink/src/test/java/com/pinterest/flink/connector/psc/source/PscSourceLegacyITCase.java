@@ -145,13 +145,13 @@ public class PscSourceLegacyITCase extends PscConsumerTestBaseWithKafkaAsPubSub 
     // --- offset committing ---
 
     @Test
-    public void testCommitOffsetsToKafka() throws Exception {
-        runCommitOffsetsToKafka();
+    public void testCommitOffsetsToPsc() throws Exception {
+        runCommitOffsetsToPsc();
     }
 
     @Test
-    public void testAutoOffsetRetrievalAndCommitToKafka() throws Exception {
-        runAutoOffsetRetrievalAndCommitToKafka();
+    public void testAutoOffsetRetrievalAndCommitToPsc() throws Exception {
+        runAutoOffsetRetrievalAndCommitToPsc();
     }
 
     @Test

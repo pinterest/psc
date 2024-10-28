@@ -225,7 +225,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      * Ensures that the committed offsets to Kafka are the offsets of "the next
      * record to process".
      */
-    public void runCommitOffsetsToKafka() throws Exception {
+    public void runCommitOffsetsToPsc() throws Exception {
         // 3 partitions with 50 records each (0-49, so the expected commit offset of
         // each partition should be 50)
         final int parallelism = 3;
@@ -312,7 +312,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      * <p>
      * See FLINK-3440 as well
      */
-    public void runAutoOffsetRetrievalAndCommitToKafka() throws Exception {
+    public void runAutoOffsetRetrievalAndCommitToPsc() throws Exception {
         // 3 partitions with 50 records each (0-49, so the expected commit offset of
         // each partition should be 50)
         final int parallelism = 3;

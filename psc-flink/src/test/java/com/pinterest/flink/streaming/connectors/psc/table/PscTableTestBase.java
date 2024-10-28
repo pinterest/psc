@@ -59,7 +59,7 @@ import java.util.stream.Collectors;
 
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 
-/** Base class for Kafka Table IT Cases. */
+/** Base class for PSC Table IT Cases. */
 public abstract class PscTableTestBase extends AbstractTestBase {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscTableTestBase.class);

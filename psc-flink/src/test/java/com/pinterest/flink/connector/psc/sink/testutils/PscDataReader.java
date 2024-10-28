@@ -33,7 +33,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
 
-/** Kafka dataStream data reader. */
+/** PSC dataStream data reader. */
 public class PscDataReader implements ExternalSystemDataReader<String> {
     private final PscConsumer<String, String> consumer;
 

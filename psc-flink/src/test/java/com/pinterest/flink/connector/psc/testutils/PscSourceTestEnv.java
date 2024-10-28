@@ -35,11 +35,7 @@ import com.pinterest.psc.serde.IntegerSerializer;
 import com.pinterest.psc.serde.StringDeserializer;
 import com.pinterest.psc.serde.StringSerializer;
 import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsOptions;
 import org.apache.kafka.clients.admin.RecordsToDelete;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 
 import java.time.Duration;
@@ -53,7 +49,6 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static org.junit.Assert.assertEquals;

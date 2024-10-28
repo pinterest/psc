@@ -47,45 +47,45 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
- * The @builder class for {@link org.apache.flink.connector.kafka.source.KafkaSource} to make it easier for the users to construct a {@link
- * org.apache.flink.connector.kafka.source.KafkaSource}.
+ * The @builder class for {@link PscSource} to make it easier for the users to construct a {@link
+ * PscSource}.
  *
- * <p>The following example shows the minimum setup to create a KafkaSource that reads the String
- * values from a Kafka topic.
+ * <p>The following example shows the minimum setup to create a PscSource that reads the String
+ * values from a PSC topic.
  *
  * <pre>{@code
- * KafkaSource<String> source = KafkaSource
+ * PscSource<String> source = PscSource
  *     .<String>builder()
  *     .setBootstrapServers(MY_BOOTSTRAP_SERVERS)
  *     .setTopics(Arrays.asList(TOPIC1, TOPIC2))
- *     .setDeserializer(KafkaRecordDeserializationSchema.valueOnly(StringDeserializer.class))
+ *     .setDeserializer(PscRecordDeserializationSchema.valueOnly(StringDeserializer.class))
  *     .build();
  * }</pre>
  *
  * <p>The bootstrap servers, topics/partitions to consume, and the record deserializer are required
  * fields that must be set.
  *
- * <p>To specify the starting offsets of the KafkaSource, one can call {@link
+ * <p>To specify the starting offsets of the PscSource, one can call {@link
  * #setStartingOffsets(OffsetsInitializer)}.
  *
- * <p>By default the KafkaSource runs in an {@link Boundedness#CONTINUOUS_UNBOUNDED} mode and never
- * stops until the Flink job is canceled or fails. To let the KafkaSource run in {@link
+ * <p>By default the PscSource runs in an {@link Boundedness#CONTINUOUS_UNBOUNDED} mode and never
+ * stops until the Flink job is canceled or fails. To let the PscSource run in {@link
  * Boundedness#CONTINUOUS_UNBOUNDED} but stops at some given offsets, one can call {@link
- * #setUnbounded(OffsetsInitializer)}. For example the following KafkaSource stops after it consumes
+ * #setUnbounded(OffsetsInitializer)}. For example the following PscSource stops after it consumes
  * up to the latest partition offsets at the point when the Flink started.
  *
  * <pre>{@code
- * KafkaSource<String> source = KafkaSource
+ * PscSource<String> source = PscSource
  *     .<String>builder()
  *     .setBootstrapServers(MY_BOOTSTRAP_SERVERS)
  *     .setTopics(Arrays.asList(TOPIC1, TOPIC2))
- *     .setDeserializer(KafkaRecordDeserializationSchema.valueOnly(StringDeserializer.class))
+ *     .setDeserializer(PscRecordDeserializationSchema.valueOnly(StringDeserializer.class))
  *     .setUnbounded(OffsetsInitializer.latest())
  *     .build();
  * }</pre>
  *
  * <p>Check the Java docs of each individual methods to learn more about the settings to build a
- * KafkaSource.
+ * PscSource.
  */
 @PublicEvolving
 public class PscSourceBuilder<OUT> {
@@ -140,7 +140,7 @@ public class PscSourceBuilder<OUT> {
      *
      * @param topicUris the list of topicRns to consume from.
      * @return this PscSourceBuilder.
-     * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Collection)
+     * @see com.pinterest.psc.consumer.PscConsumer#subscribe(Collection)
      */
     public PscSourceBuilder<OUT> setTopicUris(List<String> topicUris) {
         ensureSubscriberIsNull("topics");
@@ -155,7 +155,7 @@ public class PscSourceBuilder<OUT> {
      *
      * @param topicUris the list of topicRns to consume from.
      * @return this PscSourceBuilder.
-     * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Collection)
+     * @see com.pinterest.psc.consumer.PscConsumer#subscribe(Collection)
      */
     public PscSourceBuilder<OUT> setTopicUris(String... topicUris) {
         return setTopicUris(Arrays.asList(topicUris));
@@ -166,7 +166,6 @@ public class PscSourceBuilder<OUT> {
      *
      * @param topicUriPattern the pattern of the topic name to consume from.
      * @return this PscSourceBuilder.
-     * @see org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(Pattern)
      */
     public PscSourceBuilder<OUT> setTopicUriPattern(Pattern topicUriPattern) {
         ensureSubscriberIsNull("topicUri pattern");
@@ -178,8 +177,8 @@ public class PscSourceBuilder<OUT> {
      * Set a set of partitions to consume from.
      *
      * @param partitions the set of partitions to consume from.
-     * @return this KafkaSourceBuilder.
-     * @see org.apache.kafka.clients.consumer.KafkaConsumer#assign(Collection)
+     * @return this PscSourceBuilder.
+     * @see com.pinterest.psc.consumer.PscConsumer#assign(Collection)
      */
     public PscSourceBuilder<OUT> setPartitions(Set<TopicUriPartition> partitions) {
         ensureSubscriberIsNull("partitions");
@@ -188,7 +187,7 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * Specify from which offsets the KafkaSource should start consume from by providing an {@link
+     * Specify from which offsets the PscSource should start consume from by providing an {@link
      * OffsetsInitializer}.
      *
      * <p>The following {@link OffsetsInitializer}s are commonly used and provided out of the box.
@@ -196,7 +195,7 @@ public class PscSourceBuilder<OUT> {
      *
      * <ul>
      *   <li>{@link OffsetsInitializer#earliest()} - starting from the earliest offsets. This is
-     *       also the default {@link OffsetsInitializer} of the KafkaSource for starting offsets.
+     *       also the default {@link OffsetsInitializer} of the PscSource for starting offsets.
      *   <li>{@link OffsetsInitializer#latest()} - starting from the latest offsets.
      *   <li>{@link OffsetsInitializer#committedOffsets()} - starting from the committed offsets of
      *       the consumer group.
@@ -207,7 +206,7 @@ public class PscSourceBuilder<OUT> {
      *   <li>{@link OffsetsInitializer#offsets(Map)} - starting from the specified offsets for each
      *       partition.
      *   <li>{@link OffsetsInitializer#timestamp(long)} - starting from the specified timestamp for
-     *       each partition. Note that the guarantee here is that all the records in Kafka whose
+     *       each partition. Note that the guarantee here is that all the records in the backend whose
      *       {@link MessageId#getOffset()} is greater than
      *       the given starting timestamp will be consumed. However, it is possible that some
      *       consumer records whose timestamp is smaller than the given starting timestamp are also
@@ -216,7 +215,7 @@ public class PscSourceBuilder<OUT> {
      *
      * @param startingOffsetsInitializer the {@link OffsetsInitializer} setting the starting offsets
      *     for the Source.
-     * @return this KafkaSourceBuilder.
+     * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setStartingOffsets(
             OffsetsInitializer startingOffsetsInitializer) {
@@ -226,7 +225,7 @@ public class PscSourceBuilder<OUT> {
 
     /**
      * By default the PscSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
-     * and thus never stops until the Flink job fails or is canceled. To let the KafkaSource run as
+     * and thus never stops until the Flink job fails or is canceled. To let the PscSource run as
      * a streaming source but still stops at some point, one can set an {@link OffsetsInitializer}
      * to specify the stopping offsets for each partition. When all the partitions have reached
      * their stopping offsets, the PscSource will then exit.
@@ -241,13 +240,13 @@ public class PscSourceBuilder<OUT> {
      *
      * <ul>
      *   <li>{@link OffsetsInitializer#latest()} - stop at the latest offsets of the partitions when
-     *       the KafkaSource starts to run.
+     *       the PscSource starts to run.
      *   <li>{@link OffsetsInitializer#committedOffsets()} - stops at the committed offsets of the
      *       consumer group.
      *   <li>{@link OffsetsInitializer#offsets(Map)} - stops at the specified offsets for each
      *       partition.
      *   <li>{@link OffsetsInitializer#timestamp(long)} - stops at the specified timestamp for each
-     *       partition. The guarantee of setting the stopping timestamp is that no Kafka records
+     *       partition. The guarantee of setting the stopping timestamp is that no records
      *       whose {@link MessageId#getTimestamp()} is greater
      *       than the given stopping timestamp will be consumed. However, it is possible that some
      *       records whose timestamp is smaller than the specified stopping timestamp are not
@@ -256,7 +255,7 @@ public class PscSourceBuilder<OUT> {
      *
      * @param stoppingOffsetsInitializer The {@link OffsetsInitializer} to specify the stopping
      *     offset.
-     * @return this KafkaSourceBuilder.
+     * @return this PscSourceBuilder.
      * @see #setBounded(OffsetsInitializer)
      */
     public PscSourceBuilder<OUT> setUnbounded(OffsetsInitializer stoppingOffsetsInitializer) {
@@ -267,7 +266,7 @@ public class PscSourceBuilder<OUT> {
 
     /**
      * By default the PscSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
-     * and thus never stops until the Flink job fails or is canceled. To let the KafkaSource run in
+     * and thus never stops until the Flink job fails or is canceled. To let the PscSource run in
      * {@link Boundedness#BOUNDED} manner and stops at some point, one can set an {@link
      * OffsetsInitializer} to specify the stopping offsets for each partition. When all the
      * partitions have reached their stopping offsets, the PscSource will then exit.
@@ -281,13 +280,13 @@ public class PscSourceBuilder<OUT> {
      *
      * <ul>
      *   <li>{@link OffsetsInitializer#latest()} - stop at the latest offsets of the partitions when
-     *       the KafkaSource starts to run.
+     *       the PscSource starts to run.
      *   <li>{@link OffsetsInitializer#committedOffsets()} - stops at the committed offsets of the
      *       consumer group.
      *   <li>{@link OffsetsInitializer#offsets(Map)} - stops at the specified offsets for each
      *       partition.
      *   <li>{@link OffsetsInitializer#timestamp(long)} - stops at the specified timestamp for each
-     *       partition. The guarantee of setting the stopping timestamp is that no Kafka records
+     *       partition. The guarantee of setting the stopping timestamp is that no records
      *       whose {@link MessageId#getTimestamp()} is greater
      *       than the given stopping timestamp will be consumed. However, it is possible that some
      *       records whose timestamp is smaller than the specified stopping timestamp are not
@@ -296,7 +295,7 @@ public class PscSourceBuilder<OUT> {
      *
      * @param stoppingOffsetsInitializer the {@link OffsetsInitializer} to specify the stopping
      *     offsets.
-     * @return this KafkaSourceBuilder.
+     * @return this PscSourceBuilder.
      * @see #setUnbounded(OffsetsInitializer)
      */
     public PscSourceBuilder<OUT> setBounded(OffsetsInitializer stoppingOffsetsInitializer) {
@@ -307,11 +306,11 @@ public class PscSourceBuilder<OUT> {
 
     /**
      * Sets the {@link PscRecordDeserializationSchema deserializer} of the {@link
-     * org.apache.kafka.clients.consumer.ConsumerRecord ConsumerRecord} for KafkaSource.
+     * org.apache.kafka.clients.consumer.ConsumerRecord ConsumerRecord} for PscSource.
      *
-     * @param recordDeserializer the deserializer for Kafka {@link
+     * @param recordDeserializer the deserializer for PSC {@link
      *     org.apache.kafka.clients.consumer.ConsumerRecord ConsumerRecord}.
-     * @return this KafkaSourceBuilder.
+     * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setDeserializer(
             PscRecordDeserializationSchema<OUT> recordDeserializer) {
@@ -321,12 +320,12 @@ public class PscSourceBuilder<OUT> {
 
     /**
      * Sets the {@link PscRecordDeserializationSchema deserializer} of the {@link
-     * org.apache.kafka.clients.consumer.ConsumerRecord ConsumerRecord} for KafkaSource. The given
+     * org.apache.kafka.clients.consumer.ConsumerRecord ConsumerRecord} for PscSource. The given
      * {@link DeserializationSchema} will be used to deserialize the value of ConsumerRecord. The
      * other information (e.g. key) in a ConsumerRecord will be ignored.
      *
      * @param deserializationSchema the {@link DeserializationSchema} to use for deserialization.
-     * @return this KafkaSourceBuilder.
+     * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setValueOnlyDeserializer(
             DeserializationSchema<OUT> deserializationSchema) {
@@ -336,20 +335,20 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * Sets the client id prefix of this KafkaSource.
+     * Sets the client id prefix of this PscSource.
      *
-     * @param prefix the client id prefix to use for this KafkaSource.
-     * @return this KafkaSourceBuilder.
+     * @param prefix the client id prefix to use for this PscSource.
+     * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setClientIdPrefix(String prefix) {
         return setProperty(PscSourceOptions.CLIENT_ID_PREFIX.key(), prefix);
     }
 
     /**
-     * Set an arbitrary property for the KafkaSource and KafkaConsumer. The valid keys can be found
+     * Set an arbitrary property for the PscSource and PscConsumer. The valid keys can be found
      * in {@link PscConfiguration} and {@link PscSourceOptions}.
      *
-     * <p>Note that the following keys will be overridden by the builder when the KafkaSource is
+     * <p>Note that the following keys will be overridden by the builder when the PscSource is
      * created.
      *
      * <ul>
@@ -364,7 +363,7 @@ public class PscSourceBuilder<OUT> {
      *
      * @param key the key of the property.
      * @param value the value of the property.
-     * @return this KafkaSourceBuilder.
+     * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setProperty(String key, String value) {
         props.setProperty(key, value);
@@ -375,7 +374,7 @@ public class PscSourceBuilder<OUT> {
      * Set arbitrary properties for the PscSource and PscConsumer. The valid keys can be found
      * in {@link PscConfiguration} and {@link PscSourceOptions}.
      *
-     * <p>Note that the following keys will be overridden by the builder when the KafkaSource is
+     * <p>Note that the following keys will be overridden by the builder when the PscSource is
      * created.
      *
      * <ul>
@@ -390,8 +389,8 @@ public class PscSourceBuilder<OUT> {
      *       "group.id-RANDOM_LONG" if the client id prefix is not set.
      * </ul>
      *
-     * @param props the properties to set for the KafkaSource.
-     * @return this KafkaSourceBuilder.
+     * @param props the properties to set for the PscSource.
+     * @return this PscSourceBuilder.
      */
     public PscSourceBuilder<OUT> setProperties(Properties props) {
         this.props.putAll(props);
@@ -399,9 +398,9 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * Build the {@link org.apache.flink.connector.kafka.source.KafkaSource}.
+     * Build the {@link org.apache.flink.connector.kafka.source.PscSource}.
      *
-     * @return a KafkaSource with the settings made for this builder.
+     * @return a PscSource with the settings made for this builder.
      */
     public PscSource<OUT> build() {
         sanityCheck();

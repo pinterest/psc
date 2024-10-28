@@ -61,17 +61,16 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * The Source implementation of Kafka. Please use a {@link PscSourceBuilder} to construct a {@link
- * PscSource}. The following example shows how to create a KafkaSource emitting records of <code>
+ * The Source implementation of PSC. Please use a {@link PscSourceBuilder} to construct a {@link
+ * PscSource}. The following example shows how to create a PscSource emitting records of <code>
  * String</code> type.
  *
  * <pre>{@code
- * KafkaSource<String> source = KafkaSource
+ * PscSource<String> source = PscSource
  *     .<String>builder()
- *     .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
  *     .setGroupId("MyGroup")
- *     .setTopics(Arrays.asList(TOPIC1, TOPIC2))
- *     .setDeserializer(new TestingKafkaRecordDeserializationSchema())
+ *     .setTopicUris(Arrays.asList(TOPIC1, TOPIC2))
+ *     .setDeserializer(new TestingPscRecordDeserializationSchema())
  *     .setStartingOffsets(OffsetsInitializer.earliest())
  *     .build();
  * }</pre>
@@ -112,9 +111,9 @@ public class PscSource<OUT>
     }
 
     /**
-     * Get a kafkaSourceBuilder to build a {@link PscSource}.
+     * Get a PscSourceBuilder to build a {@link PscSource}.
      *
-     * @return a Kafka source builder.
+     * @return a PSC source builder.
      */
     public static <OUT> PscSourceBuilder<OUT> builder() {
         return new PscSourceBuilder<>();

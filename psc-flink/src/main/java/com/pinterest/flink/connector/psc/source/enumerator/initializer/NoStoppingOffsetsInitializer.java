@@ -28,7 +28,7 @@ import java.util.Map;
 /**
  * An implementation of {@link OffsetsInitializer} which does not initialize anything.
  *
- * <p>This class is used as the default stopping offsets initializer for unbounded Kafka sources.
+ * <p>This class is used as the default stopping offsets initializer for unbounded PSC sources.
  */
 @Internal
 public class NoStoppingOffsetsInitializer implements OffsetsInitializer {

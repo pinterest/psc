@@ -62,7 +62,7 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testKafkaDeserializationSchemaWrapper() throws IOException, DeserializerException {
+    public void testPscDeserializationSchemaWrapper() throws IOException, DeserializerException {
         final PscConsumerMessage<byte[], byte[]> consumerRecord = getPscConsumerMessage();
         PscRecordDeserializationSchema<ObjectNode> schema =
                 PscRecordDeserializationSchema.of(new JSONKeyValueDeserializationSchema(true));
@@ -80,7 +80,7 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testKafkaValueDeserializationSchemaWrapper() throws IOException, DeserializerException {
+    public void testPscValueDeserializationSchemaWrapper() throws IOException, DeserializerException {
         final PscConsumerMessage<byte[], byte[]> consumerRecord = getPscConsumerMessage();
         PscRecordDeserializationSchema<ObjectNode> schema =
                 PscRecordDeserializationSchema.valueOnly(new JsonNodeDeserializationSchema());
@@ -96,7 +96,7 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testKafkaValueDeserializerWrapper() throws Exception {
+    public void testPscValueDeserializerWrapper() throws Exception {
         final String topic = "Topic";
         byte[] value = new StringSerializer().serialize(topic, "world");
         final PscConsumerMessage<byte[], byte[]> consumerRecord =
@@ -113,7 +113,7 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testKafkaValueDeserializerWrapperWithoutConfigurable() throws Exception {
+    public void testPscValueDeserializerWrapperWithoutConfigurable() throws Exception {
         final Map<String, String> config = ImmutableMap.of("simpleKey", "simpleValue");
         PscRecordDeserializationSchema<String> schema =
                 PscRecordDeserializationSchema.valueOnly(SimpleStringSerializer.class, config);
@@ -124,7 +124,7 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testKafkaValueDeserializerWrapperWithConfigurable() throws Exception {
+    public void testPscValueDeserializerWrapperWithConfigurable() throws Exception {
         final Map<String, String> config = ImmutableMap.of("configKey", "configValue");
         PscRecordDeserializationSchema<String> schema =
                 PscRecordDeserializationSchema.valueOnly(
@@ -164,7 +164,7 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     /**
-     * Serializer based on Kafka's serialization stack. This is the special case that implements
+     * Serializer based on PSC's serialization stack. This is the special case that implements
      * {@link PscPlugin}
      *
      * <p>This class must be public to make it instantiable by the tests.
@@ -178,7 +178,7 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     /**
-     * Serializer based on Kafka's serialization stack.
+     * Serializer based on PSC's serialization stack.
      *
      * <p>This class must be public to make it instantiable by the tests.
      */

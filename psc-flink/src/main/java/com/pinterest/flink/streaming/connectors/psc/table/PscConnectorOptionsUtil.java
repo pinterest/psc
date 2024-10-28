@@ -65,7 +65,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FORMAT;
 import static org.apache.flink.table.factories.FactoryUtil.FORMAT;
 
-/** Utilities for {@link KafkaConnectorOptions}. */
+/** Utilities for {@link PscConnectorOptions}. */
 @Internal
 class PscConnectorOptionsUtil {
 
@@ -81,7 +81,7 @@ class PscConnectorOptionsUtil {
     public static final String SINK_PARTITIONER_VALUE_FIXED = "fixed";
     public static final String SINK_PARTITIONER_VALUE_ROUND_ROBIN = "round-robin";
 
-    // Prefix for Kafka specific properties.
+    // Prefix for PSC specific properties.
     public static final String PROPERTIES_PREFIX = "properties.";
 
     // Other keywords.
@@ -169,7 +169,7 @@ class PscConnectorOptionsUtil {
                                     }
                                     if (!isSingleTopicUri(tableOptions)) {
                                         throw new ValidationException(
-                                                "Currently Kafka source only supports specific offset for single topic.");
+                                                "Currently PSC source only supports specific offset for single topic.");
                                     }
                                     String specificOffsets =
                                             tableOptions.get(SCAN_STARTUP_SPECIFIC_OFFSETS);
@@ -255,7 +255,7 @@ class PscConnectorOptionsUtil {
     }
 
     /**
-     * Returns the {@link StartupMode} of Kafka Consumer by passed-in table-specific {@link
+     * Returns the {@link StartupMode} of PSC Consumer by passed-in table-specific {@link
      * com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.ScanStartupMode}.
      */
     private static StartupMode fromOption(PscConnectorOptions.ScanStartupMode scanStartupMode) {
@@ -278,19 +278,19 @@ class PscConnectorOptionsUtil {
     }
 
     public static Properties getPscProperties(Map<String, String> tableOptions) {
-        final Properties kafkaProperties = new Properties();
+        final Properties pscProperties = new Properties();
 
-        if (hasKafkaClientProperties(tableOptions)) {
+        if (hasPscClientProperties(tableOptions)) {
             tableOptions.keySet().stream()
                     .filter(key -> key.startsWith(PROPERTIES_PREFIX))
                     .forEach(
                             key -> {
                                 final String value = tableOptions.get(key);
                                 final String subKey = key.substring((PROPERTIES_PREFIX).length());
-                                kafkaProperties.put(subKey, value);
+                                pscProperties.put(subKey, value);
                             });
         }
-        return kafkaProperties;
+        return pscProperties;
     }
 
     /**
@@ -368,10 +368,10 @@ class PscConnectorOptionsUtil {
     }
 
     /**
-     * Decides if the table options contains Kafka client properties that start with prefix
+     * Decides if the table options contains PSC client properties that start with prefix
      * 'properties'.
      */
-    private static boolean hasKafkaClientProperties(Map<String, String> tableOptions) {
+    private static boolean hasPscClientProperties(Map<String, String> tableOptions) {
         return tableOptions.keySet().stream().anyMatch(k -> k.startsWith(PROPERTIES_PREFIX));
     }
 
@@ -387,10 +387,10 @@ class PscConnectorOptionsUtil {
                                 name, FlinkPscPartitioner.class.getName()));
             }
             @SuppressWarnings("unchecked")
-            final FlinkPscPartitioner<T> kafkaPartitioner =
+            final FlinkPscPartitioner<T> pscPartitioner =
                     InstantiationUtil.instantiate(name, FlinkPscPartitioner.class, classLoader);
 
-            return kafkaPartitioner;
+            return pscPartitioner;
         } catch (ClassNotFoundException | FlinkException e) {
             throw new ValidationException(
                     String.format("Could not find and instantiate partitioner class '%s'", name),
@@ -572,7 +572,7 @@ class PscConnectorOptionsUtil {
     // Inner classes
     // --------------------------------------------------------------------------------------------
 
-    /** Kafka startup options. * */
+    /** PSC startup options. * */
     public static class StartupOptions {
         public StartupMode startupMode;
         public Map<PscTopicUriPartition, Long> specificOffsets;

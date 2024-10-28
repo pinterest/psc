@@ -20,7 +20,6 @@ package com.pinterest.flink.connector.psc.sink;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.util.TestLoggerExtension;
-import org.apache.kafka.clients.producer.ProducerConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -35,7 +34,6 @@ public class PscSinkBuilderTest {
     @Test
     public void testBootstrapServerSettingWithProperties() {
         Properties testConf = new Properties();
-        testConf.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "testServer");
         PscSinkBuilder<String> builder =
                 new PscSinkBuilder<String>()
                         .setPscProducerConfig(testConf)

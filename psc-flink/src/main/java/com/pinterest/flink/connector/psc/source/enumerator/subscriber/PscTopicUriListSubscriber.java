@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicRnMetadata;
 
 /**
- * A subscriber to a fixed list of topics. The subscribed topics must have existed in the Kafka
+ * A subscriber to a fixed list of topics. The subscribed topics must have existed in the PSC
  * cluster, otherwise an exception will be thrown.
  */
 class PscTopicUriListSubscriber implements PscSubscriber {

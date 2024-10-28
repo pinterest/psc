@@ -43,9 +43,9 @@ public class PscTopicUriPartitionSplitState extends PscTopicUriPartitionSplit {
     }
 
     /**
-     * Use the current offset as the starting offset to create a new KafkaPartitionSplit.
+     * Use the current offset as the starting offset to create a new PscTopicUriPartitionSplit.
      *
-     * @return a new KafkaPartitionSplit which uses the current offset as its starting offset.
+     * @return a new PscTopicUriPartitionSplit which uses the current offset as its starting offset.
      */
     public PscTopicUriPartitionSplit toPscTopicUriPartitionSplit() {
         return new PscTopicUriPartitionSplit(

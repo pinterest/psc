@@ -32,8 +32,8 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  *
  * <p>Transactions are lingering if they are not tracked anywhere. For example, if a job is started
  * transactions are opened. A restart without checkpoint would not allow Flink to abort old
- * transactions. Since Kafka's transactions are sequential, newly produced data does not become
- * visible for read_committed consumers. However, Kafka has no API for querying open transactions,
+ * transactions. Since PSC's transactions are sequential, newly produced data does not become
+ * visible for read_committed consumers. However, PSC has no API for querying open transactions,
  * so they become lingering.
  *
  * <p>Flink solves this by assuming consecutive transaction ids. On restart of checkpoint C on
@@ -119,7 +119,7 @@ class TransactionAborter implements Closeable {
                 // This method will only cease to work if transaction log timeout = topic retention
                 // and a user didn't restart the application for that period of time. Then the first
                 // transactions would vanish from the topic while later transactions are still
-                // lingering until they are cleaned up by Kafka. Then the user has to wait until the
+                // lingering until they are cleaned up by PSC. Then the user has to wait until the
                 // other transactions are timed out (which shouldn't take too long).
                 break;
             }

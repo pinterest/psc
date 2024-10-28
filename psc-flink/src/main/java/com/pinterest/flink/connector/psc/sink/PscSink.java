@@ -37,22 +37,22 @@ import java.util.Properties;
  * Flink Sink to produce data into a PSC topicUri. The sink supports all delivery guarantees
  * described by {@link DeliveryGuarantee}.
  * <li>{@link DeliveryGuarantee#NONE} does not provide any guarantees: messages may be lost in case
- *     of issues on the Kafka broker and messages may be duplicated in case of a Flink failure.
+ *     of issues on the PubSub broker and messages may be duplicated in case of a Flink failure.
  * <li>{@link DeliveryGuarantee#AT_LEAST_ONCE} the sink will wait for all outstanding records in the
- *     PSC buffers to be acknowledged by the PSC producer on a checkpoint. No messages will be
+ *     producer buffers to be acknowledged by the PSC producer on a checkpoint. No messages will be
  *     lost in case of any issue with the brokers but messages may be duplicated when Flink
  *     restarts.
  * <li>{@link DeliveryGuarantee#EXACTLY_ONCE}: Note that this mode is only supported by KafkaProducers in the backend.
  *
  *     In this mode the PscSink will write all messages in
- *     a Kafka transaction that will be committed to Kafka on a checkpoint. Thus, if the consumer
- *     reads only committed data (see Kafka consumer config isolation.level), no duplicates will be
+ *     a transaction that will be committed to PubSub on a checkpoint. Thus, if the consumer
+ *     reads only committed data (see PSC consumer config isolation.level), no duplicates will be
  *     seen in case of a Flink restart. However, this delays record writing effectively until a
  *     checkpoint is written, so adjust the checkpoint duration accordingly. Please ensure that you
- *     use unique {@link #transactionalIdPrefix}s across your applications running on the same Kafka
+ *     use unique {@link #transactionalIdPrefix}s across your applications running on the same PubSub
  *     cluster such that multiple running jobs do not interfere in their transactions! Additionally,
- *     it is highly recommended to tweak Kafka transaction timeout (link) >> maximum checkpoint
- *     duration + maximum restart duration or data loss may happen when Kafka expires an uncommitted
+ *     it is highly recommended to tweak transaction timeout (link) >> maximum checkpoint
+ *     duration + maximum restart duration or data loss may happen when the PubSub cluster expires an uncommitted
  *     transaction.
  *
  * @param <IN> type of the records written

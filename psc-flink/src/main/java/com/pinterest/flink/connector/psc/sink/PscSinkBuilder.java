@@ -146,7 +146,7 @@ public class PscSinkBuilder<IN> {
      *
      * <p>It is mandatory to always set this value with {@link DeliveryGuarantee#EXACTLY_ONCE} to
      * prevent corrupted transactions if multiple jobs using the PscSink run against the same
-     * Kafka Cluster. The default prefix is {@link #transactionalIdPrefix}.
+     * PubSub Cluster. The default prefix is {@link #transactionalIdPrefix}.
      *
      * <p>The size of the prefix is capped by {@link #MAXIMUM_PREFIX_BYTES} formatted with UTF-8.
      *
@@ -162,7 +162,7 @@ public class PscSinkBuilder<IN> {
         checkState(
                 transactionalIdPrefix.getBytes(StandardCharsets.UTF_8).length
                         <= MAXIMUM_PREFIX_BYTES,
-                "The configured prefix is too long and the resulting transactionalId might exceed Kafka's transactionalIds size.");
+                "The configured prefix is too long and the resulting transactionalId might exceed PSC's transactionalIds size.");
         return this;
     }
 
@@ -173,7 +173,7 @@ public class PscSinkBuilder<IN> {
         if (deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE) {
             checkState(
                     transactionalIdPrefix != null,
-                    "EXACTLY_ONCE delivery guarantee requires a transactionIdPrefix to be set to provide unique transaction names across multiple PscSinks writing to the same Kafka cluster.");
+                    "EXACTLY_ONCE delivery guarantee requires a transactionIdPrefix to be set to provide unique transaction names across multiple PscSinks writing to the same PSC cluster.");
         }
         checkNotNull(recordSerializer, "recordSerializer");
     }

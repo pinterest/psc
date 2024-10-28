@@ -98,7 +98,7 @@ public class PscSourceITCase {
 
     @Nested
     @TestInstance(Lifecycle.PER_CLASS)
-    class KafkaSpecificTests {
+    class PscSpecificTests {
         @BeforeAll
         public void setup() throws Throwable {
             PscSourceTestEnv.setup();
@@ -130,7 +130,6 @@ public class PscSourceITCase {
             putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
-//                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testTimestampAndWatermark")
                             .setTopicUris(topicUri)
                             .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
@@ -312,7 +311,6 @@ public class PscSourceITCase {
             putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
-//                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
                             .setTopicUris(watermarkTopic)
                             .setGroupId("watermark-test")
                             .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
@@ -354,7 +352,6 @@ public class PscSourceITCase {
             putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
-//                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
                             .setTopicUris(emptyTopic)
                             .setGroupId("empty-topic-test")
                             .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
@@ -395,7 +392,6 @@ public class PscSourceITCase {
 
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
-//                            .setBootstrapServers(KafkaSourceTestEnv.brokerConnectionStrings)
                             .setTopicUris(topicWithEmptyPartitions)
                             .setGroupId("topic-with-empty-partition-test")
                             .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)

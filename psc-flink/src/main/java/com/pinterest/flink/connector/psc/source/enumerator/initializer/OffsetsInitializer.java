@@ -40,16 +40,16 @@ import java.util.Map;
 public interface OffsetsInitializer extends Serializable {
 
     /**
-     * Get the initial offsets for the given Kafka partitions. These offsets will be used as either
-     * starting offsets or stopping offsets of the Kafka partitions.
+     * Get the initial offsets for the given PSC partitions. These offsets will be used as either
+     * starting offsets or stopping offsets of the PSC partitions.
      *
      * <p>If the implementation returns a starting offset which causes {@code
-     * OffsetsOutOfRangeException} from Kafka. The offsetResetStrategy provided by the
+     * OffsetsOutOfRangeException} from PSC. The offsetResetStrategy provided by the
      * {@link #getAutoOffsetResetStrategy()} will be used to reset the offset.
      *
-     * @param partitions the Kafka partitions to get the starting offsets.
-     * @param partitionOffsetsRetriever a helper to retrieve information of the Kafka partitions.
-     * @return A mapping from Kafka partition to their offsets to start consuming from.
+     * @param partitions the PSC partitions to get the starting offsets.
+     * @param partitionOffsetsRetriever a helper to retrieve information of the PSC partitions.
+     * @return A mapping from PSC partition to their offsets to start consuming from.
      */
     Map<TopicUriPartition, Long> getPartitionOffsets(
             Collection<TopicUriPartition> partitions,
@@ -68,7 +68,7 @@ public interface OffsetsInitializer extends Serializable {
 
     /**
      * An interface that provides necessary information to the {@link OffsetsInitializer} to get the
-     * initial offsets of the Kafka partitions.
+     * initial offsets of the PSC partitions.
      */
     interface PartitionOffsetsRetriever {
 
@@ -76,7 +76,7 @@ public interface OffsetsInitializer extends Serializable {
          * The group id should be the set for {@link com.pinterest.flink.connector.psc.source.PscSource PscSource} before invoking this
          * method. Otherwise an {@code IllegalStateException} will be thrown.
          *
-         * @throws IllegalStateException if the group id is not set for the {@code KafkaSource}.
+         * @throws IllegalStateException if the group id is not set for the {@code PscSource}.
          */
         Map<TopicUriPartition, Long> committedOffsets(Collection<TopicUriPartition> partitions);
 

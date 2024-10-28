@@ -48,7 +48,7 @@ class TopicNamePatternSubscriber implements PscSubscriber {
 
     @Override
     public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri) {
-        LOG.debug("Fetching descriptions for all topics on Kafka cluster");
+        LOG.debug("Fetching descriptions for all topics on PubSub cluster");
         final Map<TopicRn, TopicRnMetadata> allTopicRnMetadata = getAllTopicRnMetadata(metadataClient, clusterUri);
 
         Set<TopicUriPartition> subscribedTopicUriPartitions = new HashSet<>();

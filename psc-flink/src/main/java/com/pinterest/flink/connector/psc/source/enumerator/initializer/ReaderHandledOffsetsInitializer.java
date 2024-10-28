@@ -31,8 +31,8 @@ import static org.apache.flink.util.Preconditions.checkState;
 
 /**
  * A initializer that initialize the partitions to the earliest / latest / last-committed offsets.
- * The offsets initialization are taken care of by the {@code KafkaPartitionSplitReader} instead of
- * by the {@code KafkaSourceEnumerator}.
+ * The offsets initialization are taken care of by the {@code PscTopicUriPartitionSplitReader} instead of
+ * by the {@code PscSourceEnumerator}.
  *
  * <p>Package private and should be instantiated via {@link org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer}.
  */

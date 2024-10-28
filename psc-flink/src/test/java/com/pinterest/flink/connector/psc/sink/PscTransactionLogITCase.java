@@ -53,11 +53,11 @@ import static org.apache.flink.util.DockerImageVersions.KAFKA;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.Assert.assertThat;
 
-/** Tests for {@link PscTransactionLog} to retrieve abortable Kafka transactions. */
+/** Tests for {@link PscTransactionLog} to retrieve abortable PSC transactions. */
 public class PscTransactionLogITCase extends TestLogger {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSinkITCase.class);
-    private static final String TOPIC_URI_STR = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI.getTopicUriAsString() + "kafkaTransactionLogTest";
+    private static final String TOPIC_URI_STR = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI.getTopicUriAsString() + "pscTransactionLogTest";
     private static final String TRANSACTIONAL_ID_PREFIX = "psc-log";
 
     @ClassRule
@@ -174,18 +174,12 @@ public class PscTransactionLogITCase extends TestLogger {
 
     private static Properties getPscClientConfiguration() {
         final Properties standardProps = new Properties();
-//        standardProps.put("bootstrap.servers", KAFKA_CONTAINER.getBootstrapServers());
         standardProps.put(PscConfiguration.PSC_CONSUMER_GROUP_ID, "flink-tests");
         standardProps.put(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, false);
         standardProps.put(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         standardProps.put(PscConfiguration.PSC_CONSUMER_PARTITION_FETCH_MAX_BYTES, 256);
         standardProps.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "flink-tests");
         injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI.getTopicUriAsString());
-
-//        standardProps.put("group.id", "flink-tests");
-//        standardProps.put("enable.auto.commit", false);
-//        standardProps.put("auto.id.reset", "earliest");
-//        standardProps.put("max.partition.fetch.bytes", 256);
         return standardProps;
     }
 }
