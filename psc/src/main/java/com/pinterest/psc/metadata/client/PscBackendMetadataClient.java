@@ -9,6 +9,7 @@ import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.discovery.ServiceDiscoveryManager;
 import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metadata.TopicRnMetadata;
 
 import java.io.IOException;
@@ -25,11 +26,14 @@ import java.util.concurrent.TimeoutException;
  */
 public abstract class PscBackendMetadataClient implements AutoCloseable {
 
+    private static final PscLogger logger = PscLogger.getLogger(PscBackendMetadataClient.class);
+
     protected TopicUri topicUri;
     protected PscConfigurationInternal pscConfigurationInternal;
     protected ServiceDiscoveryConfig discoveryConfig;
 
     public void initialize(TopicUri topicUri, Environment env, PscConfigurationInternal pscConfigurationInternal) throws ConfigurationException {
+        logger.info("Initializing metadata client for topicUri: " + topicUri);
         this.topicUri = topicUri;
         this.pscConfigurationInternal = pscConfigurationInternal;
         this.discoveryConfig =
