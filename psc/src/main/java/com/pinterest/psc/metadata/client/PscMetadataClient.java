@@ -8,10 +8,15 @@ import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.environment.Environment;
+import com.pinterest.psc.exception.ExceptionMessage;
+import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.PscStartupException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metadata.TopicRnMetadata;
 import com.pinterest.psc.metadata.creation.PscBackendMetadataClientCreator;
 import com.pinterest.psc.metadata.creation.PscMetadataClientCreatorManager;
+import com.pinterest.psc.producer.creation.PscBackendProducerCreator;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -75,7 +80,7 @@ public class PscMetadataClient implements AutoCloseable {
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public List<TopicRn> listTopicRns(TopicUri clusterUri, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
+    public List<TopicRn> listTopicRns(TopicUri clusterUri, Duration duration) throws ExecutionException, InterruptedException, TimeoutException, TopicUriSyntaxException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
         return backendMetadataClient.listTopicRns(duration);
     }
@@ -91,7 +96,7 @@ public class PscMetadataClient implements AutoCloseable {
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public Map<TopicRn, TopicRnMetadata> describeTopicRns(TopicUri clusterUri, Set<TopicRn> topicRns, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
+    public Map<TopicRn, TopicRnMetadata> describeTopicRns(TopicUri clusterUri, Set<TopicRn> topicRns, Duration duration) throws ExecutionException, InterruptedException, TimeoutException, TopicUriSyntaxException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
         return backendMetadataClient.describeTopicRns(topicRns, duration);
     }
@@ -114,7 +119,7 @@ public class PscMetadataClient implements AutoCloseable {
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public Map<TopicUriPartition, Long> listOffsets(TopicUri clusterUri, Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicRnsAndOptions, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
+    public Map<TopicUriPartition, Long> listOffsets(TopicUri clusterUri, Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicRnsAndOptions, Duration duration) throws ExecutionException, InterruptedException, TimeoutException, TopicUriSyntaxException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
         return backendMetadataClient.listOffsets(topicRnsAndOptions, duration);
     }
@@ -132,28 +137,41 @@ public class PscMetadataClient implements AutoCloseable {
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public Map<TopicUriPartition, Long> listOffsetsForConsumerGroup(TopicUri clusterUri, String consumerGroup, Collection<TopicUriPartition> topicUriPartitions, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
+    public Map<TopicUriPartition, Long> listOffsetsForConsumerGroup(TopicUri clusterUri, String consumerGroup, Collection<TopicUriPartition> topicUriPartitions, Duration duration) throws ExecutionException, InterruptedException, TimeoutException, TopicUriSyntaxException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
         return backendMetadataClient.listOffsetsForConsumerGroup(consumerGroup, topicUriPartitions, duration);
     }
 
-    public Map<TopicUriPartition, Long> listOffsetsForTimestamps(TopicUri clusterUri, Map<TopicUriPartition, Long> topicUriPartitionsAndTimes, Duration duration) throws ExecutionException, InterruptedException, TimeoutException {
+    public Map<TopicUriPartition, Long> listOffsetsForTimestamps(TopicUri clusterUri, Map<TopicUriPartition, Long> topicUriPartitionsAndTimes, Duration duration) throws ExecutionException, InterruptedException, TimeoutException, TopicUriSyntaxException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
         return backendMetadataClient.listOffsetsForTimestamps(topicUriPartitionsAndTimes, duration);
     }
 
     @VisibleForTesting
-    protected PscBackendMetadataClient getBackendMetadataClient(TopicUri clusterUri) {
-        String topicUriPrefix = clusterUri.getTopicUriPrefix();
+    protected PscBackendMetadataClient getBackendMetadataClient(TopicUri clusterUri) throws TopicUriSyntaxException {
+        TopicUri convertedClusterUri = validateTopicUri(clusterUri);
+        String topicUriPrefix = convertedClusterUri.getTopicUriPrefix();
         pscBackendMetadataClientByTopicUriPrefix.computeIfAbsent(topicUriPrefix, k -> {
-           PscBackendMetadataClientCreator backendMetadataClientCreator = creatorManager.getBackendCreators().get(clusterUri.getBackend());
+           PscBackendMetadataClientCreator backendMetadataClientCreator = creatorManager.getBackendCreators().get(convertedClusterUri.getBackend());
             try {
-                return backendMetadataClientCreator.create(environment, pscConfigurationInternal, clusterUri);
+                return backendMetadataClientCreator.create(environment, pscConfigurationInternal, convertedClusterUri);
             } catch (ConfigurationException e) {
                 throw new RuntimeException(e);
             }
         });
         return pscBackendMetadataClientByTopicUriPrefix.get(topicUriPrefix);
+    }
+
+    private TopicUri validateTopicUri(TopicUri topicUri) throws TopicUriSyntaxException {
+        if (topicUri == null)
+            throw new IllegalArgumentException("Null topic URI was passed to the producer API.");
+
+        Map<String, PscBackendMetadataClientCreator> backendCreators = creatorManager.getBackendCreators();
+        String backend = topicUri.getBackend();
+        if (!backendCreators.containsKey(backend))
+            throw new IllegalArgumentException("Invalid backend type: " + backend);
+        topicUri = backendCreators.get(backend).validateBackendTopicUri(topicUri);
+        return topicUri;
     }
 
     @Override

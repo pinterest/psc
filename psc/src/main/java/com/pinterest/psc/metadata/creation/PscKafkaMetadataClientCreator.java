@@ -2,9 +2,11 @@ package com.pinterest.psc.metadata.creation;
 
 import com.pinterest.psc.common.PscUtils;
 import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metadata.client.kafka.PscKafkaMetadataClient;
 
 /**
@@ -22,5 +24,10 @@ public class PscKafkaMetadataClientCreator extends PscBackendMetadataClientCreat
                 pscConfigurationInternal
         );
         return pscKafkaMetadataClient;
+    }
+
+    @Override
+    public TopicUri validateBackendTopicUri(TopicUri topicUri) throws TopicUriSyntaxException {
+        return KafkaTopicUri.validate(topicUri);
     }
 }

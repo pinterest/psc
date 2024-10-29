@@ -530,6 +530,8 @@ public class PscSourceEnumerator
                                 + groupId
                                 + " due to",
                         e);
+            } catch (TopicUriSyntaxException e) {
+                throw new FlinkRuntimeException(e);
             }
         }
 
@@ -559,6 +561,8 @@ public class PscSourceEnumerator
                                 + topicPartitionOffsets
                                 + " due to",
                         e);
+            } catch (TopicUriSyntaxException e) {
+                throw new FlinkRuntimeException(e);
             }
         }
 
@@ -579,6 +583,8 @@ public class PscSourceEnumerator
                                 + topicUriPartitionsAndTimestamps
                                 + " due to",
                         e);
+            } catch (TopicUriSyntaxException e) {
+                throw new FlinkRuntimeException(e);
             }
         }
 

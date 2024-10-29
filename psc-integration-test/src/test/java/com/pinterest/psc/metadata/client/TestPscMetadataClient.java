@@ -128,7 +128,7 @@ public class TestPscMetadataClient {
     @Test
     public void testListTopicRns() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
-        List<TopicRn> topicRnList = client.listTopicRns(KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr)), Duration.ofMillis(10000));
+        List<TopicRn> topicRnList = client.listTopicRns(BaseTopicUri.validate(clusterUriStr), Duration.ofMillis(10000));
         List<TopicRn> expectedTopicRnList = Arrays.asList(topic1Rn, topic2Rn, topic3Rn);
         assertEquals(expectedTopicRnList, topicRnList);
         client.close();
@@ -144,7 +144,7 @@ public class TestPscMetadataClient {
     public void testDescribeTopicRns() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
         Map<TopicRn, TopicRnMetadata> topicRnDescriptionMap = client.describeTopicRns(
-                KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr)),
+                BaseTopicUri.validate(clusterUriStr),
                 new HashSet<>(Arrays.asList(topic1Rn, topic2Rn, topic3Rn)),
                 Duration.ofMillis(10000)
         );
@@ -183,7 +183,7 @@ public class TestPscMetadataClient {
         Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicUriPartitionsAndOptions = new HashMap<>();
         topicUriPartitionsAndOptions.put(new TopicUriPartition(topic1Uri, 0), PscMetadataClient.MetadataClientOption.OFFSET_SPEC_EARLIEST);
         topicUriPartitionsAndOptions.put(new TopicUriPartition(topic2Uri, 0), PscMetadataClient.MetadataClientOption.OFFSET_SPEC_LATEST);
-        TopicUri clusterUri = KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr));
+        TopicUri clusterUri = BaseTopicUri.validate(clusterUriStr);
         Map<TopicUriPartition, Long> offsets = client.listOffsets(
                 clusterUri,
                 topicUriPartitionsAndOptions,
@@ -254,7 +254,7 @@ public class TestPscMetadataClient {
     @Test
     public void testListOffsetsForConsumerGroup() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
-        TopicUri clusterUri = KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr));
+        TopicUri clusterUri = BaseTopicUri.validate(clusterUriStr);
 
         String consumerGroupId = "test-psc-consumer-group";
         PscProducer<Integer, Integer> pscProducer = getPscProducer();

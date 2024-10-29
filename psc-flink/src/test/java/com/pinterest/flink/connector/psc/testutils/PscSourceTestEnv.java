@@ -28,6 +28,7 @@ import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.IntegerDeserializer;
@@ -255,7 +256,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
     }
 
     public static void setupCommittedOffsets(String topicUriString)
-            throws ExecutionException, InterruptedException, ConfigurationException, ConsumerException, TimeoutException {
+            throws ExecutionException, InterruptedException, ConfigurationException, ConsumerException, TimeoutException, TopicUriSyntaxException {
         List<TopicUriPartition> partitions = getPartitionsForTopic(topicUriString);
         Map<TopicUriPartition, Long> committedOffsets = getCommittedOffsets(partitions);
         List<MessageId> toCommit = new ArrayList<>();
