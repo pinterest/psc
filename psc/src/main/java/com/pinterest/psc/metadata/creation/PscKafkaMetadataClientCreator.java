@@ -1,5 +1,6 @@
 package com.pinterest.psc.metadata.creation;
 
+import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.PscUtils;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
@@ -28,6 +29,11 @@ public class PscKafkaMetadataClientCreator extends PscBackendMetadataClientCreat
 
     @Override
     public TopicUri validateBackendTopicUri(TopicUri topicUri) throws TopicUriSyntaxException {
-        return KafkaTopicUri.validate(topicUri);
+        String topicUriStr = topicUri.getTopicUriAsString();
+        if (topicUri.getProtocol().equals(KafkaTopicUri.SECURE_PROTOCOL)) {
+            // always use PLAINTEXT for metadata requests
+            topicUriStr = topicUriStr.replace(KafkaTopicUri.SECURE_PROTOCOL + ":" + TopicUri.SEPARATOR, KafkaTopicUri.PLAINTEXT_PROTOCOL + ":" + TopicUri.SEPARATOR);
+        }
+        return KafkaTopicUri.validate(BaseTopicUri.validate(topicUriStr));
     }
 }

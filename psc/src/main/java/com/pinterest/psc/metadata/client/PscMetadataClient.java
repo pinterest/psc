@@ -8,15 +8,11 @@ import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.environment.Environment;
-import com.pinterest.psc.exception.ExceptionMessage;
-import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
-import com.pinterest.psc.exception.startup.PscStartupException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metadata.TopicRnMetadata;
 import com.pinterest.psc.metadata.creation.PscBackendMetadataClientCreator;
 import com.pinterest.psc.metadata.creation.PscMetadataClientCreatorManager;
-import com.pinterest.psc.producer.creation.PscBackendProducerCreator;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -149,7 +145,7 @@ public class PscMetadataClient implements AutoCloseable {
 
     @VisibleForTesting
     protected PscBackendMetadataClient getBackendMetadataClient(TopicUri clusterUri) throws TopicUriSyntaxException {
-        TopicUri convertedClusterUri = validateTopicUri(clusterUri);
+        TopicUri convertedClusterUri = convertTopicUri(clusterUri);
         String topicUriPrefix = convertedClusterUri.getTopicUriPrefix();
         pscBackendMetadataClientByTopicUriPrefix.computeIfAbsent(topicUriPrefix, k -> {
            PscBackendMetadataClientCreator backendMetadataClientCreator = creatorManager.getBackendCreators().get(convertedClusterUri.getBackend());
@@ -162,7 +158,8 @@ public class PscMetadataClient implements AutoCloseable {
         return pscBackendMetadataClientByTopicUriPrefix.get(topicUriPrefix);
     }
 
-    private TopicUri validateTopicUri(TopicUri topicUri) throws TopicUriSyntaxException {
+    @VisibleForTesting
+    protected TopicUri convertTopicUri(TopicUri topicUri) throws TopicUriSyntaxException {
         if (topicUri == null)
             throw new IllegalArgumentException("Null topic URI was passed to the producer API.");
 
