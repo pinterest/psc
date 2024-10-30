@@ -240,14 +240,18 @@ public class PscSourceReaderMetrics {
      */
     public void updateNumBytesInCounter() {
         if (this.bytesConsumedTotalMetric != null && this.bytesConsumedTotalMetric.metricValue() != null) {
-            long bytesConsumedUntilNow =
-                    ((Number) this.bytesConsumedTotalMetric.metricValue()).longValue();
-            long bytesConsumedSinceLastUpdate = bytesConsumedUntilNow - latestBytesConsumedTotal;
-            this.sourceReaderMetricGroup
-                    .getIOMetricGroup()
-                    .getNumBytesInCounter()
-                    .inc(bytesConsumedSinceLastUpdate);
-            latestBytesConsumedTotal = bytesConsumedUntilNow;
+            try {
+                long bytesConsumedUntilNow =
+                        ((Number) this.bytesConsumedTotalMetric.metricValue()).longValue();
+                long bytesConsumedSinceLastUpdate = bytesConsumedUntilNow - latestBytesConsumedTotal;
+                this.sourceReaderMetricGroup
+                        .getIOMetricGroup()
+                        .getNumBytesInCounter()
+                        .inc(bytesConsumedSinceLastUpdate);
+                latestBytesConsumedTotal = bytesConsumedUntilNow;
+            } catch (Exception e) {
+                LOG.warn("Failed to update numBytesInCounter", e);
+            }
         }
     }
 
