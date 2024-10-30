@@ -239,7 +239,7 @@ public class PscSourceReaderMetrics {
      * bytes-consumed-total and count it towards the counter.
      */
     public void updateNumBytesInCounter() {
-        if (this.bytesConsumedTotalMetric != null) {
+        if (this.bytesConsumedTotalMetric != null && this.bytesConsumedTotalMetric.metricValue() != null) {
             long bytesConsumedUntilNow =
                     ((Number) this.bytesConsumedTotalMetric.metricValue()).longValue();
             long bytesConsumedSinceLastUpdate = bytesConsumedUntilNow - latestBytesConsumedTotal;
