@@ -92,6 +92,13 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
         return new PscMetadataClient(PscConfigurationUtils.propertiesToPscConfiguration(props));
     }
 
+    public static PscMetadataClient getSecureMetadataClient() throws ConfigurationException {
+        Properties props = new Properties();
+        props.setProperty(PscConfiguration.PSC_METADATA_CLIENT_ID, "psc-source-test-env-metadata-client-secure");
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_SECURE_PREFIX);
+        return new PscMetadataClient(PscConfigurationUtils.propertiesToPscConfiguration(props));
+    }
+
     public static PscConsumer<String, Integer> getConsumer() throws ConfigurationException, ConsumerException {
         Properties props = new Properties();
         props.putAll(standardPscConsumerConfiguration);

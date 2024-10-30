@@ -10,7 +10,7 @@ import com.pinterest.psc.discovery.ServiceDiscoveryManager;
 import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.logging.PscLogger;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -43,8 +43,8 @@ public abstract class PscBackendMetadataClient implements AutoCloseable {
     public abstract List<TopicRn> listTopicRns(Duration duration)
             throws ExecutionException, InterruptedException, TimeoutException;
 
-    public abstract Map<TopicRn, TopicRnMetadata> describeTopicRns(
-            Collection<TopicRn> topicRns,
+    public abstract Map<TopicUri, TopicUriMetadata> describeTopicUris(
+            Collection<TopicUri> topicUris,
             Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException;
 

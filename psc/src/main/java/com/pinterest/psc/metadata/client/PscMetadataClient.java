@@ -8,22 +8,17 @@ import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.environment.Environment;
-import com.pinterest.psc.exception.ExceptionMessage;
-import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
-import com.pinterest.psc.exception.startup.PscStartupException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.creation.PscBackendMetadataClientCreator;
 import com.pinterest.psc.metadata.creation.PscMetadataClientCreatorManager;
-import com.pinterest.psc.producer.creation.PscBackendProducerCreator;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -86,19 +81,20 @@ public class PscMetadataClient implements AutoCloseable {
     }
 
     /**
-     * Describe the metadata for the given {@link TopicRn}'s in the cluster.
+     * Describe the metadata for the given {@link TopicUri}'s in the cluster. The returned map will preserve the protocol
+     * of the supplied TopicUri's.
      *
      * @param clusterUri
-     * @param topicRns
+     * @param topicUris
      * @param duration
-     * @return a map of {@link TopicRn} to {@link TopicRnMetadata}
+     * @return a map of {@link TopicUri} to {@link TopicUriMetadata}
      * @throws ExecutionException
      * @throws InterruptedException
      * @throws TimeoutException
      */
-    public Map<TopicRn, TopicRnMetadata> describeTopicRns(TopicUri clusterUri, Set<TopicRn> topicRns, Duration duration) throws ExecutionException, InterruptedException, TimeoutException, TopicUriSyntaxException {
+    public Map<TopicUri, TopicUriMetadata> describeTopicUris(TopicUri clusterUri, Collection<TopicUri> topicUris, Duration duration) throws ExecutionException, InterruptedException, TimeoutException, TopicUriSyntaxException {
         PscBackendMetadataClient backendMetadataClient = getBackendMetadataClient(clusterUri);
-        return backendMetadataClient.describeTopicRns(topicRns, duration);
+        return backendMetadataClient.describeTopicUris(topicUris, duration);
     }
 
     /**

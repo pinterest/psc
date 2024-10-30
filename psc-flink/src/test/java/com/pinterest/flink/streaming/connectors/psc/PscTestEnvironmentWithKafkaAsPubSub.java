@@ -51,11 +51,14 @@ import java.util.Properties;
  */
 public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     public static String PSC_TEST_TOPIC_URI_PREFIX = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
+    public static String PSC_TEST_TOPIC_URI_SECURE_PREFIX = "secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
     public static TopicUri PSC_TEST_CLUSTER_URI;
+    public static TopicUri PSC_TEST_CLUSTER_URI_SECURE;
 
     static {
         try {
             PSC_TEST_CLUSTER_URI = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_PREFIX);
+            PSC_TEST_CLUSTER_URI_SECURE = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_SECURE_PREFIX);
         } catch (TopicUriSyntaxException e) {
             throw new RuntimeException("Unable to validate clusterUri", e);
         }

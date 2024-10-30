@@ -1,7 +1,6 @@
 package com.pinterest.psc.metadata.client;
 
 import com.pinterest.psc.common.BaseTopicUri;
-import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TestUtils;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
@@ -16,7 +15,7 @@ import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.integration.KafkaCluster;
 import com.pinterest.psc.metadata.MetadataUtils;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.IntegerDeserializer;
@@ -135,38 +134,38 @@ public class TestPscMetadataClient {
     }
 
     /**
-     * Tests that {@link PscMetadataClient#describeTopicRns(TopicUri, java.util.Set, Duration)} returns the correct
+     * Tests that {@link PscMetadataClient#describeTopicUris(TopicUri, Collection, Duration)} returns the correct
      * metadata for the supplied topic RNs
      *
      * @throws Exception
      */
     @Test
-    public void testDescribeTopicRns() throws Exception {
+    public void testDescribeTopicUris() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
-        Map<TopicRn, TopicRnMetadata> topicRnDescriptionMap = client.describeTopicRns(
+        Map<TopicUri, TopicUriMetadata> topicUriDescriptionMap = client.describeTopicUris(
                 BaseTopicUri.validate(clusterUriStr),
-                new HashSet<>(Arrays.asList(topic1Rn, topic2Rn, topic3Rn)),
+                new HashSet<>(Arrays.asList(topic1Uri, topic2Uri, topic3Uri)),
                 Duration.ofMillis(10000)
         );
-        assertEquals(3, topicRnDescriptionMap.size());
+        assertEquals(3, topicUriDescriptionMap.size());
 
-        assertEquals(topic1Rn, topicRnDescriptionMap.get(topic1Rn).getTopicRn());
-        assertEquals(partitions1, topicRnDescriptionMap.get(topic1Rn).getTopicUriPartitions().size());
+        assertEquals(topic1Uri, topicUriDescriptionMap.get(topic1Uri).getTopicUri());
+        assertEquals(partitions1, topicUriDescriptionMap.get(topic1Uri).getTopicUriPartitions().size());
         for (int i = 0; i < partitions1; i++) {
-            assertEquals(topic1Rn, topicRnDescriptionMap.get(topic1Rn).getTopicUriPartitions().get(i).getTopicUri().getTopicRn());
-            assertEquals(i, topicRnDescriptionMap.get(topic1Rn).getTopicUriPartitions().get(i).getPartition());
+            assertEquals(topic1Uri, topicUriDescriptionMap.get(topic1Uri).getTopicUriPartitions().get(i).getTopicUri());
+            assertEquals(i, topicUriDescriptionMap.get(topic1Uri).getTopicUriPartitions().get(i).getPartition());
         }
-        assertEquals(topic2Rn, topicRnDescriptionMap.get(topic2Rn).getTopicRn());
-        assertEquals(partitions2, topicRnDescriptionMap.get(topic2Rn).getTopicUriPartitions().size());
+        assertEquals(topic2Uri, topicUriDescriptionMap.get(topic2Uri).getTopicUri());
+        assertEquals(partitions2, topicUriDescriptionMap.get(topic2Uri).getTopicUriPartitions().size());
         for (int i = 0; i < partitions2; i++) {
-            assertEquals(topic2Rn, topicRnDescriptionMap.get(topic2Rn).getTopicUriPartitions().get(i).getTopicUri().getTopicRn());
-            assertEquals(i, topicRnDescriptionMap.get(topic2Rn).getTopicUriPartitions().get(i).getPartition());
+            assertEquals(topic2Uri, topicUriDescriptionMap.get(topic2Uri).getTopicUriPartitions().get(i).getTopicUri());
+            assertEquals(i, topicUriDescriptionMap.get(topic2Uri).getTopicUriPartitions().get(i).getPartition());
         }
-        assertEquals(topic3Rn, topicRnDescriptionMap.get(topic3Rn).getTopicRn());
-        assertEquals(partitions3, topicRnDescriptionMap.get(topic3Rn).getTopicUriPartitions().size());
+        assertEquals(topic3Uri, topicUriDescriptionMap.get(topic3Uri).getTopicUri());
+        assertEquals(partitions3, topicUriDescriptionMap.get(topic3Uri).getTopicUriPartitions().size());
         for (int i = 0; i < partitions3; i++) {
-            assertEquals(topic3Rn, topicRnDescriptionMap.get(topic3Rn).getTopicUriPartitions().get(i).getTopicUri().getTopicRn());
-            assertEquals(i, topicRnDescriptionMap.get(topic3Rn).getTopicUriPartitions().get(i).getPartition());
+            assertEquals(topic3Uri, topicUriDescriptionMap.get(topic3Uri).getTopicUriPartitions().get(i).getTopicUri());
+            assertEquals(i, topicUriDescriptionMap.get(topic3Uri).getTopicUriPartitions().get(i).getPartition());
         }
         client.close();
     }

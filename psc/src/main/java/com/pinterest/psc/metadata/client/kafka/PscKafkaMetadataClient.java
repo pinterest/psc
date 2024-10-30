@@ -11,7 +11,7 @@ import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metadata.MetadataUtils;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscBackendMetadataClient;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -70,24 +70,33 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
     }
 
     @Override
-    public Map<TopicRn, TopicRnMetadata> describeTopicRns(
-            Collection<TopicRn> topicRns,
+    public Map<TopicUri, TopicUriMetadata> describeTopicUris(
+            Collection<TopicUri> topicUris,
             Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException {
-        Collection<String> topicNames = topicRns.stream().map(TopicRn::getTopic).collect(Collectors.toSet());
+        Collection<String> topicNames = topicUris.stream().map(TopicUri::getTopic).collect(Collectors.toSet());
+        if (topicNames.size() != topicUris.size()) {
+            throw new IllegalArgumentException("Supplied topicUris must have unique topic names: " + topicUris);
+        }
+        Map<String, String> topicToProtocolMap = topicUris.stream().collect(Collectors.toMap(TopicUri::getTopic, TopicUri::getProtocol));
         Map<String, TopicDescription> topicMetadata = kafkaAdminClient.describeTopics(topicNames).all().get(duration.toMillis(), TimeUnit.MILLISECONDS);
-        Map<TopicRn, TopicRnMetadata> result = new HashMap<>();
+        Map<TopicUri, TopicUriMetadata> result = new HashMap<>();
         for (Map.Entry<String, TopicDescription> entry : topicMetadata.entrySet()) {
             String topicName = entry.getKey();
             TopicDescription description = entry.getValue();
-            TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topicName);
+            String protocol = topicToProtocolMap.get(topicName);
+            if (protocol == null) {
+                // we don't expect this to happen
+                throw new RuntimeException("No protocol found for topic: " + topicName);
+            }
+            TopicUri topicUri = MetadataUtils.createTopicUri(topicName, this.topicUri.getTopicRn(), protocol);
             List<TopicUriPartition> topicUriPartitions = new ArrayList<>();
             for (TopicPartitionInfo partitionInfo : description.partitions()) {
                 topicUriPartitions.add(
-                        createKafkaTopicUriPartition(topicRn, partitionInfo.partition())
+                        createKafkaTopicUriPartition(topicUri, partitionInfo.partition())
                 );
             }
-            result.put(topicRn, new TopicRnMetadata(topicRn, topicUriPartitions));
+            result.put(topicUri, new TopicUriMetadata(topicUri, topicUriPartitions));
         }
         return result;
     }
@@ -180,6 +189,9 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
         return new TopicUriPartition(new KafkaTopicUri(new BaseTopicUri(topicUri.getProtocol(), topicRn)), partition);
     }
 
+    private TopicUriPartition createKafkaTopicUriPartition(TopicUri topicUri, int partition) {
+        return new TopicUriPartition(new KafkaTopicUri(topicUri), partition);
+    }
     @Override
     public void close() throws IOException {
         if (kafkaAdminClient != null)

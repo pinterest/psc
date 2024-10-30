@@ -21,7 +21,7 @@ package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getAllTopicRnMetadata;
+import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getAllTopicUriMetadata;
 
 /**
  * A subscriber to a topic name pattern. Note that this pattern should match only the topic name itself. The pattern
@@ -46,10 +46,18 @@ class TopicNamePatternSubscriber implements PscSubscriber {
         this.topicNamePattern = topicNamePattern;
     }
 
+    /**
+     * Get a set of subscribed {@link TopicUriPartition}s. This method will return a set of TopicUriPartitions whose
+     * protocols match the clusterUri's protocol.
+     *
+     * @param metadataClient The admin client used to retrieve subscribed topic partitions.
+     * @param clusterUri The cluster URI to subscribe to.
+     * @return A set of subscribed {@link TopicUriPartition}s
+     */
     @Override
     public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri) {
         LOG.debug("Fetching descriptions for all topics on PubSub cluster");
-        final Map<TopicRn, TopicRnMetadata> allTopicRnMetadata = getAllTopicRnMetadata(metadataClient, clusterUri);
+        final Map<TopicUri, TopicUriMetadata> allTopicRnMetadata = getAllTopicUriMetadata(metadataClient, clusterUri);
 
         Set<TopicUriPartition> subscribedTopicUriPartitions = new HashSet<>();
 

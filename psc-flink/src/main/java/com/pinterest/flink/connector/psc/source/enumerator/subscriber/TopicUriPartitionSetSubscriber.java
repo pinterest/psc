@@ -21,7 +21,7 @@ package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +32,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicRnMetadata;
+import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicUriMetadata;
 
 /** A subscriber for a partition set. */
 class TopicUriPartitionSetSubscriber implements PscSubscriber {
@@ -46,22 +46,21 @@ class TopicUriPartitionSetSubscriber implements PscSubscriber {
 
     @Override
     public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri) {
-        final List<TopicRn> topicRns =
+        final List<TopicUri> topicUris =
                 subscribedPartitions.stream()
                         .map(TopicUriPartition::getTopicUri)
-                        .map(TopicUri::getTopicRn)
                         .collect(Collectors.toList());
 
-        LOG.debug("Fetching descriptions for topics: {}", topicRns);
-        final Map<TopicRn, TopicRnMetadata> topicRnMetadata =
-                getTopicRnMetadata(metadataClient, clusterUri, topicRns);
+        LOG.debug("Fetching descriptions for topics: {}", topicUris);
+        final Map<TopicUri, TopicUriMetadata> topicUriMetadata =
+                getTopicUriMetadata(metadataClient, clusterUri, topicUris);
 
         Set<TopicUriPartition> existingSubscribedPartitions = new HashSet<>();
 
         for (TopicUriPartition subscribedPartition : this.subscribedPartitions) {
-            if (topicRnMetadata.containsKey(subscribedPartition.getTopicUri().getTopicRn())
+            if (topicUriMetadata.containsKey(subscribedPartition.getTopicUri())
                     && partitionExistsInTopic(
-                            subscribedPartition, topicRnMetadata.get(subscribedPartition.getTopicUri().getTopicRn()))) {
+                            subscribedPartition, topicUriMetadata.get(subscribedPartition.getTopicUri()))) {
                 existingSubscribedPartitions.add(subscribedPartition);
             } else {
                 throw new RuntimeException(
@@ -74,7 +73,7 @@ class TopicUriPartitionSetSubscriber implements PscSubscriber {
         return existingSubscribedPartitions;
     }
 
-    private boolean partitionExistsInTopic(TopicUriPartition partition, TopicRnMetadata topicRnMetadata) {
-        return topicRnMetadata.getTopicUriPartitions().size() > partition.getPartition();
+    private boolean partitionExistsInTopic(TopicUriPartition partition, TopicUriMetadata topicUriMetadata) {
+        return topicUriMetadata.getTopicUriPartitions().size() > partition.getPartition();
     }
 }

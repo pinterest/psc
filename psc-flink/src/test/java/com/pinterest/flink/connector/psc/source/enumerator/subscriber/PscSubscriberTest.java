@@ -47,11 +47,13 @@ public class PscSubscriberTest {
     private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "pattern-topic";
     private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI1_SECURE = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX.replace("plaintext:/", "secure:/") + TOPIC1;
     private static final TopicUriPartition NON_EXISTING_TOPIC_URI_PARTITION = new TopicUriPartition(
             PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "removed",
             0);
     private static AdminClient adminClient;
     private static PscMetadataClient pscMetadataClient;
+    private static PscMetadataClient pscMetadataClientSecure;
 
     @BeforeClass
     public static void setup() throws Throwable {
@@ -60,6 +62,7 @@ public class PscSubscriberTest {
         PscSourceTestEnv.createTestTopic(TOPIC_URI2);
         adminClient = PscSourceTestEnv.getAdminClient();
         pscMetadataClient = PscSourceTestEnv.getMetadataClient();
+        pscMetadataClientSecure = PscSourceTestEnv.getSecureMetadataClient();
     }
 
     @AfterClass
@@ -80,6 +83,28 @@ public class PscSubscriberTest {
                 new HashSet<>(PscSourceTestEnv.getPartitionsForTopics(topics));
 
         assertEquals(expectedSubscribedPartitions, subscribedPartitions);
+    }
+
+    @Test
+    public void testTopicUriListSubscriberPreservesProtocol() {
+        PscSubscriber subscriber =
+                PscSubscriber.getTopicUriListSubscriber(Arrays.asList(TOPIC_URI1_SECURE, TOPIC_URI2));
+        final Set<TopicUriPartition> subscribedPartitionsPlaintext =
+                subscriber.getSubscribedTopicUriPartitions(pscMetadataClient, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI);
+        final Set<TopicUriPartition> subscribedPartitionsSecure =
+                subscriber.getSubscribedTopicUriPartitions(pscMetadataClientSecure, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI_SECURE);
+
+        subscribedPartitionsPlaintext.forEach(tup -> {
+            if (tup.getTopicUri().getTopic().equals(TOPIC1)) {
+                assertEquals(TOPIC_URI1_SECURE, tup.getTopicUri().getTopicUriAsString());
+            } else if (tup.getTopicUri().getTopic().equals(TOPIC2)) {
+                assertEquals(TOPIC_URI2, tup.getTopicUri().getTopicUriAsString());
+            } else {
+                throw new RuntimeException("Unexpected topic: " + tup.getTopicUri().getTopic());
+            }
+        });
+
+        assertEquals(subscribedPartitionsPlaintext, subscribedPartitionsSecure);
     }
 
     @Test

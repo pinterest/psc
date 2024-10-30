@@ -18,37 +18,39 @@
 
 package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 
+import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /** The base implementations of {@link PscSubscriber}. */
 class PscSubscriberUtils {
 
     private PscSubscriberUtils() {}
 
-    static Map<TopicRn, TopicRnMetadata> getAllTopicRnMetadata(PscMetadataClient metadataClient, TopicUri clusterUri) {
+    static Map<TopicUri, TopicUriMetadata> getAllTopicUriMetadata(PscMetadataClient metadataClient, TopicUri clusterUri) {
         try {
             List<TopicRn> allTopicRns = metadataClient.listTopicRns(clusterUri, Duration.ofMillis(Long.MAX_VALUE));
-            return getTopicRnMetadata(metadataClient, clusterUri, allTopicRns);
+            return getTopicUriMetadata(metadataClient, clusterUri, allTopicRns.stream().map(rn -> new BaseTopicUri(clusterUri.getProtocol(), rn)).collect(Collectors.toList()));
         } catch (Exception e) {
             throw new RuntimeException("Failed to get metadata for all topics.", e);
         }
     }
 
-    static Map<TopicRn, TopicRnMetadata> getTopicRnMetadata(
-            PscMetadataClient metadataClient, TopicUri clusterUri, List<TopicRn> topicRns) {
+    static Map<TopicUri, TopicUriMetadata> getTopicUriMetadata(
+            PscMetadataClient metadataClient, TopicUri clusterUri, List<TopicUri> topicUris) {
         try {
-            return metadataClient.describeTopicRns(clusterUri, new HashSet<>(topicRns), Duration.ofMillis(Long.MAX_VALUE));
+            return metadataClient.describeTopicUris(clusterUri, new HashSet<>(topicUris), Duration.ofMillis(Long.MAX_VALUE));
         } catch (Exception e) {
             throw new RuntimeException(
-                    String.format("Failed to get metadata for topicRns %s.", topicRns), e);
+                    String.format("Failed to get metadata for topicUris %s.", topicUris), e);
         }
     }
 }

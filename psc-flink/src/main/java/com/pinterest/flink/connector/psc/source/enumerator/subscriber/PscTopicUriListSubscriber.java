@@ -23,7 +23,7 @@ import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicRnMetadata;
+import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.PscSubscriberUtils.getTopicUriMetadata;
 
 /**
  * A subscriber to a fixed list of topics. The subscribed topics must have existed in the PSC
@@ -43,26 +43,34 @@ import static com.pinterest.flink.connector.psc.source.enumerator.subscriber.Psc
 class PscTopicUriListSubscriber implements PscSubscriber {
     private static final long serialVersionUID = -6917603843104947866L;
     private static final Logger LOG = LoggerFactory.getLogger(PscTopicUriListSubscriber.class);
-    private final List<TopicRn> topicRns;
+    private final List<TopicUri> topicUris;
 
     PscTopicUriListSubscriber(List<String> topicUris) {
-        this.topicRns = topicUris.stream().map(topicUri -> {
+        this.topicUris = topicUris.stream().map(topicUri -> {
             try {
-                return BaseTopicUri.validate(topicUri).getTopicRn();
+                return BaseTopicUri.validate(topicUri);
             } catch (TopicUriSyntaxException e) {
                 throw new RuntimeException(e);
             }
         }).collect(Collectors.toList());
     }
 
+    /**
+     * Get a set of subscribed {@link TopicUriPartition}s. This method will preserve the protocol of the
+     * supplied topicUris.
+     *
+     * @param metadataClient The admin client used to retrieve subscribed topic partitions.
+     * @param clusterUri The cluster URI to subscribe to.
+     * @return A set of subscribed {@link TopicUriPartition}s
+     */
     @Override
     public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient metadataClient, TopicUri clusterUri) {
-        LOG.debug("Fetching descriptions for topicRns: {}", topicRns);
-        final Map<TopicRn, TopicRnMetadata> topicMetadata =
-                getTopicRnMetadata(metadataClient, clusterUri, topicRns);
+        LOG.debug("Fetching descriptions for topicUris: {}", topicUris);
+        final Map<TopicUri, TopicUriMetadata> topicMetadata =
+                getTopicUriMetadata(metadataClient, clusterUri, topicUris);
 
         Set<TopicUriPartition> subscribedPartitions = new HashSet<>();
-        for (TopicRnMetadata topic : topicMetadata.values()) {
+        for (TopicUriMetadata topic : topicMetadata.values()) {
             subscribedPartitions.addAll(topic.getTopicUriPartitions());
         }
 
