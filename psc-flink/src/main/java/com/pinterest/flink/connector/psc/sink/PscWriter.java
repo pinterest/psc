@@ -430,6 +430,9 @@ class PscWriter<IN>
                     if (closed) {
                         return;
                     }
+                    if (byteOutMetric == null || byteOutMetric.metricValue() == null) {
+                        return;
+                    }
                     long outgoingBytesUntilNow = ((Number) byteOutMetric.metricValue()).longValue();
                     long outgoingBytesSinceLastUpdate =
                             outgoingBytesUntilNow - latestOutgoingByteTotal;
