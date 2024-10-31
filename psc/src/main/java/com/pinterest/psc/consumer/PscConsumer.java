@@ -1844,7 +1844,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
      */
     public Map<MetricName, Metric> metrics() throws ClientException {
         ensureOpen();
-        Map<MetricName, Metric> metrics = new HashMap<>();
+        Map<MetricName, Metric> metrics = new ConcurrentHashMap<>();
         for (PscBackendConsumer<K, V> backendConsumer : backendConsumers) {
             metrics.putAll(backendConsumer.metrics());
         }
