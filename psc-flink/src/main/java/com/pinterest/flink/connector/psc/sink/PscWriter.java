@@ -52,7 +52,6 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Collections;
@@ -307,6 +306,7 @@ class PscWriter<IN>
                         pscSinkContext.getNumberOfParallelInstances(),
                         this::getOrCreateTransactionalProducer,
                         producerPool::add)) {
+            LOG.info("Aborting lingering transactions with prefixes {}, startCheckpointId {}", prefixesToAbort, startCheckpointId);
             transactionAborter.abortLingeringTransactions(prefixesToAbort, startCheckpointId);
         } catch (ProducerException e) {
             throw new RuntimeException("Failed to abort lingering transactions", e);
@@ -347,12 +347,14 @@ class PscWriter<IN>
         FlinkPscInternalProducer<byte[], byte[]> producer = producerPool.poll();
         try {
             if (producer == null) {
+                LOG.info("Creating brand-new transactional producer {}", transactionalId);
                 producer = new FlinkPscInternalProducer<>(pscProducerConfig, transactionalId);
                 closer.register(producer);
                 producer.initTransactions();
                 if (!isMetricsInitialized)
                     initPscAndFlinkMetrics(producer);
             } else {
+                LOG.info("Reusing transactional producer {}", producer.getTransactionalId());
                 producer.initTransactionId(transactionalId);
             }
         } catch (ConfigurationException | ClientException | TopicUriSyntaxException e) {

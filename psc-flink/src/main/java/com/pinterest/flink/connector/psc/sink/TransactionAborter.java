@@ -18,6 +18,8 @@
 package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.psc.exception.producer.ProducerException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.io.Closeable;
@@ -45,6 +47,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * transactions.
  */
 class TransactionAborter implements Closeable {
+    private static final Logger LOG = LoggerFactory.getLogger(TransactionAborter.class);
     private final int subtaskId;
     private final int parallelism;
     private final Function<String, FlinkPscInternalProducer<byte[], byte[]>> producerFactory;
@@ -98,15 +101,15 @@ class TransactionAborter implements Closeable {
      */
     private int abortTransactionOfSubtask(String prefix, long startCheckpointId, int subtaskId) throws ProducerException {
         int numTransactionAborted = 0;
-        int numCalled = 0;
-        int numCalled1 = 0;
         for (long checkpointId = startCheckpointId; ; checkpointId++, numTransactionAborted++) {
             // initTransactions fences all old transactions with the same id by bumping the epoch
             String transactionalId =
                     TransactionalIdFactory.buildTransactionalId(prefix, subtaskId, checkpointId);
             if (producer == null) {
+                LOG.info("producer = producerFactory.apply(transactionalId): {}", transactionalId);
                 producer = producerFactory.apply(transactionalId);
             } else {
+                LOG.info("producer.initTransactionId(transactionalId): {}", transactionalId);
                 producer.initTransactionId(transactionalId);
             }
             producer.flush();
@@ -128,7 +131,9 @@ class TransactionAborter implements Closeable {
     }
 
     public void close() {
+        LOG.info("Closing transaction aborter");
         if (producer != null) {
+            LOG.info("CloseAction: {}", closeAction);
             closeAction.accept(producer);
         }
     }
