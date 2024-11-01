@@ -182,7 +182,7 @@ class PscWriter<IN>
                     checkNotNull(recoveredStates, "recoveredStates"), lastCheckpointId + 1);
             this.currentProducer = getTransactionalProducer(lastCheckpointId + 1);
             this.currentProducer.beginTransaction();
-            LOG.info("producerPool.size(): " + producerPool.size());
+            LOG.info("producerPool.size() in thread={}: " + producerPool.size(), Thread.currentThread().getId());
         } else if (deliveryGuarantee == DeliveryGuarantee.AT_LEAST_ONCE
                 || deliveryGuarantee == DeliveryGuarantee.NONE) {
             this.currentProducer = new FlinkPscInternalProducer<>(this.pscProducerConfig, null);
@@ -223,15 +223,17 @@ class PscWriter<IN>
 
     @Override
     public Collection<PscCommittable> prepareCommit() {
+        LOG.info("Entering prepareCommit()");
         if (deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE) {
             final List<PscCommittable> committables;
             try {
+                LOG.info("Committing producer {}", currentProducer);
                 committables = Collections.singletonList(
                         PscCommittable.of(currentProducer, producerPool::add));
             } catch (ProducerException e) {
                 throw new RuntimeException(e);
             }
-            LOG.debug("Committing {} committables.", committables);
+            LOG.info("Committing {} committables.", committables);
             return committables;
         }
         return Collections.emptyList();
@@ -345,8 +347,8 @@ class PscWriter<IN>
 
     private FlinkPscInternalProducer<byte[], byte[]> getOrCreateTransactionalProducer(
             String transactionalId) {
-        LOG.info("producerPool.size() in getOrCreateTransactionalProducer: " + producerPool.size());
-        LOG.info("producerPool: " + producerPool);
+        LOG.info("producerPool.size() in thread={} for getOrCreateTransactionalProducer: " + producerPool.size(), Thread.currentThread().getId());
+        LOG.info("producerPool in thread={}: " + producerPool, Thread.currentThread().getId());
         FlinkPscInternalProducer<byte[], byte[]> producer = producerPool.poll();
         try {
             if (producer == null) {
@@ -357,7 +359,7 @@ class PscWriter<IN>
                 if (!isMetricsInitialized)
                     initPscAndFlinkMetrics(producer);
             } else {
-                LOG.info("Reusing transactional producer {}", producer.getTransactionalId());
+                LOG.info("Reusing transactional producer {} and initing transactionalId={}", producer.getTransactionalId(), transactionalId);
                 producer.initTransactionId(transactionalId);
             }
         } catch (ConfigurationException | ClientException | TopicUriSyntaxException e) {
