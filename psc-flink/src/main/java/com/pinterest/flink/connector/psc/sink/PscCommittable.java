@@ -18,6 +18,8 @@
 package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.psc.exception.producer.ProducerException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -29,7 +31,7 @@ import java.util.function.Consumer;
  * to commit transactions in {@link PscCommitter}.
  */
 class PscCommittable {
-
+    private static final Logger LOG = LoggerFactory.getLogger(PscCommittable.class);
     private final long producerId;
     private final short epoch;
     private final String transactionalId;
@@ -44,6 +46,7 @@ class PscCommittable {
         this.epoch = epoch;
         this.transactionalId = transactionalId;
         this.producer = producer;
+        LOG.info("Created PscCommittable with producer: " + this.producer);
     }
 
     public static <K, V> PscCommittable of(
@@ -81,6 +84,8 @@ class PscCommittable {
                 + epoch
                 + ", transactionalId="
                 + transactionalId
+                + ", producer="
+                + producer
                 + '}';
     }
 
