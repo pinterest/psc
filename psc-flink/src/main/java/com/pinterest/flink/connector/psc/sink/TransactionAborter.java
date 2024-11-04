@@ -83,7 +83,6 @@ class TransactionAborter implements Closeable {
      * is responsible for all even and subtask 1 for all odd subtasks.
      */
     private void abortTransactionsWithPrefix(String prefix, long startCheckpointId) throws ProducerException {
-        LOG.info("Aborting transactions in subtask {} with prefix: {}", this.subtaskId, prefix);
         for (int subtaskId = this.subtaskId; ; subtaskId += parallelism) {
             if (abortTransactionOfSubtask(prefix, startCheckpointId, subtaskId) == 0) {
                 // If Flink didn't abort any transaction for current subtask, then we assume that no
@@ -135,7 +134,7 @@ class TransactionAborter implements Closeable {
         LOG.info("Closing transaction aborter");
         Thread.dumpStack();
         if (producer != null) {
-            LOG.info("CloseAction: {}", producer);
+            LOG.info("CloseAction: {}", closeAction);
             closeAction.accept(producer);
         }
     }

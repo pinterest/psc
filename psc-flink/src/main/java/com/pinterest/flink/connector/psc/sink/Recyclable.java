@@ -17,9 +17,6 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.Closeable;
 import java.util.function.Consumer;
 
@@ -27,7 +24,6 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 class Recyclable<T> implements Closeable {
-    private static final Logger LOG = LoggerFactory.getLogger(Recyclable.class);
     private T object;
     private final Consumer<T> recycler;
 
@@ -47,7 +43,6 @@ class Recyclable<T> implements Closeable {
 
     @Override
     public void close() {
-        LOG.info("Closing recyclable: " + object);
         recycler.accept(object);
         object = null;
     }

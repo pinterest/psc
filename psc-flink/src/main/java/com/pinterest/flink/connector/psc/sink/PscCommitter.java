@@ -63,7 +63,7 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
         for (CommitRequest<PscCommittable> request : requests) {
             final PscCommittable committable = request.getCommittable();
             final String transactionalId = committable.getTransactionalId();
-            LOG.info("Committing transaction {}", transactionalId);
+            LOG.debug("Committing transaction {}", transactionalId);
             Optional<Recyclable<? extends FlinkPscInternalProducer<?, ?>>> recyclable =
                     committable.getProducer();
             FlinkPscInternalProducer<?, ?> producer;
