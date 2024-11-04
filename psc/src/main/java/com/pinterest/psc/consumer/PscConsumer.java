@@ -22,9 +22,9 @@ import com.pinterest.psc.exception.consumer.WakeupException;
 import com.pinterest.psc.exception.handler.PscErrorHandler;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.PscStartupException;
+import com.pinterest.psc.interceptor.ConsumerInterceptors;
 import com.pinterest.psc.interceptor.Interceptors;
 import com.pinterest.psc.interceptor.TypePreservingInterceptor;
-import com.pinterest.psc.interceptor.ConsumerInterceptors;
 import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
@@ -1844,7 +1844,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
      */
     public Map<MetricName, Metric> metrics() throws ClientException {
         ensureOpen();
-        Map<MetricName, Metric> metrics = new HashMap<>();
+        Map<MetricName, Metric> metrics = new ConcurrentHashMap<>();
         for (PscBackendConsumer<K, V> backendConsumer : backendConsumers) {
             metrics.putAll(backendConsumer.metrics());
         }
