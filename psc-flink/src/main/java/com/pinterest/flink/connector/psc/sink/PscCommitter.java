@@ -66,8 +66,6 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
             LOG.info("Committing transaction {}", transactionalId);
             Optional<Recyclable<? extends FlinkPscInternalProducer<?, ?>>> recyclable =
                     committable.getProducer();
-            LOG.info("Recyclable: {}", recyclable);
-            LOG.info("Recyclable.isPresent: {}", recyclable.isPresent());
             FlinkPscInternalProducer<?, ?> producer;
             try {
                 producer =
@@ -75,7 +73,6 @@ class PscCommitter implements Committer<PscCommittable>, Closeable {
                                 .<FlinkPscInternalProducer<?, ?>>map(Recyclable::getObject)
                                 .orElseGet(() -> {
                                     try {
-                                        LOG.info("getting recovery producer");
                                         return getRecoveryProducer(committable);
                                     } catch (ConfigurationException | ProducerException | TopicUriSyntaxException e) {
                                         throw new RuntimeException("Error getting recovery producer", e);
