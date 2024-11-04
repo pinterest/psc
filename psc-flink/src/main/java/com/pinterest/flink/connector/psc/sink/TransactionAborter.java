@@ -132,7 +132,6 @@ class TransactionAborter implements Closeable {
 
     public void close() {
         LOG.info("Closing transaction aborter");
-        Thread.dumpStack();
         if (producer != null) {
             LOG.info("CloseAction: {}", closeAction);
             closeAction.accept(producer);

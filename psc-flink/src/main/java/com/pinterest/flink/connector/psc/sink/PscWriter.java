@@ -182,7 +182,6 @@ class PscWriter<IN>
                     checkNotNull(recoveredStates, "recoveredStates"), lastCheckpointId + 1);
             this.currentProducer = getTransactionalProducer(lastCheckpointId + 1);
             this.currentProducer.beginTransaction();
-            LOG.info("producerPool.size(): " + producerPool.size());
         } else if (deliveryGuarantee == DeliveryGuarantee.AT_LEAST_ONCE
                 || deliveryGuarantee == DeliveryGuarantee.NONE) {
             this.currentProducer = new FlinkPscInternalProducer<>(this.pscProducerConfig, null);
@@ -253,7 +252,7 @@ class PscWriter<IN>
     @Override
     public void close() throws Exception {
         closed = true;
-        LOG.info("Closing writer with {}", currentProducer);
+        LOG.debug("Closing writer with {}", currentProducer);
         closeAll(
                 this::abortCurrentProducer,
                 closer,
@@ -345,8 +344,6 @@ class PscWriter<IN>
 
     private FlinkPscInternalProducer<byte[], byte[]> getOrCreateTransactionalProducer(
             String transactionalId) {
-        LOG.info("producerPool.size() in getOrCreateTransactionalProducer: " + producerPool.size());
-        LOG.info("producerPool: " + producerPool);
         FlinkPscInternalProducer<byte[], byte[]> producer = producerPool.poll();
         try {
             if (producer == null) {
