@@ -433,13 +433,17 @@ class PscWriter<IN>
                     if (byteOutMetric == null || byteOutMetric.metricValue() == null) {
                         return;
                     }
-                    long outgoingBytesUntilNow = ((Number) byteOutMetric.metricValue()).longValue();
-                    long outgoingBytesSinceLastUpdate =
-                            outgoingBytesUntilNow - latestOutgoingByteTotal;
-                    numBytesOutCounter.inc(outgoingBytesSinceLastUpdate);
-                    latestOutgoingByteTotal = outgoingBytesUntilNow;
-                    lastSync = time;
-                    registerMetricSync();
+                    try {
+                        long outgoingBytesUntilNow = ((Number) byteOutMetric.metricValue()).longValue();
+                        long outgoingBytesSinceLastUpdate =
+                                outgoingBytesUntilNow - latestOutgoingByteTotal;
+                        numBytesOutCounter.inc(outgoingBytesSinceLastUpdate);
+                        latestOutgoingByteTotal = outgoingBytesUntilNow;
+                        lastSync = time;
+                        registerMetricSync();
+                    } catch (Exception e) {
+                        LOG.warn("Failed to registerMetricSync to update numBytesOutCounter, this shouldn't affect the regular job processing", e);
+                    }
                 });
     }
 
