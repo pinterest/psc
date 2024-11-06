@@ -40,10 +40,6 @@
             <artifactId>flink-connector-kafka</artifactId>
             <version>${flink.version}</version>
             <exclusions>
-<!--                <exclusion>-->
-<!--                    <groupId>org.apache.flink</groupId>-->
-<!--                    <artifactId>force-shading</artifactId>-->
-<!--                </exclusion>-->
                 <exclusion>
                     <groupId>org.apache.kafka</groupId>
                     <artifactId>kafka-clients</artifactId>
@@ -51,13 +47,6 @@
             </exclusions>
             <scope>provided</scope>
         </dependency>
-
-<!--        <dependency>-->
-<!--            <groupId>org.apache.flink</groupId>-->
-<!--            <artifactId>force-shading</artifactId>-->
-<!--            <version>${flink.version}</version>-->
-<!--            <scope>provided</scope>-->
-<!--        </dependency>-->
 
         <!-- Table ecosystem -->
         <!-- Projects depending on this project won't depend on flink-table-*. -->
