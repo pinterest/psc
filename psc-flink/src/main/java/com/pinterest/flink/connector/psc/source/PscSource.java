@@ -62,7 +62,17 @@ import java.util.function.Supplier;
 
 /**
  * The Source implementation of PSC. Please use a {@link PscSourceBuilder} to construct a {@link
- * PscSource}. The following example shows how to create a PscSource emitting records of <code>
+ * PscSource}
+ *
+ * This is different from {@link com.pinterest.flink.streaming.connectors.psc.FlinkPscConsumer}
+ * in that it is a source implementation for Flink's new source API. Due to the difference in implementation,
+ * the two classes are not compatible with each other. Most notably, PscSource currently can only support
+ * reading from topics from a single backend cluster, while FlinkPscConsumer can read from multiple clusters.
+ * This limitation is due to the fact that a {@link com.pinterest.flink.connector.psc.PscFlinkConfiguration#CLUSTER_URI_CONFIG}
+ * is required to be set in the configuration for the PscSource to perform metadata queries against the cluster using
+ * a {@link com.pinterest.psc.metadata.client.PscMetadataClient}.
+ *
+ * The following example shows how to create a PscSource emitting records of <code>
  * String</code> type.
  *
  * <pre>{@code

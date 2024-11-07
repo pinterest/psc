@@ -36,6 +36,14 @@ import java.util.Properties;
 /**
  * Flink Sink to produce data into a PSC topicUri. The sink supports all delivery guarantees
  * described by {@link DeliveryGuarantee}.
+ *
+ * A PscSink using EXACTLY_ONCE delivery guarantee requires a {@link com.pinterest.flink.connector.psc.PscFlinkConfiguration#CLUSTER_URI_CONFIG}
+ * to be set in the producer config. This is used to pre-construct the {@link com.pinterest.psc.producer.PscBackendProducer} upon
+ * creation of a top-level {@link com.pinterest.psc.producer.PscProducer} to perform transactional operations. For this reason,
+ * a single PscSink instance cannot be used to write to topics spanning multiple different clusters. This limitation does not
+ * exist in the AT_LEAST_ONCE and NONE delivery guarantees, nor does it exist in {@link com.pinterest.flink.streaming.connectors.psc.FlinkPscProducer}
+ * which can be used to write to multiple clusters regardless of the delivery guarantee.
+ *
  * <li>{@link DeliveryGuarantee#NONE} does not provide any guarantees: messages may be lost in case
  *     of issues on the PubSub broker and messages may be duplicated in case of a Flink failure.
  * <li>{@link DeliveryGuarantee#AT_LEAST_ONCE} the sink will wait for all outstanding records in the
