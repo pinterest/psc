@@ -1604,7 +1604,15 @@ public class PscConsumer<K, V> implements AutoCloseable {
         }
     }
 
-    // TODO: unit test this
+    /**
+     * Returns a collection of {@link MessageId}s associated with the committed positions of the given topic URI partitions.
+     *
+     * @param topicUriPartitions the topic URI partitions for which the committed positions are to be returned.
+     * @return a collection of message ids from the backend consumers that encompass the requested offsets. If there is no committed offset
+     *       for a given partition, the corresponding message id's offset will be null.
+     * @throws ConsumerException if the given URIs can not be parsed, or if an error from the backend bubbles up.
+     * @throws ConfigurationException if the discovery of backend cluster fails.
+     */
     public Collection<MessageId> committed(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException, ConfigurationException {
         acquireAndEnsureOpen();
         try {

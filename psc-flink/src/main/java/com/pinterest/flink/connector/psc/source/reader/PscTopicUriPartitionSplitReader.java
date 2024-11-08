@@ -351,8 +351,8 @@ public class PscTopicUriPartitionSplitReader
                             "getting committed offset as stopping offsets")
                     .forEach(
                             (messageId) -> {
-                                Preconditions.checkNotNull(
-                                        messageId,
+                                Preconditions.checkState(
+                                        messageId.getOffset() >= 0,
                                         String.format(
                                                 "Partition %s should stop at committed offset. "
                                                         + "But there is no committed offset of this partition for group %s",

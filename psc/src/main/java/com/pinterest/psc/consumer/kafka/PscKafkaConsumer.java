@@ -914,7 +914,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
             TopicUriPartition topicUriPartition = new TopicUriPartition(
                     entry.getKey().topic(), entry.getKey().partition()
             );
-            return new KafkaMessageId(topicUriPartition, entry.getValue() == null ? null : entry.getValue().offset());
+            return new KafkaMessageId(topicUriPartition, entry.getValue() == null ? -1 : entry.getValue().offset());
         }).collect(Collectors.toList());
     }
 
