@@ -54,6 +54,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1796,6 +1797,58 @@ public class TestOneKafkaBackend {
                 assertNull(pscConsumer.committed(new TopicUriPartition(topicUriStr1, i)));
         }
         pscConsumer.close();
+    }
+
+    @Timeout(TEST_TIMEOUT_SECONDS)
+    @Test
+    public void testBatchCommitted() throws SerializerException, InterruptedException, ConfigurationException, ConsumerException {
+        int messageCount1 = 1000;
+        int targetPartition1 = 1;
+        PscTestUtils.produceKafkaMessages(messageCount1, sharedKafkaTestResource, kafkaCluster, topic1, targetPartition1);
+        int messageCount2 = 1000;
+        int targetPartition2 = 2;
+        PscTestUtils.produceKafkaMessages(messageCount2, sharedKafkaTestResource, kafkaCluster, topic1, targetPartition2);
+
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false");
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, this.getClass().getSimpleName() + "-psc-consumer-group");
+
+        TopicUriPartition topicUriPartition1 = new TopicUriPartition(topicUriStr1, targetPartition1);
+        TopicUriPartition topicUriPartition2 = new TopicUriPartition(topicUriStr1, targetPartition2);
+        TopicUriPartition topicUriPartition3 = new TopicUriPartition(topicUriStr1, 3);
+        TopicUriPartition nonExistentPartition = new TopicUriPartition(topicUriStr1, partitions1);  // partitions1 ID is not a valid partition
+        PscConsumer<String, String> pscConsumer = new PscConsumer<>(pscConfiguration);
+        pscConsumer.assign(Sets.newHashSet(topicUriPartition1, topicUriPartition2));
+
+        Collection<MessageId> committed = pscConsumer.committed(Arrays.asList(topicUriPartition1, topicUriPartition2));
+        assertEquals(2, committed.size());
+        for (MessageId messageId : committed) {
+            assertEquals(-1, messageId.getOffset());
+        }
+
+        Map<TopicUriPartition, Long> toCommit = new HashMap<>();
+        toCommit.put(topicUriPartition1, 100L);
+        toCommit.put(topicUriPartition2, 200L);
+
+        pscConsumer.commitSync(toCommit.entrySet().stream().map(e -> new MessageId(e.getKey(), e.getValue())).collect(Collectors.toList()));
+
+        committed = pscConsumer.committed(Arrays.asList(topicUriPartition1, topicUriPartition2, topicUriPartition3));
+        assertEquals(3, committed.size());
+        for (MessageId messageId : committed) {
+            if (messageId.getTopicUriPartition().getPartition() == targetPartition1)
+                assertEquals(101L, messageId.getOffset());
+            else if (messageId.getTopicUriPartition().getPartition() == targetPartition2)
+                assertEquals(201L, messageId.getOffset());
+            else
+                assertEquals(-1, messageId.getOffset());
+        }
+
+        // test with a non-existent partition
+        committed = pscConsumer.committed(Collections.singletonList(nonExistentPartition));
+        assertEquals(1, committed.size());
+        assertEquals(-1, committed.iterator().next().getOffset());
     }
 
     /**

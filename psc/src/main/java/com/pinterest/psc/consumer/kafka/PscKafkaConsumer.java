@@ -897,6 +897,28 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
     }
 
     @Override
+    public Collection<MessageId> committed(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
+        if (kafkaConsumer == null)
+            handleUninitializedKafkaConsumer("committed()");
+
+        Set<TopicPartition> topicPartitions = topicUriPartitions.stream().map(tup -> {
+            KafkaTopicUri kafkaTopicUri = (KafkaTopicUri) tup.getTopicUri();
+            return new TopicPartition(kafkaTopicUri.getTopic(), tup.getPartition());
+        }).collect(Collectors.toSet());
+
+        Map<TopicPartition, OffsetAndMetadata> topicPartitionsToOffsetAndMetadata =
+                executeBackendCallWithRetriesAndReturn(() ->
+                        kafkaConsumer.committed(topicPartitions), activeTopicUrisOrPartitions.put(topicUriPartitions)
+                );
+        return topicPartitionsToOffsetAndMetadata.entrySet().stream().map(entry -> {
+            TopicUriPartition topicUriPartition = new TopicUriPartition(
+                    entry.getKey().topic(), entry.getKey().partition()
+            );
+            return new KafkaMessageId(topicUriPartition, entry.getValue() == null ? -1 : entry.getValue().offset());
+        }).collect(Collectors.toList());
+    }
+
+    @Override
     public Map<TopicUriPartition, Long> startOffsets(Set<TopicUriPartition> topicUriPartitions) throws ConsumerException {
         if (kafkaConsumer == null)
             handleUninitializedKafkaConsumer("startOffsets()");

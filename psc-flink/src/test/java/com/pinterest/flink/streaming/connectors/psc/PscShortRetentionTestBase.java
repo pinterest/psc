@@ -136,7 +136,7 @@ public class PscShortRetentionTestBase implements Serializable {
 
         Properties tprops = new Properties();
         tprops.setProperty("retention.ms", "250");
-        pscTestEnvWithKafka.createTestTopic(topic, parallelism, 1, tprops);
+        pscTestEnvWithKafka.createTestTopic(topicUri, parallelism, 1, tprops);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(parallelism);
@@ -234,7 +234,7 @@ public class PscShortRetentionTestBase implements Serializable {
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         final int parallelism = 1;
 
-        pscTestEnvWithKafka.createTestTopic(topic, parallelism, 1);
+        pscTestEnvWithKafka.createTestTopic(topicUri, parallelism, 1);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(parallelism);
@@ -272,7 +272,7 @@ public class PscShortRetentionTestBase implements Serializable {
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
         final int parallelism = 1;
 
-        pscTestEnvWithKafka.createTestTopic(topic, parallelism, 1);
+        pscTestEnvWithKafka.createTestTopic(topicUri, parallelism, 1);
 
         // ----------- add consumer ----------
 

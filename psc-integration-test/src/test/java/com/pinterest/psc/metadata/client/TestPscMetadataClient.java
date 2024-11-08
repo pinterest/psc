@@ -1,7 +1,6 @@
 package com.pinterest.psc.metadata.client;
 
 import com.pinterest.psc.common.BaseTopicUri;
-import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TestUtils;
 import com.pinterest.psc.common.TopicRn;
 import com.pinterest.psc.common.TopicUri;
@@ -16,7 +15,7 @@ import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.integration.KafkaCluster;
 import com.pinterest.psc.metadata.MetadataUtils;
-import com.pinterest.psc.metadata.TopicRnMetadata;
+import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.IntegerDeserializer;
@@ -128,45 +127,45 @@ public class TestPscMetadataClient {
     @Test
     public void testListTopicRns() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
-        List<TopicRn> topicRnList = client.listTopicRns(KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr)), Duration.ofMillis(10000));
+        List<TopicRn> topicRnList = client.listTopicRns(BaseTopicUri.validate(clusterUriStr), Duration.ofMillis(10000));
         List<TopicRn> expectedTopicRnList = Arrays.asList(topic1Rn, topic2Rn, topic3Rn);
         assertEquals(expectedTopicRnList, topicRnList);
         client.close();
     }
 
     /**
-     * Tests that {@link PscMetadataClient#describeTopicRns(TopicUri, java.util.Set, Duration)} returns the correct
+     * Tests that {@link PscMetadataClient#describeTopicUris(TopicUri, Collection, Duration)} returns the correct
      * metadata for the supplied topic RNs
      *
      * @throws Exception
      */
     @Test
-    public void testDescribeTopicRns() throws Exception {
+    public void testDescribeTopicUris() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
-        Map<TopicRn, TopicRnMetadata> topicRnDescriptionMap = client.describeTopicRns(
-                KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr)),
-                new HashSet<>(Arrays.asList(topic1Rn, topic2Rn, topic3Rn)),
+        Map<TopicUri, TopicUriMetadata> topicUriDescriptionMap = client.describeTopicUris(
+                BaseTopicUri.validate(clusterUriStr),
+                new HashSet<>(Arrays.asList(topic1Uri, topic2Uri, topic3Uri)),
                 Duration.ofMillis(10000)
         );
-        assertEquals(3, topicRnDescriptionMap.size());
+        assertEquals(3, topicUriDescriptionMap.size());
 
-        assertEquals(topic1Rn, topicRnDescriptionMap.get(topic1Rn).getTopicRn());
-        assertEquals(partitions1, topicRnDescriptionMap.get(topic1Rn).getTopicUriPartitions().size());
+        assertEquals(topic1Uri, topicUriDescriptionMap.get(topic1Uri).getTopicUri());
+        assertEquals(partitions1, topicUriDescriptionMap.get(topic1Uri).getTopicUriPartitions().size());
         for (int i = 0; i < partitions1; i++) {
-            assertEquals(topic1Rn, topicRnDescriptionMap.get(topic1Rn).getTopicUriPartitions().get(i).getTopicUri().getTopicRn());
-            assertEquals(i, topicRnDescriptionMap.get(topic1Rn).getTopicUriPartitions().get(i).getPartition());
+            assertEquals(topic1Uri, topicUriDescriptionMap.get(topic1Uri).getTopicUriPartitions().get(i).getTopicUri());
+            assertEquals(i, topicUriDescriptionMap.get(topic1Uri).getTopicUriPartitions().get(i).getPartition());
         }
-        assertEquals(topic2Rn, topicRnDescriptionMap.get(topic2Rn).getTopicRn());
-        assertEquals(partitions2, topicRnDescriptionMap.get(topic2Rn).getTopicUriPartitions().size());
+        assertEquals(topic2Uri, topicUriDescriptionMap.get(topic2Uri).getTopicUri());
+        assertEquals(partitions2, topicUriDescriptionMap.get(topic2Uri).getTopicUriPartitions().size());
         for (int i = 0; i < partitions2; i++) {
-            assertEquals(topic2Rn, topicRnDescriptionMap.get(topic2Rn).getTopicUriPartitions().get(i).getTopicUri().getTopicRn());
-            assertEquals(i, topicRnDescriptionMap.get(topic2Rn).getTopicUriPartitions().get(i).getPartition());
+            assertEquals(topic2Uri, topicUriDescriptionMap.get(topic2Uri).getTopicUriPartitions().get(i).getTopicUri());
+            assertEquals(i, topicUriDescriptionMap.get(topic2Uri).getTopicUriPartitions().get(i).getPartition());
         }
-        assertEquals(topic3Rn, topicRnDescriptionMap.get(topic3Rn).getTopicRn());
-        assertEquals(partitions3, topicRnDescriptionMap.get(topic3Rn).getTopicUriPartitions().size());
+        assertEquals(topic3Uri, topicUriDescriptionMap.get(topic3Uri).getTopicUri());
+        assertEquals(partitions3, topicUriDescriptionMap.get(topic3Uri).getTopicUriPartitions().size());
         for (int i = 0; i < partitions3; i++) {
-            assertEquals(topic3Rn, topicRnDescriptionMap.get(topic3Rn).getTopicUriPartitions().get(i).getTopicUri().getTopicRn());
-            assertEquals(i, topicRnDescriptionMap.get(topic3Rn).getTopicUriPartitions().get(i).getPartition());
+            assertEquals(topic3Uri, topicUriDescriptionMap.get(topic3Uri).getTopicUriPartitions().get(i).getTopicUri());
+            assertEquals(i, topicUriDescriptionMap.get(topic3Uri).getTopicUriPartitions().get(i).getPartition());
         }
         client.close();
     }
@@ -183,7 +182,7 @@ public class TestPscMetadataClient {
         Map<TopicUriPartition, PscMetadataClient.MetadataClientOption> topicUriPartitionsAndOptions = new HashMap<>();
         topicUriPartitionsAndOptions.put(new TopicUriPartition(topic1Uri, 0), PscMetadataClient.MetadataClientOption.OFFSET_SPEC_EARLIEST);
         topicUriPartitionsAndOptions.put(new TopicUriPartition(topic2Uri, 0), PscMetadataClient.MetadataClientOption.OFFSET_SPEC_LATEST);
-        TopicUri clusterUri = KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr));
+        TopicUri clusterUri = BaseTopicUri.validate(clusterUriStr);
         Map<TopicUriPartition, Long> offsets = client.listOffsets(
                 clusterUri,
                 topicUriPartitionsAndOptions,
@@ -254,7 +253,7 @@ public class TestPscMetadataClient {
     @Test
     public void testListOffsetsForConsumerGroup() throws Exception {
         PscMetadataClient client = new PscMetadataClient(metadataClientConfiguration);
-        TopicUri clusterUri = KafkaTopicUri.validate(BaseTopicUri.validate(clusterUriStr));
+        TopicUri clusterUri = BaseTopicUri.validate(clusterUriStr);
 
         String consumerGroupId = "test-psc-consumer-group";
         PscProducer<Integer, Integer> pscProducer = getPscProducer();
@@ -289,11 +288,8 @@ public class TestPscMetadataClient {
                 Duration.ofMillis(10000)
         );
 
-        assertEquals(4, offsets.size());
+        assertEquals(1, offsets.size());
         assertTrue(offsets.containsKey(t1p0));
-        assertTrue(offsets.containsKey(t1p1));
-        assertTrue(offsets.containsKey(t2p23));
-        assertTrue(offsets.containsKey(t3p0));
         assertEquals(1, (long) offsets.get(t1p0));
         assertNull(offsets.get(t1p1));
         assertNull(offsets.get(t2p23));
@@ -381,11 +377,7 @@ public class TestPscMetadataClient {
                 Duration.ofMillis(10000)
         );
 
-        assertEquals(4, offsets.size());
-        assertTrue(offsets.containsKey(t1p0));
-        assertTrue(offsets.containsKey(t1p1));
-        assertTrue(offsets.containsKey(t2p23));
-        assertTrue(offsets.containsKey(t3p0));
+        assertEquals(0, offsets.size());
         assertNull(offsets.get(t1p0));
         assertNull(offsets.get(t1p1));
         assertNull(offsets.get(t2p23));
@@ -399,8 +391,7 @@ public class TestPscMetadataClient {
                 Duration.ofMillis(10000)
         );
 
-        assertEquals(1, offsets.size());
-        assertTrue(offsets.containsKey(new TopicUriPartition(topic1Uri, 100)));
+        assertEquals(0, offsets.size());
         assertNull(offsets.get(new TopicUriPartition(topic1Uri, 100)));
 
         pscConsumer.close();

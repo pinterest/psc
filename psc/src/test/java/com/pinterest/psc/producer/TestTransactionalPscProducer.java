@@ -8,6 +8,8 @@ import com.pinterest.psc.metrics.NullMetricsReporter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -29,7 +31,7 @@ public class TestTransactionalPscProducer {
      * @throws ConfigurationException
      */
     @Test
-    void testTransactionalStateScenarios() throws ConfigurationException, ProducerException {
+    void testTransactionalStateScenarios() throws ConfigurationException, ProducerException, IOException {
         PscProducer<byte[], byte[]> pscProducer = new PscProducer<>(pscConfiguration);
         Exception e;
 

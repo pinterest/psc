@@ -6,6 +6,8 @@ import com.pinterest.psc.discovery.ServiceDiscoveryProvider;
 import com.pinterest.psc.logging.PscLogger;
 import org.apache.commons.configuration2.PropertiesConfiguration;
 
+import java.io.Serializable;
+
 /**
  * Various configurations for PSC client are defined here. There are a few configuration categories:
  * <ol>
@@ -46,7 +48,7 @@ import org.apache.commons.configuration2.PropertiesConfiguration;
  * {@value PSC_CONSUMER_INTERCEPTORS_RAW_CLASSES}. Therefore, to avoid misconfiguration of any single-value config do
  * not use a comma in the config value.
  */
-public class PscConfiguration extends PropertiesConfiguration {
+public class PscConfiguration extends PropertiesConfiguration implements Serializable {
     private static final PscLogger logger = PscLogger.getLogger(PscConfiguration.class);
 
     public final static String PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST = "earliest";
@@ -570,6 +572,7 @@ public class PscConfiguration extends PropertiesConfiguration {
      * is provided in the file <code>discovery.json.example</code>.
      */
     public static final String PSC_DISCOVERY_FALLBACK_FILE = PSC_DISCOVERY + "." + FALLBACK_FILE;
+    private static final long serialVersionUID = 5394130837651422684L;
 
     public PscConfiguration() {
         super();

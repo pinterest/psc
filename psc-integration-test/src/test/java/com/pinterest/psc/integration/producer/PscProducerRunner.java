@@ -9,6 +9,7 @@ import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import io.vavr.control.Either;
 
+import java.io.IOException;
 import java.util.concurrent.Future;
 
 public class PscProducerRunner implements Runnable {
@@ -91,7 +92,7 @@ public class PscProducerRunner implements Runnable {
         } finally {
             try {
                 pscProducer.close();
-            } catch (ProducerException e) {
+            } catch (IOException e) {
                 if (exception == null)
                     exception = e;
             }

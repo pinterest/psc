@@ -18,6 +18,9 @@
 
 package com.pinterest.flink.streaming.connectors.psc;
 
+import com.pinterest.flink.connector.psc.source.PscSource;
+import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscDeserializationSchemaWrapper;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
@@ -28,8 +31,10 @@ import com.pinterest.flink.streaming.connectors.psc.testutils.PartitionValidatin
 import com.pinterest.flink.streaming.connectors.psc.testutils.ThrottledMapper;
 import com.pinterest.flink.streaming.connectors.psc.testutils.Tuple2FlinkPartitioner;
 import com.pinterest.flink.streaming.connectors.psc.testutils.ValidatingExactlyOnceSink;
+import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import com.pinterest.flink.streaming.util.serialization.psc.TypeInformationKeyValueSerializationSchema;
 import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
@@ -39,6 +44,7 @@ import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.JobStatus;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
@@ -54,7 +60,6 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple1;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.client.ClientUtils;
 import org.apache.flink.client.program.ClusterClient;
 import org.apache.flink.client.program.ProgramInvocationException;
 import org.apache.flink.core.memory.DataInputView;
@@ -80,7 +85,6 @@ import org.apache.flink.streaming.api.functions.source.RichSourceFunction;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor;
 import org.apache.flink.streaming.api.graph.StreamingJobGraphGenerator;
-import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import org.apache.flink.test.util.SuccessException;
 import org.apache.flink.testutils.junit.RetryOnException;
 import org.apache.flink.testutils.junit.RetryRule;
@@ -111,7 +115,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.apache.flink.test.util.TestUtils.submitJobAndWaitForResult;
 import static org.apache.flink.test.util.TestUtils.tryExecute;
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -126,8 +133,16 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
     @Rule
     public RetryRule retryRule = new RetryRule();
-
+    protected final boolean useNewSource;
     private ClusterClient<?> client;
+
+    protected PscConsumerTestBaseWithKafkaAsPubSub() {
+        this(false);
+    }
+
+    protected PscConsumerTestBaseWithKafkaAsPubSub(boolean useNewSource) {
+        this.useNewSource = useNewSource;
+    }
 
     // ------------------------------------------------------------------------
     // Common Test Preparation
@@ -177,12 +192,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
             pscConsumerConfiguration.setProperty("psc.discovery.connection.urls", "localhost:80");
             pscConsumerConfiguration.setProperty("psc.discovery.security.protocols", "plaintext");
             pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
-            FlinkPscConsumerBase<String> source = pscTestEnvWithKafka.getPscConsumer(
-                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "doesntexist",
-                    new SimpleStringSchema(),
-                    pscConsumerConfiguration
-            );
-            DataStream<String> stream = see.addSource(source);
+            DataStream<String> stream = getStream(see, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "doesntexist", new SimpleStringSchema(), pscConsumerConfiguration);
             stream.print();
             see.execute("No broker test");
         } catch (JobExecutionException jee) {
@@ -193,8 +203,15 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
                 assertTrue(optionalTimeoutException.isPresent());
 
                 final TimeoutException timeoutException = optionalTimeoutException.get();
-                assertEquals("Timeout expired while fetching topic metadata",
-                        timeoutException.getMessage());
+                if (useNewSource) {
+                    assertThat(
+                            timeoutException.getCause().getMessage(),
+                            containsString("Timed out waiting for a node assignment."));
+                } else {
+                    assertEquals(
+                            "Timeout expired while fetching topic metadata",
+                            timeoutException.getMessage());
+                }
             } else {
                 final Optional<Throwable> optionalThrowable = ExceptionUtils.findThrowableWithMessage(jee,
                         "Unable to retrieve any partitions");
@@ -208,7 +225,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      * Ensures that the committed offsets to Kafka are the offsets of "the next
      * record to process".
      */
-    public void runCommitOffsetsToKafka() throws Exception {
+    public void runCommitOffsetsToPsc() throws Exception {
         // 3 partitions with 50 records each (0-49, so the expected commit offset of
         // each partition should be 50)
         final int parallelism = 3;
@@ -226,8 +243,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
 
-        DataStream<String> stream = env
-                .addSource(pscTestEnvWithKafka.getPscConsumer(topicUri.getTopicUriAsString(), new SimpleStringSchema(), pscConsumerConfiguration));
+        DataStream<String> stream = getStream(env, topicUri.getTopicUriAsString(), new SimpleStringSchema(), pscConsumerConfiguration);
         stream.addSink(new DiscardingSink<String>());
 
         final AtomicReference<Throwable> errorRef = new AtomicReference<>();
@@ -296,7 +312,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      * <p>
      * See FLINK-3440 as well
      */
-    public void runAutoOffsetRetrievalAndCommitToKafka() throws Exception {
+    public void runAutoOffsetRetrievalAndCommitToPsc() throws Exception {
         // 3 partitions with 50 records each (0-49, so the expected commit offset of
         // each partition should be 50)
         final int parallelism = 3;
@@ -318,8 +334,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
                 PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST
         ); // set to reset to latest, so that partitions are initially not read
 
-        DataStream<String> stream = env
-                .addSource(pscTestEnvWithKafka.getPscConsumer(topicUri.getTopicUriAsString(), new SimpleStringSchema(), readConfiguration));
+        DataStream<String> stream = getStream(env, topicUri.getTopicUriAsString(), new SimpleStringSchema(), readConfiguration);
         stream.addSink(new DiscardingSink<String>());
 
         final AtomicReference<Throwable> errorRef = new AtomicReference<>();
@@ -465,11 +480,23 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
                 PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST
         ); // this should be ignored
 
-        FlinkPscConsumerBase<Tuple2<Integer, Integer>> latestReadingConsumer = pscTestEnvWithKafka
-                .getPscConsumer(topicUri.getTopicUriAsString(), deserSchema, readConfiguration);
-        latestReadingConsumer.setStartFromLatest();
+        DataStreamSource<Tuple2<Integer, Integer>> stream;
+        if (useNewSource) {
+            PscSource<Tuple2<Integer, Integer>> source =
+                    pscTestEnvWithKafka
+                            .getSourceBuilder(topicUri.getTopicUriAsString(), deserSchema, readConfiguration)
+                            .setStartingOffsets(OffsetsInitializer.latest())
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .build();
+            stream = env.fromSource(source, WatermarkStrategy.noWatermarks(), "KafkaSource");
+        } else {
+            FlinkPscConsumerBase<Tuple2<Integer, Integer>> latestReadingConsumer = pscTestEnvWithKafka
+                    .getPscConsumer(topicUri.getTopicUriAsString(), deserSchema, readConfiguration);
+            latestReadingConsumer.setStartFromLatest();
+            stream = env.addSource(latestReadingConsumer);
+        }
 
-        env.addSource(latestReadingConsumer).setParallelism(parallelism)
+        stream.setParallelism(parallelism)
                 .flatMap(new FlatMapFunction<Tuple2<Integer, Integer>, Object>() {
                     @Override
                     public void flatMap(Tuple2<Integer, Integer> value,
@@ -487,7 +514,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final AtomicReference<Throwable> error = new AtomicReference<>();
         Thread consumeThread = new Thread(() -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 if (!ExceptionUtils.findThrowable(t, JobCancellationException.class).isPresent()) {
@@ -768,7 +795,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final int elementsPerPartition = 100;
         final int totalElements = parallelism * elementsPerPartition;
 
-        createTestTopic(topic, parallelism, 2);
+        createTestTopic(topicUri, parallelism, 2);
         createTestTopic(additionalEmptyTopic, parallelism, 1); // create an empty topic which will
         // remain empty all the time
 
@@ -829,11 +856,8 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
-        FlinkPscConsumerBase<Tuple2<Long, String>> source = pscTestEnvWithKafka.getPscConsumer(topicUris,
-                sourceSchema, pscConsumerConfiguration);
 
-        DataStreamSource<Tuple2<Long, String>> consuming = env.addSource(source)
-                .setParallelism(parallelism);
+        DataStreamSource<Tuple2<Long, String>> consuming = getStream(env, topicUris, sourceSchema, pscConsumerConfiguration).setParallelism(parallelism);
 
         consuming.addSink(new RichSinkFunction<Tuple2<Long, String>>() {
 
@@ -924,7 +948,8 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
         FlinkPscConsumerBase<Integer> kafkaSource = pscTestEnvWithKafka.getPscConsumer(topicUri, schema, pscConsumerConfiguration);
 
-        env.addSource(kafkaSource).map(new PartitionValidatingMapper(parallelism, 1))
+        getStream(env, topicUri, schema, pscConsumerConfiguration)
+           .map(new PartitionValidatingMapper(parallelism, 1))
            .map(new FailingIdentityMapper<Integer>(failAfterElements))
            .addSink(new ValidatingExactlyOnceSink(totalElements)).setParallelism(1);
 
@@ -970,9 +995,10 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
         FlinkPscConsumerBase<Integer> kafkaSource = pscTestEnvWithKafka.getPscConsumer(topicUri, schema, pscConsumerConfiguration);
 
-        env.addSource(kafkaSource).map(new PartitionValidatingMapper(numPartitions, 3))
-                .map(new FailingIdentityMapper<Integer>(failAfterElements))
-                .addSink(new ValidatingExactlyOnceSink(totalElements)).setParallelism(1);
+        getStream(env, topicUri, schema, pscConsumerConfiguration)
+           .map(new PartitionValidatingMapper(numPartitions, 3))
+           .map(new FailingIdentityMapper<Integer>(failAfterElements))
+           .addSink(new ValidatingExactlyOnceSink(totalElements)).setParallelism(1);
 
         FailingIdentityMapper.failedBefore = false;
         tryExecute(env, "One-source-multi-partitions exactly once test");
@@ -1019,9 +1045,10 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
         FlinkPscConsumerBase<Integer> kafkaSource = pscTestEnvWithKafka.getPscConsumer(topicUri, schema, pscConsumerConfiguration);
 
-        env.addSource(kafkaSource).map(new PartitionValidatingMapper(numPartitions, 1))
-                .map(new FailingIdentityMapper<Integer>(failAfterElements))
-                .addSink(new ValidatingExactlyOnceSink(totalElements)).setParallelism(1);
+        getStream(env, topicUri, schema, pscConsumerConfiguration)
+           .map(new PartitionValidatingMapper(numPartitions, 1))
+           .map(new FailingIdentityMapper<Integer>(failAfterElements))
+           .addSink(new ValidatingExactlyOnceSink(totalElements)).setParallelism(1);
 
         FailingIdentityMapper.failedBefore = false;
         tryExecute(env, "multi-source-one-partitions exactly once test");
@@ -1056,17 +1083,16 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
-        FlinkPscConsumerBase<String> source = pscTestEnvWithKafka.getPscConsumer(topicUri, new SimpleStringSchema(),
-                pscConsumerConfiguration);
 
-        env.addSource(source).addSink(new DiscardingSink<String>());
+        getStream(env, topicUri, new SimpleStringSchema(), pscConsumerConfiguration)
+           .addSink(new DiscardingSink<String>());
 
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
         final JobID jobId = jobGraph.getJobID();
 
         final Runnable jobRunner = () -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 jobError.set(t);
@@ -1118,7 +1144,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
 
         final int parallelism = 3;
-        createTestTopic(topic, parallelism, 1);
+        createTestTopic(topicUri, parallelism, 1);
 
         final AtomicReference<Throwable> error = new AtomicReference<>();
 
@@ -1129,17 +1155,16 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         Properties pscConsumerConfiguration = new Properties();
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
-        FlinkPscConsumerBase<String> source = pscTestEnvWithKafka.getPscConsumer(topicUri, new SimpleStringSchema(),
-                pscConsumerConfiguration);
 
-        env.addSource(source).addSink(new DiscardingSink<String>());
+        getStream(env, topicUri, new SimpleStringSchema(), pscConsumerConfiguration)
+           .addSink(new DiscardingSink<String>());
 
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
         final JobID jobId = jobGraph.getJobID();
 
         final Runnable jobRunner = () -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 LOG.error("Job Runner failed with exception", t);
@@ -1250,10 +1275,10 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerProperties.putAll(pscDiscoveryConfiguration);
         if (useLegacySchema) {
             Tuple2WithTopicSchema schema = new Tuple2WithTopicSchema(env.getConfig());
-            stream = env.addSource(pscTestEnvWithKafka.getPscConsumer(topicUris, schema, pscConsumerProperties));
+            stream = getStream(env, topicUris, schema, pscConsumerProperties);
         } else {
             TestDeserializer schema = new TestDeserializer(env.getConfig());
-            stream = env.addSource(pscTestEnvWithKafka.getPscConsumer(topicUris, schema, pscConsumerProperties));
+            stream = getStream(env, topicUris, schema, pscConsumerProperties);
         }
 
         stream.flatMap(new FlatMapFunction<Tuple3<Integer, Integer, String>, Integer>() {
@@ -1332,9 +1357,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
 
-        FlinkPscConsumerBase<Tuple2<Long, byte[]>> source = pscTestEnvWithKafka.getPscConsumer(topicUri, serSchema,
-                pscConsumerConfiguration);
-        DataStreamSource<Tuple2<Long, byte[]>> consuming = env.addSource(source);
+        DataStreamSource<Tuple2<Long, byte[]>> consuming = getStream(env, topicUri, serSchema, pscConsumerConfiguration);
 
         consuming.addSink(new SinkFunction<Tuple2<Long, byte[]>>() {
 
@@ -1442,9 +1465,9 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
-        FlinkPscConsumerBase<Integer> kafkaSource = pscTestEnvWithKafka.getPscConsumer(topicUri, schema, pscConsumerConfiguration);
 
-        env.addSource(kafkaSource).map(new PartitionValidatingMapper(parallelism, 1))
+        getStream(env, topicUri, schema, pscConsumerConfiguration)
+                .map(new PartitionValidatingMapper(parallelism, 1))
                 .map(new BrokerKillingMapper<Integer>(leaderId, failAfterElements))
                 .addSink(new ValidatingExactlyOnceSink(totalElements)).setParallelism(1);
 
@@ -1510,8 +1533,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
-        DataStream<Tuple2<Long, PojoValue>> fromKafka = env
-                .addSource(pscTestEnvWithKafka.getPscConsumer(topicUri, readSchema, pscConsumerConfiguration));
+        DataStream<Tuple2<Long, PojoValue>> fromKafka = getStream(env, topicUri, readSchema, pscConsumerConfiguration);
         fromKafka.flatMap(new RichFlatMapFunction<Tuple2<Long, PojoValue>, Object>() {
             long counter = 0;
 
@@ -1554,7 +1576,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
     public void runAllDeletesTest() throws Exception {
         final String topic = "alldeletestest";
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
-        createTestTopic(topic, 1, 1);
+        createTestTopic(topicUri, 1, 1);
         final int elementCount = 300;
 
         // ----------- Write some data into Kafka -------------------
@@ -1601,8 +1623,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
-        DataStream<Tuple2<byte[], PojoValue>> fromKafka = env
-                .addSource(pscTestEnvWithKafka.getPscConsumer(topicUri, schema, pscConsumerConfiguration));
+        DataStream<Tuple2<byte[], PojoValue>> fromKafka = getStream(env, topicUri, schema, pscConsumerConfiguration);
 
         fromKafka.flatMap(new RichFlatMapFunction<Tuple2<byte[], PojoValue>, Object>() {
             long counter = 0;
@@ -1646,8 +1667,8 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
         pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
 
-        DataStream<Tuple2<Integer, Integer>> fromKafka = env1.addSource(
-                pscTestEnvWithKafka.getPscConsumer(topicUri.getTopicUriAsString(), new FixedNumberDeserializationSchema(elementCount), pscConsumerConfiguration));
+        DataStream<Tuple2<Integer, Integer>> fromKafka =
+                getStream(env1, topicUri.getTopicUriAsString(), new FixedNumberDeserializationSchema(elementCount), pscConsumerConfiguration);
         fromKafka.flatMap(new FlatMapFunction<Tuple2<Integer, Integer>, Void>() {
             @Override
             public void flatMap(Tuple2<Integer, Integer> value, Collector<Void> out) throws Exception {
@@ -1746,8 +1767,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         Properties properties = new Properties();
         properties.putAll(standardPscConsumerConfiguration);
         properties.putAll(pscDiscoveryConfiguration);
-        DataStream<Tuple2<Integer, Integer>> fromKafka = env1
-                .addSource(pscTestEnvWithKafka.getPscConsumer(topicUri, schema, properties));
+        DataStream<Tuple2<Integer, Integer>> fromKafka = getStream(env1, topicUri, schema, properties);
         fromKafka.flatMap(new FlatMapFunction<Tuple2<Integer, Integer>, Void>() {
             @Override
             public void flatMap(Tuple2<Integer, Integer> value, Collector<Void> out) throws Exception {// no
@@ -1781,7 +1801,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         Thread jobThread = new Thread(() -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
             } catch (Throwable t) {
                 if (!ExceptionUtils.findThrowable(t, JobCancellationException.class).isPresent()) {
@@ -1961,12 +1981,32 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 //    cc.setProperty("psc.discovery.topic.uri.prefixes", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
 //    cc.setProperty("psc.discovery.connection.urls", pscTestEnvWithKafka.getBrokerConnectionString().split(",")[0]);
 //    cc.setProperty("psc.discovery.security.protocols", "plaintext");
-        FlinkPscConsumerBase<Tuple2<Integer, Integer>> consumer = pscTestEnvWithKafka.getPscConsumer(topicUri,
-                deser, cc);
-        setPscConsumerOffset(startupMode, consumer, specificStartupOffsets, startupTimestamp);
+        DataStreamSource<Tuple2<Integer, Integer>> source;
+        if (useNewSource) {
+            PscSourceBuilder<Tuple2<Integer, Integer>> sourceBuilder =
+                    pscTestEnvWithKafka.getSourceBuilder(topicUri, deser, cc)
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            Map<TopicUriPartition, Long> startOffsets = new HashMap<>();
+            if (specificStartupOffsets != null) {
+                specificStartupOffsets.forEach(
+                        (ktp, offset) ->
+                                startOffsets.put(
+                                        new TopicUriPartition(ktp.getTopicUri(), ktp.getPartition()),
+                                        offset));
+            }
+            setPscSourceOffset(startupMode, sourceBuilder, startOffsets, startupTimestamp);
+            source =
+                    env.fromSource(
+                            sourceBuilder.build(), WatermarkStrategy.noWatermarks(), "PscSource");
+        } else {
+            FlinkPscConsumerBase<Tuple2<Integer, Integer>> consumer = pscTestEnvWithKafka.getPscConsumer(topicUri,
+                    deser, cc);
+            setPscConsumerOffset(startupMode, consumer, specificStartupOffsets, startupTimestamp);
+            source = env.addSource(consumer);
+        }
 
-        DataStream<Tuple2<Integer, Integer>> source = env.addSource(consumer)
-                .setParallelism(sourceParallelism).map(new ThrottledMapper<Tuple2<Integer, Integer>>(20))
+        source.setParallelism(sourceParallelism)
+                .map(new ThrottledMapper<Tuple2<Integer, Integer>>(20))
                 .setParallelism(sourceParallelism);
 
         // verify data
@@ -2049,6 +2089,30 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         }
         readSequence(env, startupMode, specificStartupOffsets, startupTimestamp, cc, topicUri,
                 partitionsToValuesCountAndStartOffset);
+    }
+
+    protected void setPscSourceOffset(
+            final StartupMode startupMode,
+            final PscSourceBuilder<?> pscSourceBuilder,
+            final Map<TopicUriPartition, Long> specificStartupOffsets,
+            final Long startupTimestamp) {
+        switch (startupMode) {
+            case EARLIEST:
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.earliest());
+                break;
+            case LATEST:
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.latest());
+                break;
+            case SPECIFIC_OFFSETS:
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.offsets(specificStartupOffsets));
+                break;
+            case GROUP_OFFSETS:
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.committedOffsets(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST));
+                break;
+            case TIMESTAMP:
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.timestamp(startupTimestamp));
+                break;
+        }
     }
 
     protected void setPscConsumerOffset(final StartupMode startupMode,
@@ -2262,14 +2326,26 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         readConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "flink-tests-validator-consumer");
         readConfiguration.putAll(securePscConsumerConfiguration);
         readConfiguration.putAll(pscDiscoveryConfiguration);
-        FlinkPscConsumerBase<Tuple2<Integer, Integer>> pscConsumer = pscTestEnvWithKafka.getPscConsumer(
-                topicUri,
-                deserSchema,
-                readConfiguration
-        );
-        pscConsumer.setStartFromEarliest();
 
-        readEnv.addSource(pscConsumer)
+        DataStreamSource<Tuple2<Integer, Integer>> dataStreamSource;
+        if (useNewSource) {
+            PscSource<Tuple2<Integer, Integer>> source =
+                    pscTestEnvWithKafka.getSourceBuilder(topicUri, deserSchema, readConfiguration)
+                            .setStartingOffsets(OffsetsInitializer.earliest())
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .build();
+            dataStreamSource = readEnv.fromSource(source, WatermarkStrategy.noWatermarks(), "PscSource");
+        } else {
+            FlinkPscConsumerBase<Tuple2<Integer, Integer>> pscConsumer = pscTestEnvWithKafka.getPscConsumer(
+                    topicUri,
+                    deserSchema,
+                    readConfiguration
+            );
+            pscConsumer.setStartFromEarliest();
+            dataStreamSource = readEnv.addSource(pscConsumer);
+        }
+
+        dataStreamSource
                 .map(new RichMapFunction<Tuple2<Integer, Integer>, Tuple2<Integer, Integer>>() {
 
                     private final int totalCount = parallelism * totalNumElements;
@@ -2292,7 +2368,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         Thread runner = new Thread(() -> {
             try {
-                ClientUtils.submitJobAndWaitForResult(client, jobGraph,
+                submitJobAndWaitForResult(client, jobGraph,
                         PscConsumerTestBaseWithKafkaAsPubSub.class.getClassLoader());
                 tryExecute(readEnv, "sequence validation");
             } catch (Throwable t) {
@@ -2329,6 +2405,58 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         ClusterCommunicationUtils.waitUntilNoJobIsRunning(client);
 
         return success;
+    }
+
+    private <T> DataStreamSource<T> getStream(
+            StreamExecutionEnvironment env,
+            String topicUri,
+            DeserializationSchema<T> schema,
+            Properties props) {
+        return getStream(env, Collections.singletonList(topicUri), schema, props);
+    }
+
+    private <T> DataStreamSource<T> getStream(
+            StreamExecutionEnvironment env,
+            String topicUri,
+            PscDeserializationSchema<T> schema,
+            Properties props) {
+        return getStream(env, Collections.singletonList(topicUri), schema, props);
+    }
+
+    private <T> DataStreamSource<T> getStream(
+            StreamExecutionEnvironment env,
+            List<String> topicUris,
+            DeserializationSchema<T> schema,
+            Properties props) {
+        if (useNewSource) {
+            PscSource<T> pscSource =
+                    pscTestEnvWithKafka.getSourceBuilder(topicUris, schema, props)
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .build();
+            return env.fromSource(pscSource, WatermarkStrategy.noWatermarks(), "PscSource");
+        } else {
+            FlinkPscConsumerBase<T> flinkPscConsumer =
+                    pscTestEnvWithKafka.getPscConsumer(topicUris, schema, props);
+            return env.addSource(flinkPscConsumer);
+        }
+    }
+
+    private <T> DataStreamSource<T> getStream(
+            StreamExecutionEnvironment env,
+            List<String> topicUris,
+            PscDeserializationSchema<T> schema,
+            Properties props) {
+        if (useNewSource) {
+            PscSource<T> pscSource =
+                    pscTestEnvWithKafka.getSourceBuilder(topicUris, schema, props)
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .build();
+            return env.fromSource(pscSource, WatermarkStrategy.noWatermarks(), "PscSource");
+        } else {
+            FlinkPscConsumerBase<T> flinkPscConsumer =
+                    pscTestEnvWithKafka.getPscConsumer(topicUris, schema, props);
+            return env.addSource(flinkPscConsumer);
+        }
     }
 
     // ------------------------------------------------------------------------
