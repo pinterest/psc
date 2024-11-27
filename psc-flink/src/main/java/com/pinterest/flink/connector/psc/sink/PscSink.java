@@ -22,6 +22,7 @@ import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.connector.sink2.Committer;
 import org.apache.flink.api.connector.sink2.StatefulSink;
 import org.apache.flink.api.connector.sink2.TwoPhaseCommittingSink;
@@ -68,8 +69,7 @@ import java.util.Properties;
  */
 @PublicEvolving
 public class PscSink<IN>
-        implements StatefulSink<IN, PscWriterState>,
-                TwoPhaseCommittingSink<IN, PscCommittable> {
+        implements TwoPhaseCommittingStatefulSink<IN, PscWriterState, PscCommittable> {
 
     private final DeliveryGuarantee deliveryGuarantee;
 
@@ -149,5 +149,10 @@ public class PscSink<IN>
     @Override
     public SimpleVersionedSerializer<PscWriterState> getWriterStateSerializer() {
         return new PscWriterStateSerializer();
+    }
+
+    @VisibleForTesting
+    protected Properties getPscProducerConfig() {
+        return pscProducerConfig;
     }
 }

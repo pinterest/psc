@@ -41,9 +41,6 @@ import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
 import org.apache.flink.runtime.checkpoint.CheckpointIDCounter;
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableList;
-import org.apache.flink.shaded.guava30.com.google.common.collect.Lists;
-import org.apache.flink.shaded.guava30.com.google.common.io.Closer;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.errors.UnknownProducerIdException;
@@ -54,6 +51,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
@@ -75,8 +73,8 @@ import static org.apache.flink.util.Preconditions.checkState;
  * @param <IN> The type of the input elements.
  */
 class PscWriter<IN>
-        implements StatefulSink.StatefulSinkWriter<IN, PscWriterState>,
-                TwoPhaseCommittingSink.PrecommittingSinkWriter<IN, PscCommittable> {
+        implements TwoPhaseCommittingStatefulSink.PrecommittingStatefulSinkWriter<
+        IN, PscWriterState, PscCommittable> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscWriter.class);
     private static final String PSC_PRODUCER_METRIC_NAME = "PscProducer";
@@ -92,7 +90,7 @@ class PscWriter<IN>
     private final PscRecordSerializationSchema<IN> recordSerializer;
     private final Callback deliveryCallback;
     private final PscRecordSerializationSchema.PscSinkContext pscSinkContext;
-
+    private volatile Exception asyncProducerException;
     private final Map<String, PscMetricMutableWrapper> previouslyCreatedMetrics = new HashMap<>();
     private final SinkWriterMetricGroup metricGroup;
     private final boolean disabledMetrics;
@@ -110,9 +108,8 @@ class PscWriter<IN>
     // producer pool only used for exactly once
     private final Deque<FlinkPscInternalProducer<byte[], byte[]>> producerPool =
             new ArrayDeque<>();
-    private final Closer closer = Closer.create();
     private long lastCheckpointId;
-
+    private final Deque<AutoCloseable> producerCloseables = new ArrayDeque<>();
     private boolean closed = false;
     private long lastSync = System.currentTimeMillis();
     private boolean isMetricsInitialized = false;
@@ -144,6 +141,7 @@ class PscWriter<IN>
         this.pscProducerConfig = checkNotNull(pscProducerConfig, "pscProducerConfig");
         this.transactionalIdPrefix = checkNotNull(transactionalIdPrefix, "transactionalIdPrefix");
         this.recordSerializer = checkNotNull(recordSerializer, "recordSerializer");
+        checkNotNull(sinkInitContext, "sinkInitContext");
         this.deliveryCallback =
                 new WriterCallback(
                         sinkInitContext.getMailboxExecutor(),
@@ -155,7 +153,6 @@ class PscWriter<IN>
                         || pscProducerConfig.containsKey(KEY_REGISTER_METRICS)
                                 && !Boolean.parseBoolean(
                                         pscProducerConfig.get(KEY_REGISTER_METRICS).toString());
-        checkNotNull(sinkInitContext, "sinkInitContext");
         this.timeService = sinkInitContext.getProcessingTimeService();
         this.metricGroup = sinkInitContext.metricGroup();
         this.numBytesOutCounter = metricGroup.getIOMetricGroup().getNumBytesOutCounter();
@@ -186,7 +183,7 @@ class PscWriter<IN>
         } else if (deliveryGuarantee == DeliveryGuarantee.AT_LEAST_ONCE
                 || deliveryGuarantee == DeliveryGuarantee.NONE) {
             this.currentProducer = new FlinkPscInternalProducer<>(this.pscProducerConfig, null);
-            closer.register(this.currentProducer);
+            producerCloseables.add(this.currentProducer);
         } else {
             throw new UnsupportedOperationException(
                     "Unsupported PSC writer semantic " + this.deliveryGuarantee);
@@ -194,19 +191,22 @@ class PscWriter<IN>
     }
 
     @Override
-    public void write(IN element, Context context) throws IOException {
+    public void write(@Nullable IN element, Context context) throws IOException {
+        checkAsyncException();
         final PscProducerMessage<byte[], byte[]> record =
                 recordSerializer.serialize(element, pscSinkContext, context.timestamp());
-        try {
-            currentProducer.send(record, deliveryCallback);
-            if (!isMetricsInitialized) {
-                initPscAndFlinkMetrics(currentProducer);
+        if (record != null) {
+            try {
+                currentProducer.send(record, deliveryCallback);
+                if (!isMetricsInitialized) {
+                    initPscAndFlinkMetrics(currentProducer);
+                }
+            } catch (ConfigurationException | ClientException e) {
+                throw new RuntimeException(e);
             }
-        } catch (ConfigurationException | ClientException e) {
-            throw new RuntimeException(e);
+            numRecordsOutCounter.inc();
+            numRecordsSendCounter.inc();
         }
-        numRecordsOutCounter.inc();
-        numRecordsSendCounter.inc();
     }
 
     @Override
@@ -219,11 +219,16 @@ class PscWriter<IN>
                 throw new RuntimeException(e);
             }
         }
+        checkAsyncException();
     }
 
     @Override
     public Collection<PscCommittable> prepareCommit() {
-        if (deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE) {
+        if (deliveryGuarantee != DeliveryGuarantee.EXACTLY_ONCE) {
+            return Collections.emptyList();
+        }
+        // only return a PscCommittable if the current transaction has been written some data
+        if (currentProducer.hasRecordsInTransaction()) {
             final List<PscCommittable> committables;
             try {
                 committables = Collections.singletonList(
@@ -234,6 +239,13 @@ class PscWriter<IN>
             LOG.debug("Committing {} committables.", committables);
             return committables;
         }
+        // otherwise, we commit the empty transaction as is (no-op) and just recycle the producer
+        try {
+            currentProducer.commitTransaction();
+        } catch (ProducerException e) {
+            throw new RuntimeException(e);
+        }
+        producerPool.add(currentProducer);
         return Collections.emptyList();
     }
 
@@ -247,21 +259,21 @@ class PscWriter<IN>
                 throw new RuntimeException(e);
             }
         }
-        return ImmutableList.of(pscWriterState);
+        return Collections.singletonList(pscWriterState);
     }
 
     @Override
     public void close() throws Exception {
         closed = true;
         LOG.debug("Closing writer with {}", currentProducer);
-        closeAll(
-                this::abortCurrentProducer,
-                closer,
-                producerPool::clear,
-                () -> {
-                    checkState(currentProducer.isClosed());
-                    currentProducer = null;
-                });
+        closeAll(this::abortCurrentProducer, producerPool::clear);
+        closeAll(producerCloseables);
+        checkState(
+                currentProducer.isClosed(), "Could not close current producer " + currentProducer);
+        currentProducer = null;
+
+        // Rethrow exception for the case in which close is called before writer() and flush().
+        checkAsyncException();
     }
 
     private void abortCurrentProducer() {
@@ -287,7 +299,8 @@ class PscWriter<IN>
 
     void abortLingeringTransactions(
             Collection<PscWriterState> recoveredStates, long startCheckpointId) {
-        List<String> prefixesToAbort = Lists.newArrayList(transactionalIdPrefix);
+        List<String> prefixesToAbort = new ArrayList<>();
+        prefixesToAbort.add(transactionalIdPrefix);
 
         final Optional<PscWriterState> lastStateOpt = recoveredStates.stream().findFirst();
         if (lastStateOpt.isPresent()) {
@@ -348,7 +361,7 @@ class PscWriter<IN>
         try {
             if (producer == null) {
                 producer = new FlinkPscInternalProducer<>(pscProducerConfig, transactionalId);
-                closer.register(producer);
+                producerCloseables.add(producer);
                 producer.initTransactions();
                 if (!isMetricsInitialized)
                     initPscAndFlinkMetrics(producer);
@@ -447,6 +460,22 @@ class PscWriter<IN>
                 });
     }
 
+    /**
+     * This method should only be invoked in the mailbox thread since the counter is not volatile.
+     * Logic needs to be invoked by write AND flush since we support various semantics.
+     */
+    private void checkAsyncException() throws IOException {
+        // reset this exception since we could close the writer later on
+        Exception e = asyncProducerException;
+        if (e != null) {
+
+            asyncProducerException = null;
+            numRecordsOutErrorsCounter.inc();
+            throw new IOException(
+                    "One or more PSC Producer send requests have encountered exception", e);
+        }
+    }
+
     private class WriterCallback implements Callback {
         private final MailboxExecutor mailboxExecutor;
         @Nullable private final Consumer<MessageId> metadataConsumer;
@@ -463,12 +492,22 @@ class PscWriter<IN>
             if (exception != null) {
                 FlinkPscInternalProducer<byte[], byte[]> producer =
                         PscWriter.this.currentProducer;
-                mailboxExecutor.execute(
+                // Propagate the first exception since amount of exceptions could be large. Need to
+                // do this in Producer IO thread since flush() guarantees that the future will
+                // complete. The same guarantee does not hold for tasks executed in separate
+                // executor e.g. mailbox executor. flush() needs to have the exception immediately
+                // available to fail the checkpoint.
+                if (asyncProducerException == null) {
+                    asyncProducerException = decorateException(metadata, exception, producer);
+                }
+
+                // Checking for exceptions from previous writes
+                mailboxExecutor.submit(
                         () -> {
-                            numRecordsOutErrorsCounter.inc();
-                            throwException(metadata, exception, producer);
+                            // Checking for exceptions from previous writes
+                            checkAsyncException();
                         },
-                        "Failed to send data with PSC");
+                        "Update error metric");
             }
 
             if (metadataConsumer != null) {
@@ -476,7 +515,7 @@ class PscWriter<IN>
             }
         }
 
-        private void throwException(
+        private FlinkRuntimeException decorateException(
                 MessageId metadata,
                 Exception exception,
                 FlinkPscInternalProducer<byte[], byte[]> producer) {
@@ -485,7 +524,7 @@ class PscWriter<IN>
             if (exception.getCause() instanceof UnknownProducerIdException) {
                 message += PscCommitter.UNKNOWN_PRODUCER_ID_ERROR_MESSAGE;
             }
-            throw new FlinkRuntimeException(message, exception);
+            return new FlinkRuntimeException(message, exception);
         }
     }
 }

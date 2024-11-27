@@ -82,6 +82,7 @@ public class PscRecordSerializationSchemaBuilder<IN> {
     @Nullable private SerializationSchema<? super IN> valueSerializationSchema;
     @Nullable private FlinkPscPartitioner<? super IN> partitioner;
     @Nullable private SerializationSchema<? super IN> keySerializationSchema;
+    @Nullable private HeaderProvider<? super IN> headerProvider;
 
     /**
      * Sets a custom partitioner determining the target partition of the target topic.
@@ -188,6 +189,20 @@ public class PscRecordSerializationSchemaBuilder<IN> {
         return self;
     }
 
+    /**
+     * Sets a {@link HeaderProvider} which is used to add headers to the {@link PscProducerMessage} for
+     * the current element.
+     *
+     * @param headerProvider
+     * @return {@code this}
+     */
+    public <T extends IN> PscRecordSerializationSchemaBuilder<T> setHeaderProvider(
+            HeaderProvider<? super T> headerProvider) {
+        PscRecordSerializationSchemaBuilder<T> self = self();
+        self.headerProvider = checkNotNull(headerProvider);
+        return self;
+    }
+
     @SuppressWarnings("unchecked")
     private <T extends IN> PscRecordSerializationSchemaBuilder<T> self() {
         return (PscRecordSerializationSchemaBuilder<T>) this;
@@ -237,7 +252,11 @@ public class PscRecordSerializationSchemaBuilder<IN> {
         checkState(valueSerializationSchema != null, "No value serializer is configured.");
         checkState(topicUriSelector != null, "No topic selector is configured.");
         return new PscRecordSerializationSchemaWrapper<>(
-                topicUriSelector, valueSerializationSchema, keySerializationSchema, partitioner);
+                topicUriSelector,
+                valueSerializationSchema,
+                keySerializationSchema,
+                partitioner,
+                headerProvider);
     }
 
     private void checkValueSerializerNotSet() {
@@ -276,16 +295,19 @@ public class PscRecordSerializationSchemaBuilder<IN> {
         private final Function<? super IN, String> topicUriSelector;
         private final FlinkPscPartitioner<? super IN> partitioner;
         private final SerializationSchema<? super IN> keySerializationSchema;
+        private final HeaderProvider<? super IN> headerProvider;
 
         PscRecordSerializationSchemaWrapper(
                 Function<? super IN, String> topicSelector,
                 SerializationSchema<? super IN> valueSerializationSchema,
                 @Nullable SerializationSchema<? super IN> keySerializationSchema,
-                @Nullable FlinkPscPartitioner<? super IN> partitioner) {
+                @Nullable FlinkPscPartitioner<? super IN> partitioner,
+                @Nullable HeaderProvider<? super IN> headerProvider) {
             this.topicUriSelector = checkNotNull(topicSelector);
             this.valueSerializationSchema = checkNotNull(valueSerializationSchema);
             this.partitioner = partitioner;
             this.keySerializationSchema = keySerializationSchema;
+            this.headerProvider = headerProvider;
         }
 
         @Override
@@ -327,7 +349,8 @@ public class PscRecordSerializationSchemaBuilder<IN> {
                     partition.isPresent() ? partition.getAsInt() : null,
                     key,
                     value,
-                    timestamp == null || timestamp < 0L ? null : timestamp);
+                    timestamp == null || timestamp < 0L ? null : timestamp)
+                    .setHeaders(headerProvider != null ? headerProvider.getHeaders(element) : null);
         }
     }
 }

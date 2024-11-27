@@ -234,6 +234,15 @@ public class KafkaTransactionManagerOperator implements TransactionManagerOperat
         transitionTransactionManagerStateTo(transactionManager, "READY");
 
         transitionTransactionManagerStateTo(transactionManager, "IN_TRANSACTION");
+
+        // the transactionStarted flag in the KafkaProducer controls whether
+        // an EndTxnRequest will actually be sent to Kafka for a commit
+        // or abort API call. This flag is set only after the first send (i.e.
+        // only if data is actually written to some partition).
+        // In checkpoints, we only ever store metadata of pre-committed
+        // transactions that actually have records; therefore, on restore
+        // when we create recovery producers to resume transactions and commit
+        // them, we should always set this flag.
         PscCommon.setField(transactionManager, "transactionStarted", true);
     }
 
