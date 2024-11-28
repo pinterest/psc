@@ -44,8 +44,8 @@ import org.apache.flink.core.io.SimpleVersionedSerializer;
 import java.util.Properties;
 
 /**
- * Factory class for the DynamicKafkaSource components. <a
- * href="https://cwiki.apache.org/confluence/x/CBn1D">FLIP-246: DynamicKafkaSource</a>
+ * Factory class for the DynamicPscSource components. <a
+ * href="https://cwiki.apache.org/confluence/x/CBn1D">FLIP-246: DynamicPscSource</a>
  *
  * <p>This source's key difference from {@link com.pinterest.flink.connector.psc.source.PscSource} is that it enables users to read
  * dynamically, which does not require job restart, from streams (topics that belong to one or more
@@ -55,21 +55,21 @@ import java.util.Properties;
  * <p>This example shows how to configure a {@link DynamicPscSource} that emits Integer records:
  *
  * <pre>{@code
- * DynamicKafkaSource<Integer> dynamicKafkaSource =
- *                     DynamicKafkaSource.<Integer>builder()
+ * DynamicPscSource<Integer> dynamicPscSource =
+ *                     DynamicPscSource.<Integer>builder()
  *                             .setStreamIds(Collections.singleton("MY_STREAM_ID"))
  *                             // custom metadata service that resolves `MY_STREAM_ID` to the associated clusters and topics
- *                             .setKafkaMetadataService(kafkaMetadataService)
+ *                             .setPscMetadataService(kafkaMetadataService)
  *                             .setDeserializer(
- *                                     KafkaRecordDeserializationSchema.valueOnly(
+ *                                     PscRecordDeserializationSchema.valueOnly(
  *                                             IntegerDeserializer.class))
  *                             .setStartingOffsets(OffsetsInitializer.earliest())
- *                             // common properties for all Kafka clusters
+ *                             // common properties for all Psc clusters
  *                             .setProperties(properties)
  *                             .build();
  * }</pre>
  *
- * <p>See more configuration options in {@link org.apache.flink.connector.kafka.dynamic.source.DynamicKafkaSourceBuilder} and {@link
+ * <p>See more configuration options in {@link DynamicPscSourceBuilder} and {@link
  * DynamicPscSourceOptions}.
  *
  * @param <T> Record type

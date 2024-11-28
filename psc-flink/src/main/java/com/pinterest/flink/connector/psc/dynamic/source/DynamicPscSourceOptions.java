@@ -47,7 +47,7 @@ public class DynamicPscSourceOptions {
                     .intType()
                     .defaultValue(1)
                     .withDescription(
-                            "The number of consecutive failures before letting the exception from Kafka metadata service discovery "
+                            "The number of consecutive failures before letting the exception from PSC metadata service discovery "
                                     + "trigger jobmanager failure and global failover. The default is one to at least catch startup "
                                     + "failures.");
 

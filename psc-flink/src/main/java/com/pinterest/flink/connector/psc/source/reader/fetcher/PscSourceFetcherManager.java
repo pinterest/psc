@@ -26,6 +26,7 @@ import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.SourceReaderBase;
 import org.apache.flink.connector.base.source.reader.fetcher.SingleThreadFetcherManager;
@@ -67,7 +68,7 @@ public class PscSourceFetcherManager
             Supplier<SplitReader<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit>>
                     splitReaderSupplier,
             Consumer<Collection<String>> splitFinishedHook) {
-        super(elementsQueue, splitReaderSupplier, splitFinishedHook);
+        super(elementsQueue, splitReaderSupplier, new Configuration(), splitFinishedHook);
     }
 
     public void commitOffsets(

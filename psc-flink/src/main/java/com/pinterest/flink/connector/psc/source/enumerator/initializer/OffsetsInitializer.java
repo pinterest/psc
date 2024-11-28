@@ -149,8 +149,7 @@ public interface OffsetsInitializer extends Serializable {
      * @return an {@link OffsetsInitializer} which initializes the offsets to the latest offsets.
      */
     static OffsetsInitializer latest() {
-        return new ReaderHandledOffsetsInitializer(
-                PscTopicUriPartitionSplit.LATEST_OFFSET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST);
+        return new LatestOffsetsInitializer();
     }
 
     /**

@@ -559,6 +559,16 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
     }
 
     @Override
+    public void pause(Collection<TopicUriPartition> topicUriPartitions) {
+        throw new UnsupportedOperationException("[Memq] Consumer does not support pause/resume.");
+    }
+
+    @Override
+    public void resume(Collection<TopicUriPartition> topicUriPartitions) {
+        throw new UnsupportedOperationException("[Memq] Consumer does not support pause/resume.");
+    }
+
+    @Override
     // Uses a short-living consumer to support metadata calls without subscribing
     public Set<TopicUriPartition> getPartitions(TopicUri topicUri) throws ConsumerException {
         try (MemqConsumer<byte[], byte[]> consumer = getMetadataConsumer(topicUri)) {

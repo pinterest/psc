@@ -31,6 +31,7 @@ import com.pinterest.psc.serde.ByteArrayDeserializer;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.connector.source.Boundedness;
+import org.apache.flink.util.function.SerializableSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,7 +48,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
- * The @builder class for {@link PscSource} to make it easier for the users to construct a {@link
+ * The builder class for {@link PscSource} to make it easier for the users to construct a {@link
  * PscSource}.
  *
  * <p>The following example shows the minimum setup to create a PscSource that reads the String
@@ -70,9 +71,9 @@ import static org.apache.flink.util.Preconditions.checkState;
  *
  * <p>By default the PscSource runs in an {@link Boundedness#CONTINUOUS_UNBOUNDED} mode and never
  * stops until the Flink job is canceled or fails. To let the PscSource run in {@link
- * Boundedness#CONTINUOUS_UNBOUNDED} but stops at some given offsets, one can call {@link
+ * Boundedness#CONTINUOUS_UNBOUNDED} yet stop at some given offsets, one can call {@link
  * #setUnbounded(OffsetsInitializer)}. For example the following PscSource stops after it consumes
- * up to the latest partition offsets at the point when the Flink started.
+ * up to the latest partition offsets at the point when the Flink job started.
  *
  * <pre>{@code
  * PscSource<String> source = PscSource
@@ -81,6 +82,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  *     .setTopics(Arrays.asList(TOPIC1, TOPIC2))
  *     .setDeserializer(PscRecordDeserializationSchema.valueOnly(StringDeserializer.class))
  *     .setUnbounded(OffsetsInitializer.latest())
+ *     .setRackId(() -> MY_RACK_ID)
  *     .build();
  * }</pre>
  *
@@ -103,6 +105,8 @@ public class PscSourceBuilder<OUT> {
     private PscRecordDeserializationSchema<OUT> deserializationSchema;
     // The configurations.
     protected Properties props;
+    // Client rackId supplier
+    private SerializableSupplier<String> rackIdSupplier;
 
     PscSourceBuilder() {
         this.subscriber = null;
@@ -111,6 +115,7 @@ public class PscSourceBuilder<OUT> {
         this.boundedness = Boundedness.CONTINUOUS_UNBOUNDED;
         this.deserializationSchema = null;
         this.props = new Properties();
+        this.rackIdSupplier = null;
     }
 
     /**
@@ -187,6 +192,18 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
+     * Set a custom Kafka subscriber to use to discover new splits.
+     *
+     * @param pscSubscriber the {@link PscSubscriber} to use for split discovery.
+     * @return this KafkaSourceBuilder.
+     */
+    public PscSourceBuilder<OUT> setPscSubscriber(PscSubscriber pscSubscriber) {
+        ensureSubscriberIsNull("custom");
+        this.subscriber = checkNotNull(pscSubscriber);
+        return this;
+    }
+
+    /**
      * Specify from which offsets the PscSource should start consume from by providing an {@link
      * OffsetsInitializer}.
      *
@@ -224,16 +241,16 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * By default the PscSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
-     * and thus never stops until the Flink job fails or is canceled. To let the PscSource run as
-     * a streaming source but still stops at some point, one can set an {@link OffsetsInitializer}
-     * to specify the stopping offsets for each partition. When all the partitions have reached
-     * their stopping offsets, the PscSource will then exit.
+     * By default the PscSource is set to run as {@link Boundedness#CONTINUOUS_UNBOUNDED} and thus
+     * never stops until the Flink job fails or is canceled. To let the PscSource run as a
+     * streaming source but still stop at some point, one can set an {@link OffsetsInitializer} to
+     * specify the stopping offsets for each partition. When all the partitions have reached their
+     * stopping offsets, the PscSource will then exit.
      *
-     * <p>This method is different from {@link #setBounded(OffsetsInitializer)} that after setting
-     * the stopping offsets with this method, {@link PscSource#getBoundedness()} will still return
-     * {@link Boundedness#CONTINUOUS_UNBOUNDED} even though it will stop at the stopping offsets
-     * specified by the stopping offsets {@link OffsetsInitializer}.
+     * <p>This method is different from {@link #setBounded(OffsetsInitializer)} in that after
+     * setting the stopping offsets with this method, {@link PscSource#getBoundedness()} will
+     * still return {@link Boundedness#CONTINUOUS_UNBOUNDED} even though it will stop at the
+     * stopping offsets specified by the stopping offsets {@link OffsetsInitializer}.
      *
      * <p>The following {@link OffsetsInitializer} are commonly used and provided out of the box.
      * Users can also implement their own {@link OffsetsInitializer} for custom behaviors.
@@ -265,9 +282,9 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * By default the PscSource is set to run in {@link Boundedness#CONTINUOUS_UNBOUNDED} manner
-     * and thus never stops until the Flink job fails or is canceled. To let the PscSource run in
-     * {@link Boundedness#BOUNDED} manner and stops at some point, one can set an {@link
+     * By default the PscSource is set to run as {@link Boundedness#CONTINUOUS_UNBOUNDED} and thus
+     * never stops until the Flink job fails or is canceled. To let the PscSource run in
+     * {@link Boundedness#BOUNDED} and stop at some point, one can set an {@link
      * OffsetsInitializer} to specify the stopping offsets for each partition. When all the
      * partitions have reached their stopping offsets, the PscSource will then exit.
      *
@@ -345,6 +362,17 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
+     * Set the clientRackId supplier to be passed down to the KafkaPartitionSplitReader.
+     *
+     * @param rackIdCallback callback to provide Kafka consumer client.rack
+     * @return this KafkaSourceBuilder
+     */
+    public PscSourceBuilder<OUT> setRackIdSupplier(SerializableSupplier<String> rackIdCallback) {
+        this.rackIdSupplier = rackIdCallback;
+        return this;
+    }
+
+    /**
      * Set an arbitrary property for the PscSource and PscConsumer. The valid keys can be found
      * in {@link PscConfiguration} and {@link PscSourceOptions}.
      *
@@ -398,7 +426,7 @@ public class PscSourceBuilder<OUT> {
     }
 
     /**
-     * Build the {@link org.apache.flink.connector.kafka.source.PscSource}.
+     * Build the {@link PscSource}.
      *
      * @return a PscSource with the settings made for this builder.
      */
@@ -411,7 +439,8 @@ public class PscSourceBuilder<OUT> {
                 stoppingOffsetsInitializer,
                 boundedness,
                 deserializationSchema,
-                props);
+                props,
+                rackIdSupplier);
     }
 
     // ------------- private helpers  --------------

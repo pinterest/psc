@@ -125,6 +125,7 @@ public class PscConfiguration extends PropertiesConfiguration implements Seriali
     protected static final String POLL_MESSAGES_MAX = "poll.messages.max";
     protected static final String POLL_TIMEOUT_MS = "poll.timeout.ms";
     protected static final String VALUE_DESERIALIZER = "value.deserializer";
+    protected static final String CONSUMER_CLIENT_RACK = "client.rack";
 
     // security-related configs
     protected static final String SECURITY_PROTOCOL = "security.protocol";
@@ -274,25 +275,12 @@ public class PscConfiguration extends PropertiesConfiguration implements Seriali
      */
     public static final String PSC_CONSUMER_VALUE_DESERIALIZER = PSC_CONSUMER + "." + VALUE_DESERIALIZER;
 
-    /*
-    public static final String PSC_CONSUMER_SECURITY_PROTOCOL = PSC_CONSUMER + "." + SECURITY_PROTOCOL;
-
-    public static final String PSC_CONSUMER_SSL_ENABLED_PROTOCOLS = PSC_CONSUMER + "." + SSL_ENABLED_PROTOCOLS;
-
-    public static final String PSC_CONSUMER_SSL_KEY_PASSWORD = PSC_CONSUMER + "." + SSL_KEY_PASSWORD;
-
-    public static final String PSC_CONSUMER_SSL_KEYSTORE_LOCATION = PSC_CONSUMER + "." + SSL_KEYSTORE_LOCATION;
-
-    public static final String PSC_CONSUMER_SSL_KEYSTORE_PASSWORD = PSC_CONSUMER + "." + SSL_KEYSTORE_PASSWORD;
-
-    public static final String PSC_CONSUMER_SSL_KEYSTORE_TYPE = PSC_CONSUMER + "." + SSL_KEYSTORE_TYPE;
-
-    public static final String PSC_CONSUMER_SSL_TRUSTSTORE_LOCATION = PSC_CONSUMER + "." + SSL_TRUSTSTORE_LOCATION;
-
-    public static final String PSC_CONSUMER_SSL_TRUSTSTORE_PASSWORD = PSC_CONSUMER + "." + SSL_TRUSTSTORE_PASSWORD;
-
-    public static final String PSC_CONSUMER_SSL_TRUSTSTORE_TYPE = PSC_CONSUMER + "." + SSL_TRUSTSTORE_TYPE;
-    */
+    /**
+     * The consumer configuration {@value PSC_CONSUMER_CLIENT_RACK} expects a string that identifies the rack where the
+     * consumer client is located. Whether this is used or not depends on the backend client library. Defaults to empty
+     * string so the backend client default value is used.
+     */
+    public static final String PSC_CONSUMER_CLIENT_RACK = PSC_CONSUMER + "." + CONSUMER_CLIENT_RACK;
 
 
     // **********************
@@ -312,6 +300,7 @@ public class PscConfiguration extends PropertiesConfiguration implements Seriali
     protected static final String TRANSACTIONAL_ID = "transactional.id";
     protected static final String TRANSACTION_TIMEOUT_MS = "transaction.timeout.ms";
     protected static final String RETRIES = "retries";
+    protected static final String PRODUCER_CLIENT_RACK = "client.rack";
 
     /**
      * The producer configuration {@value PSC_PRODUCER_ACKS} expects the number of acknowledgements required by the
@@ -459,29 +448,14 @@ public class PscConfiguration extends PropertiesConfiguration implements Seriali
      */
     public static final String PSC_PRODUCER_VALUE_SERIALIZER = PSC_PRODUCER + "." + VALUE_SERIALIZER;
 
-    /*
-     * The producer configuration {@value PSC_PRODUCER_SECURITY_PROTOCOL} expects the security protocol for producer
-     * writes. Defaults to <code>PLAINTEXT</code>.
+    /**
+     * The producer configuration {@value PSC_PRODUCER_CLIENT_RACK} expects a string that identifies the
+     * rack for this producer. This configuration is passed-through to the backend producer client instance as
+     * <code>client.rack</code>. Whether or not this configuration is used by the backend producer client is
+     * dependent on the backend client library. Defaults to empty string so the backend client default value is used.
      */
-    /*
-    public static final String PSC_PRODUCER_SECURITY_PROTOCOL = PSC_PRODUCER + "." + SECURITY_PROTOCOL;
+    public static final String PSC_PRODUCER_CLIENT_RACK = PSC_PRODUCER + "." + PRODUCER_CLIENT_RACK;
 
-    public static final String PSC_PRODUCER_SSL_ENABLED_PROTOCOLS = PSC_PRODUCER + "." + SSL_ENABLED_PROTOCOLS;
-
-    public static final String PSC_PRODUCER_SSL_KEY_PASSWORD = PSC_PRODUCER + "." + SSL_KEY_PASSWORD;
-
-    public static final String PSC_PRODUCER_SSL_KEYSTORE_LOCATION = PSC_PRODUCER + "." + SSL_KEYSTORE_LOCATION;
-
-    public static final String PSC_PRODUCER_SSL_KEYSTORE_PASSWORD = PSC_PRODUCER + "." + SSL_KEYSTORE_PASSWORD;
-
-    public static final String PSC_PRODUCER_SSL_KEYSTORE_TYPE = PSC_PRODUCER + "." + SSL_KEYSTORE_TYPE;
-
-    public static final String PSC_PRODUCER_SSL_TRUSTSTORE_LOCATION = PSC_PRODUCER + "." + SSL_TRUSTSTORE_LOCATION;
-
-    public static final String PSC_PRODUCER_SSL_TRUSTSTORE_PASSWORD = PSC_PRODUCER + "." + SSL_TRUSTSTORE_PASSWORD;
-
-    public static final String PSC_PRODUCER_SSL_TRUSTSTORE_TYPE = PSC_PRODUCER + "." + SSL_TRUSTSTORE_TYPE;
-    */
 
     // **********************
     // MetadataClient Configuration

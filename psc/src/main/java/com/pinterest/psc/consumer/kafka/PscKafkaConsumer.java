@@ -816,6 +816,32 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
     }
 
     @Override
+    public void pause(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
+        if (kafkaConsumer == null)
+            handleUninitializedKafkaConsumer("pause()");
+
+        kafkaConsumer.pause(topicUriPartitions.stream().map(
+                topicUriPartition -> new TopicPartition(
+                        topicUriPartition.getTopicUri().getTopic(),
+                        topicUriPartition.getPartition()
+                )
+        ).collect(Collectors.toSet()));
+    }
+
+    @Override
+    public void resume(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
+        if (kafkaConsumer == null)
+            handleUninitializedKafkaConsumer("resume()");
+
+        kafkaConsumer.resume(topicUriPartitions.stream().map(
+                topicUriPartition -> new TopicPartition(
+                        topicUriPartition.getTopicUri().getTopic(),
+                        topicUriPartition.getPartition()
+                )
+        ).collect(Collectors.toSet()));
+    }
+
+    @Override
     public Set<TopicUriPartition> getPartitions(TopicUri topicUri) throws ConsumerException {
         if (kafkaConsumer == null)
             handleUninitializedKafkaConsumer("getPartitions()");

@@ -27,9 +27,11 @@ import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
+import com.pinterest.psc.serde.ByteArrayDeserializer;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.connector.source.Boundedness;
@@ -65,6 +67,7 @@ public class PscSourceEnumerator
     private final PscSubscriber subscriber;
     private final OffsetsInitializer startingOffsetInitializer;
     private final OffsetsInitializer stoppingOffsetInitializer;
+    private final OffsetsInitializer newDiscoveryOffsetsInitializer;
     private final Properties properties;
     private final long partitionDiscoveryIntervalMs;
     private final SplitEnumeratorContext<PscTopicUriPartitionSplit> context;
@@ -72,6 +75,11 @@ public class PscSourceEnumerator
 
     /** Partitions that have been assigned to readers. */
     private final Set<TopicUriPartition> assignedPartitions;
+    /**
+     * The partitions that have been discovered during initialization but not assigned to readers
+     * yet.
+     */
+    private final Set<TopicUriPartition> unassignedInitialPartitions;
 
     /**
      * The discovered and initialized partition splits that are waiting for owner reader to be
@@ -93,6 +101,8 @@ public class PscSourceEnumerator
     // This flag will be marked as true if periodically partition discovery is disabled AND the
     // initializing partition discovery has finished.
     private boolean noMoreNewPartitionSplits = false;
+    // this flag will be marked as true if initial partitions are discovered after enumerator starts
+    private boolean initialDiscoveryFinished;
 
     public PscSourceEnumerator(
             PscSubscriber subscriber,
@@ -108,7 +118,7 @@ public class PscSourceEnumerator
                 properties,
                 context,
                 boundedness,
-                Collections.emptySet());
+                new PscSourceEnumState(Collections.emptySet(), Collections.emptySet(), false));
     }
 
     public PscSourceEnumerator(
@@ -118,15 +128,16 @@ public class PscSourceEnumerator
             Properties properties,
             SplitEnumeratorContext<PscTopicUriPartitionSplit> context,
             Boundedness boundedness,
-            Set<TopicUriPartition> assignedPartitions) {
+            PscSourceEnumState pscSourceEnumState) {
         this.subscriber = subscriber;
         this.startingOffsetInitializer = startingOffsetInitializer;
         this.stoppingOffsetInitializer = stoppingOffsetInitializer;
+        this.newDiscoveryOffsetsInitializer = OffsetsInitializer.earliest();
         this.properties = properties;
         this.context = context;
         this.boundedness = boundedness;
 
-        this.assignedPartitions = new HashSet<>(assignedPartitions);
+        this.assignedPartitions = new HashSet<>(pscSourceEnumState.assignedPartitions());
         this.pendingPartitionSplitAssignment = new HashMap<>();
         this.partitionDiscoveryIntervalMs =
                 PscSourceOptions.getOption(
@@ -134,6 +145,9 @@ public class PscSourceEnumerator
                         PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS,
                         Long::parseLong);
         this.consumerGroupId = properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        this.unassignedInitialPartitions =
+                new HashSet<>(pscSourceEnumState.unassignedInitialPartitions());
+        this.initialDiscoveryFinished = pscSourceEnumState.initialDiscoveryFinished();
         try {
             this.clusterUri = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties);
         } catch (TopicUriSyntaxException e) {
@@ -209,7 +223,7 @@ public class PscSourceEnumerator
 
     @Override
     public PscSourceEnumState snapshotState(long checkpointId) throws Exception {
-        return new PscSourceEnumState(assignedPartitions);
+        return new PscSourceEnumState(assignedPartitions, unassignedInitialPartitions, initialDiscoveryFinished);
     }
 
     @Override
@@ -248,6 +262,10 @@ public class PscSourceEnumerator
             throw new FlinkRuntimeException(
                     "Failed to list subscribed topic partitions due to ", t);
         }
+        if (!initialDiscoveryFinished) {
+            unassignedInitialPartitions.addAll(fetchedPartitions);
+            initialDiscoveryFinished = true;
+        }
         final PartitionChange partitionChange = getPartitionChange(fetchedPartitions);
         if (partitionChange.isEmpty()) {
             return;
@@ -280,10 +298,18 @@ public class PscSourceEnumerator
     private PartitionSplitChange initializePartitionSplits(PartitionChange partitionChange) {
         Set<TopicUriPartition> newPartitions =
                 Collections.unmodifiableSet(partitionChange.getNewPartitions());
+
         OffsetsInitializer.PartitionOffsetsRetriever offsetsRetriever = getOffsetsRetriever();
 
-        Map<TopicUriPartition, Long> startingOffsets =
-                startingOffsetInitializer.getPartitionOffsets(newPartitions, offsetsRetriever);
+        // initial partitions use OffsetsInitializer specified by the user while new partitions use
+        // EARLIEST
+        Map<TopicUriPartition, Long> startingOffsets = new HashMap<>();
+        startingOffsets.putAll(
+                newDiscoveryOffsetsInitializer.getPartitionOffsets(
+                        newPartitions, offsetsRetriever));
+        startingOffsets.putAll(
+                startingOffsetInitializer.getPartitionOffsets(
+                        unassignedInitialPartitions, offsetsRetriever));
         Map<TopicUriPartition, Long> stoppingOffsets =
                 stoppingOffsetInitializer.getPartitionOffsets(newPartitions, offsetsRetriever);
 
@@ -312,7 +338,7 @@ public class PscSourceEnumerator
         if (t != null) {
             throw new FlinkRuntimeException("Failed to initialize partition splits due to ", t);
         }
-        if (partitionDiscoveryIntervalMs < 0) {
+        if (partitionDiscoveryIntervalMs <= 0) {
             LOG.debug("Partition discovery is disabled.");
             noMoreNewPartitionSplits = true;
         }
@@ -358,7 +384,10 @@ public class PscSourceEnumerator
 
                 // Mark pending partitions as already assigned
                 pendingAssignmentForReader.forEach(
-                        split -> assignedPartitions.add(split.getTopicUriPartition()));
+                        split -> {
+                            assignedPartitions.add(split.getTopicUriPartition());
+                            unassignedInitialPartitions.remove(split.getTopicUriPartition());
+                        });
             }
         }
 

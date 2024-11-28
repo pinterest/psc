@@ -30,7 +30,7 @@ import java.util.Properties;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
- * A initializer that initialize the partitions to the earliest / latest / last-committed offsets.
+ * A initializer that initialize the partitions to the earliest / last-committed offsets.
  * The offsets initialization are taken care of by the {@code PscTopicUriPartitionSplitReader} instead of
  * by the {@code PscSourceEnumerator}.
  *
@@ -43,9 +43,7 @@ class ReaderHandledOffsetsInitializer implements OffsetsInitializer, OffsetsInit
 
     /**
      * The only valid value for startingOffset is following. {@link
-     * PscTopicUriPartitionSplit#EARLIEST_OFFSET EARLIEST_OFFSET}, {@link
-     * PscTopicUriPartitionSplit#LATEST_OFFSET LATEST_OFFSET}, {@link PscTopicUriPartitionSplit#COMMITTED_OFFSET
-     * COMMITTED_OFFSET}
+     * PscTopicUriPartitionSplit#EARLIEST_OFFSET EARLIEST_OFFSET}, {@link PscTopicUriPartitionSplit#COMMITTED_OFFSET COMMITTED_OFFSET}
      */
     ReaderHandledOffsetsInitializer(long startingOffset, String offsetResetStrategy) {
         this.startingOffset = startingOffset;

@@ -36,6 +36,11 @@ import static org.apache.flink.util.Preconditions.checkState;
  * An implementation of {@link org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer} which initializes the offsets of the partition
  * according to the user specified offsets.
  *
+ * <p>Use specified offsets for specified partitions while use commit offsets or offsetResetStrategy
+ * for unspecified partitions. Specified partition's offset should be less than its latest offset,
+ * otherwise it will start from the offsetResetStrategy. The default value of offsetResetStrategy is
+ * earliest.
+ *
  * <p>Package private and should be instantiated via {@link org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer}.
  */
 class SpecifiedOffsetsInitializer implements OffsetsInitializer, OffsetsInitializerValidator {

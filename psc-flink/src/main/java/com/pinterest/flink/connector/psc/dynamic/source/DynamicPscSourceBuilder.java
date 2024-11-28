@@ -88,7 +88,7 @@ public class DynamicPscSourceBuilder<T> {
     }
 
     /**
-     * Set a custom Kafka stream subscriber.
+     * Set a custom Psc stream subscriber.
      *
      * @param pscStreamSubscriber the {@link PscStreamSubscriber}.
      * @return the builder.
@@ -184,7 +184,7 @@ public class DynamicPscSourceBuilder<T> {
 //     * @param groupId the group id.
 //     * @return the builder.
 //     */
-//    public DynamicKafkaSourceBuilder<T> setGroupId(String groupId) {
+//    public DynamicPscSourceBuilder<T> setGroupId(String groupId) {
 //        return setProperty(CommonClientConfigs.GROUP_ID_CONFIG, groupId);
 //    }
 
@@ -205,7 +205,7 @@ public class DynamicPscSourceBuilder<T> {
      * @return the {@link DynamicPscSource}.
      */
     public DynamicPscSource<T> build() {
-        logger.info("Building the DynamicKafkaSource");
+        logger.info("Building the DynamicPscSource");
         sanityCheck();
         setRequiredConsumerProperties();
         return new DynamicPscSource<>(
@@ -218,7 +218,7 @@ public class DynamicPscSourceBuilder<T> {
                 boundedness);
     }
 
-    // Below are utility methods, code and structure are mostly copied over from KafkaSourceBuilder
+    // Below are utility methods, code and structure are mostly copied over from PscSourceBuilder
 
     private void setRequiredConsumerProperties() {
         maybeOverride(
@@ -263,7 +263,7 @@ public class DynamicPscSourceBuilder<T> {
                 PscSourceOptions.CLIENT_ID_PREFIX.key(),
                 props.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID)
                         ? props.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID)
-                        : "DynamicKafkaSource-" + RandomStringUtils.randomAlphabetic(8),
+                        : "DynamicPscSource-" + RandomStringUtils.randomAlphabetic(8),
                 false);
     }
 
@@ -287,9 +287,9 @@ public class DynamicPscSourceBuilder<T> {
 
     private void sanityCheck() {
         Preconditions.checkNotNull(
-                pscStreamSubscriber, "Kafka stream subscriber is required but not provided");
+                pscStreamSubscriber, "Psc stream subscriber is required but not provided");
         Preconditions.checkNotNull(
-                pscMetadataService, "Kafka Metadata Service is required but not provided");
+                pscMetadataService, "Psc Metadata Service is required but not provided");
         Preconditions.checkNotNull(
                 deserializationSchema, "Deserialization schema is required but not provided.");
 

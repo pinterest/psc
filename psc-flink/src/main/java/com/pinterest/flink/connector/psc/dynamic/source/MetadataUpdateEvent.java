@@ -27,8 +27,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Signals {@link DynamicKafkaSourceReader} to stop their underlying readers. The restart process is
- * as follows:
+ * Signals {@link com.pinterest.flink.connector.psc.dynamic.source.reader.DynamicPscSourceReader}
+ * to stop their underlying readers. The restart process is as follows:
  *
  * <p>1. Detect metadata change in enumerator 2. Stop sub enumerators and don't snapshot state 3.
  * Send this event to all readers 4. Stop sub readers and snapshot state (offsets) 5. Start new sub
@@ -53,7 +53,7 @@ public class MetadataUpdateEvent implements SourceEvent {
 
     @Override
     public String toString() {
-        return MoreObjects.toStringHelper(this).add("kafkaStreams", pscStreams).toString();
+        return MoreObjects.toStringHelper(this).add("pscStreams", pscStreams).toString();
     }
 
     @Override

@@ -50,6 +50,8 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -2291,6 +2293,104 @@ public class TestOneKafkaBackend {
         }
 
         pscConsumer.close();
+    }
+
+    /**
+     * Verifies the functionality of {@link PscConsumer#pause(Collection)} and {@link PscConsumer#resume(Collection)} APIs
+     * for both consumption modes: <code>subscribe</code> and <code>assign</code>.
+     *
+     * @throws ConsumerException
+     */
+    @Timeout(TEST_TIMEOUT_SECONDS)
+    @ParameterizedTest
+    @ValueSource(strings = {"subscribe", "assign"})
+    public void testConsumerPauseAndResume(String consumptionMode) throws ConsumerException, SerializerException, ConfigurationException {
+        // produce one message per partition
+        int messagesPerPartition = 1;
+        for (int partition = 0; partition < partitions1; partition++) {
+            PscTestUtils.produceKafkaMessages(messagesPerPartition, sharedKafkaTestResource, kafkaCluster, topic1, partition);
+        }
+
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false");
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_POLL_MESSAGES_MAX, 1);   // ensure we consume one message at a time
+        PscConsumer<String, String> pscConsumer = new PscConsumer<>(pscConfiguration);
+
+        Set<TopicUriPartition> tups = new HashSet<>();
+        Set<Integer> tupInts = new HashSet<>();
+        for (int i = 0; i < partitions1; i++) {
+            tups.add(new TopicUriPartition(topicUriStr1, i));
+            tupInts.add(i);
+        }
+
+        if (consumptionMode.equals("subscribe")) {
+            pscConsumer.subscribe(Collections.singleton(topicUriStr1));
+        } else if (consumptionMode.equals("assign")) {
+            pscConsumer.assign(tups);
+        } else {
+            Assertions.fail("Invalid consumption mode: " + consumptionMode);
+        }
+
+        assertPollReturnsMessagesFromExpectedPartitions(tupInts, pscConsumer, partitions1);
+
+        // again, produce one message per partition
+        for (int partition = 0; partition < partitions1; partition++) {
+            PscTestUtils.produceKafkaMessages(messagesPerPartition, sharedKafkaTestResource, kafkaCluster, topic1, partition);
+        }
+
+        // pause partitions 0,1,2,3
+        Set<TopicUriPartition> partitionsToPause = new HashSet<>();
+        for (int i = 0; i < 4; i++) {
+            partitionsToPause.add(new TopicUriPartition(topicUriStr1, i));
+        }
+        pscConsumer.pause(partitionsToPause);
+
+        // poll again, we should not get messages from partitions 0,1,2,3
+        Set<Integer> expectedPartitions = new HashSet<>();
+        for (int i = 4; i < partitions1; i++) {
+            expectedPartitions.add(i);
+        }
+        assertPollReturnsMessagesFromExpectedPartitions(expectedPartitions, pscConsumer, partitions1 - 4);
+
+        // again, produce one message per partition
+        for (int partition = 0; partition < partitions1; partition++) {
+            PscTestUtils.produceKafkaMessages(messagesPerPartition, sharedKafkaTestResource, kafkaCluster, topic1, partition);
+        }
+
+        // resume partitions 0,1,2,3
+        pscConsumer.resume(partitionsToPause);
+
+        // poll again, we should get messages from all partitions, 1 message for each partition + 4 messages from partitions 0,1,2,3 due to skipping in previous run
+        assertPollReturnsMessagesFromExpectedPartitions(tupInts, pscConsumer, partitions1 + 4);
+    }
+
+    private static void assertPollReturnsMessagesFromExpectedPartitions(Set<Integer> expectedPartitions, PscConsumer<String, String> pscConsumer, int messagesToConsume) throws ConsumerException {
+        Set<Integer> polledPartitions = new HashSet<>();
+        int messagesConsumed = 0;
+        while (messagesConsumed < messagesToConsume) {
+            PscConsumerPollMessageIterator<String, String> iterator = pscConsumer.poll();
+
+            // wait for messages to be available
+            while (!iterator.hasNext()) {
+                iterator = pscConsumer.poll();
+            }
+            assertTrue(iterator.hasNext());
+
+            while (iterator.hasNext()) {
+                PscConsumerMessage<String, String> message = iterator.next();
+                messagesConsumed++;
+                polledPartitions.add(message.getMessageId().getTopicUriPartition().getPartition());
+            }
+        }
+        // assert no more messages
+        int numIterationsToCheck = 10;
+        for (int i = 0; i < numIterationsToCheck; i++) {
+            PscConsumerPollMessageIterator<String, String> iterator = pscConsumer.poll();
+            assertFalse(iterator.hasNext());
+        }
+        assertEquals(expectedPartitions, polledPartitions);
     }
 
     /**

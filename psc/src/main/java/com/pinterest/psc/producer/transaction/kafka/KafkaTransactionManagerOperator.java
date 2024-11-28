@@ -220,11 +220,11 @@ public class KafkaTransactionManagerOperator implements TransactionManagerOperat
      */
     @Override
     public void resumeTransaction(Object transactionManager, PscProducerTransactionalProperties transactionalProperties) {
-        Object topicPartitionBookkeeper =
-                PscCommon.getField(transactionManager, "topicPartitionBookkeeper");
+        Object txnPartitionMap =
+                PscCommon.getField(transactionManager, "txnPartitionMap");
 
         transitionTransactionManagerStateTo(transactionManager, "INITIALIZING");
-        PscCommon.invoke(topicPartitionBookkeeper, "reset");
+        PscCommon.invoke(txnPartitionMap, "reset");
 
         PscCommon.setField(
                 transactionManager,

@@ -264,12 +264,12 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
         for (DynamicPscSourceSplit split : currentSplitState) {
             currentMetadataFromState
                     .computeIfAbsent(split.getClusterId(), (ignore) -> new HashSet<>())
-                    .add(split.getPscTopicUriPartitionSplit().getTopic());
+                    .add(split.getPscTopicUriPartitionSplit().getTopicUri());
             // check if cluster topic exists in the metadata update
             if (newClustersAndTopicUris.containsKey(split.getClusterId())
                     && newClustersAndTopicUris
                             .get(split.getClusterId())
-                            .contains(split.getPscTopicUriPartitionSplit().getTopic())) {
+                            .contains(split.getPscTopicUriPartitionSplit().getTopicUri())) {
                 filteredNewClusterSplitStateMap
                         .computeIfAbsent(split.getClusterId(), (ignore) -> new ArrayList<>())
                         .add(split);
@@ -348,7 +348,7 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
             DynamicPscSourceSplit split, Map<String, Set<String>> metadata) {
         return metadata.containsKey(split.getClusterId())
                 && metadata.get(split.getClusterId())
-                        .contains(split.getPscTopicUriPartitionSplit().getTopic());
+                        .contains(split.getPscTopicUriPartitionSplit().getTopicUri());
     }
 
     @Override

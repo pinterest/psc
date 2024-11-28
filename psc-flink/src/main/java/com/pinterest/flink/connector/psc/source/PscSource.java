@@ -52,10 +52,12 @@ import org.apache.flink.connector.base.source.reader.synchronization.FutureCompl
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.util.UserCodeClassLoader;
+import org.apache.flink.util.function.SerializableSupplier;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -85,7 +87,10 @@ import java.util.function.Supplier;
  *     .build();
  * }</pre>
  *
- * <p>See {@link PscSourceBuilder} for more details.
+ * <p>{@link org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumerator} only supports
+ * adding new splits and not removing splits in split discovery.
+ *
+ * <p>See {@link PscSourceBuilder} for more details on how to configure this source.
  *
  * @param <OUT> the output type of the source.
  */
@@ -104,6 +109,8 @@ public class PscSource<OUT>
     private final PscRecordDeserializationSchema<OUT> deserializationSchema;
     // The configurations.
     private final Properties props;
+    // Client rackId callback
+    private final SerializableSupplier<String> rackIdSupplier;
 
     PscSource(
             PscSubscriber subscriber,
@@ -111,13 +118,15 @@ public class PscSource<OUT>
             @Nullable OffsetsInitializer stoppingOffsetsInitializer,
             Boundedness boundedness,
             PscRecordDeserializationSchema<OUT> deserializationSchema,
-            Properties props) {
+            Properties props,
+            SerializableSupplier<String> rackIdSupplier) {
         this.subscriber = subscriber;
         this.startingOffsetsInitializer = startingOffsetsInitializer;
         this.stoppingOffsetsInitializer = stoppingOffsetsInitializer;
         this.boundedness = boundedness;
         this.deserializationSchema = deserializationSchema;
         this.props = props;
+        this.rackIdSupplier = rackIdSupplier;
     }
 
     /**
@@ -165,9 +174,15 @@ public class PscSource<OUT>
         Supplier<PscTopicUriPartitionSplitReader> splitReaderSupplier =
                 () -> {
                     try {
-                        return new PscTopicUriPartitionSplitReader(props, readerContext, pscSourceReaderMetrics);
+                        return new PscTopicUriPartitionSplitReader(
+                                props,
+                                readerContext,
+                                pscSourceReaderMetrics,
+                                Optional.ofNullable(rackIdSupplier)
+                                        .map(Supplier::get)
+                                        .orElse(null));
                     } catch (ConfigurationException | ClientException e) {
-                        throw new RuntimeException("Failed to create new PscTopicUriParititionSplitReader", e);
+                        throw new RuntimeException(e);
                     }
                 };
         PscRecordEmitter<OUT> recordEmitter = new PscRecordEmitter<>(deserializationSchema);
@@ -208,7 +223,7 @@ public class PscSource<OUT>
                 props,
                 enumContext,
                 boundedness,
-                checkpoint.assignedPartitions());
+                checkpoint);
     }
 
     @Internal
@@ -239,5 +254,15 @@ public class PscSource<OUT>
     @VisibleForTesting
     Configuration getConfiguration() {
         return toConfiguration(props);
+    }
+
+    @VisibleForTesting
+    PscSubscriber getPscSubscriber() {
+        return subscriber;
+    }
+
+    @VisibleForTesting
+    OffsetsInitializer getStoppingOffsetsInitializer() {
+        return stoppingOffsetsInitializer;
     }
 }

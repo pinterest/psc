@@ -12,7 +12,7 @@ public class TestTransactionManagerUtils {
     @Test
     void testKafkaTransactionManagerOperator() {
         // create a Kafka TransactionManager just for testing
-        TransactionManager transactionManager = new TransactionManager(new LogContext(), null, 10000, 100L, null, false);
+        TransactionManager transactionManager = new TransactionManager(new LogContext(), null, 10000, 100L, null);
 
         long id = TransactionManagerUtils.getProducerId(transactionManager);
         short epoch = TransactionManagerUtils.getEpoch(transactionManager);

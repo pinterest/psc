@@ -24,7 +24,7 @@ import org.apache.flink.annotation.Internal;
 
 import java.util.Objects;
 
-/** Split that wraps {@link KafkaPartitionSplit} with Kafka cluster information. */
+/** Split that wraps {@link PscTopicUriPartitionSplit} with Kafka cluster information. */
 @Internal
 public class DynamicPscSourceSplit extends PscTopicUriPartitionSplit {
 

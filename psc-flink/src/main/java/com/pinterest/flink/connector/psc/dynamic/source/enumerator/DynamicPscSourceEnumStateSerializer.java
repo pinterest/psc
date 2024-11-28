@@ -72,12 +72,12 @@ public class DynamicPscSourceEnumStateSerializer
             out.writeInt(clusterEnumeratorStates.size());
             for (Map.Entry<String, PscSourceEnumState> clusterEnumeratorState :
                     clusterEnumeratorStates.entrySet()) {
-                String kafkaClusterId = clusterEnumeratorState.getKey();
-                out.writeUTF(kafkaClusterId);
+                String clusterId = clusterEnumeratorState.getKey();
+                out.writeUTF(clusterId);
                 byte[] bytes =
                         pscSourceEnumStateSerializer.serialize(clusterEnumeratorState.getValue());
                 // we need to know the exact size of the byte array since
-                // KafkaSourceEnumStateSerializer
+                // PscSourceEnumStateSerializer
                 // will throw exception if there are leftover unread bytes in deserialization.
                 out.writeInt(bytes.length);
                 out.write(bytes);
@@ -96,17 +96,17 @@ public class DynamicPscSourceEnumStateSerializer
                 Set<PscStream> pscStreams = deserialize(in);
 
                 Map<String, PscSourceEnumState> clusterEnumeratorStates = new HashMap<>();
-                int kafkaSourceEnumStateSerializerVersion = in.readInt();
+                int pscSourceEnumStateSerializerVersion = in.readInt();
 
                 int clusterEnumeratorStateMapSize = in.readInt();
                 for (int i = 0; i < clusterEnumeratorStateMapSize; i++) {
-                    String kafkaClusterId = in.readUTF();
+                    String clusterId = in.readUTF();
                     int byteArraySize = in.readInt();
                     PscSourceEnumState pscSourceEnumState =
                             pscSourceEnumStateSerializer.deserialize(
-                                    kafkaSourceEnumStateSerializerVersion,
+                                    pscSourceEnumStateSerializerVersion,
                                     readNBytes(in, byteArraySize));
-                    clusterEnumeratorStates.put(kafkaClusterId, pscSourceEnumState);
+                    clusterEnumeratorStates.put(clusterId, pscSourceEnumState);
                 }
 
                 return new DynamicPscSourceEnumState(pscStreams, clusterEnumeratorStates);
@@ -120,22 +120,22 @@ public class DynamicPscSourceEnumStateSerializer
                         version, getVersion()));
     }
 
-    private void serialize(Set<KafkaStream> kafkaStreams, DataOutputStream out) throws IOException {
-        out.writeInt(kafkaStreams.size());
-        for (KafkaStream kafkaStream : kafkaStreams) {
-            out.writeUTF(kafkaStream.getStreamId());
-            Map<String, ClusterMetadata> clusterMetadataMap = kafkaStream.getClusterMetadataMap();
+    private void serialize(Set<PscStream> pscStreams, DataOutputStream out) throws IOException {
+        out.writeInt(pscStreams.size());
+        for (PscStream pscStream : pscStreams) {
+            out.writeUTF(pscStream.getStreamId());
+            Map<String, ClusterMetadata> clusterMetadataMap = pscStream.getClusterMetadataMap();
             out.writeInt(clusterMetadataMap.size());
             for (Map.Entry<String, ClusterMetadata> entry : clusterMetadataMap.entrySet()) {
-                String kafkaClusterId = entry.getKey();
+                String clusterId = entry.getKey();
                 ClusterMetadata clusterMetadata = entry.getValue();
-                out.writeUTF(kafkaClusterId);
+                out.writeUTF(clusterId);
                 out.writeInt(clusterMetadata.getTopicUris().size());
                 for (String topic : clusterMetadata.getTopicUris()) {
                     out.writeUTF(topic);
                 }
 
-                // only write bootstrap server for now, can extend later to serialize the complete
+                // only write cluster URI for now, can extend later to serialize the complete
                 // properties
                 out.writeUTF(
                         Preconditions.checkNotNull(
@@ -150,7 +150,7 @@ public class DynamicPscSourceEnumStateSerializer
 
     private Set<PscStream> deserialize(DataInputStream in) throws IOException {
 
-        Set<PscStream> kafkaStreams = new HashSet<>();
+        Set<PscStream> pscStreams = new HashSet<>();
         int numStreams = in.readInt();
         for (int i = 0; i < numStreams; i++) {
             String streamId = in.readUTF();
@@ -172,10 +172,10 @@ public class DynamicPscSourceEnumStateSerializer
                 clusterMetadataMap.put(clusterId, new ClusterMetadata(topics, properties));
             }
 
-            kafkaStreams.add(new PscStream(streamId, clusterMetadataMap));
+            pscStreams.add(new PscStream(streamId, clusterMetadataMap));
         }
 
-        return kafkaStreams;
+        return pscStreams;
     }
 
     private static byte[] readNBytes(DataInputStream in, int size) throws IOException {

@@ -26,9 +26,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * An implementation of {@link org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer} to initialize the offsets based on a timestamp.
+ * An implementation of {@link OffsetsInitializer} to initialize the offsets based on a timestamp.
+ * If the message meeting the requirement of the timestamp have not been produced yet, just
+ * use the latest offset.
  *
- * <p>Package private and should be instantiated via {@link org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer}.
+ * <p>Package private and should be instantiated via {@link OffsetsInitializer}.
  */
 class TimestampOffsetsInitializer implements OffsetsInitializer {
     private static final long serialVersionUID = 2932230571773627233L;
@@ -53,23 +55,22 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
         // no message is going to be missed.
         Map<TopicUriPartition, Long> endOffsets = partitionOffsetsRetriever.endOffsets(partitions);
         partitions.forEach(tp -> startingTimestamps.put(tp, startingTimestamp));
-        partitionOffsetsRetriever
-                .offsetsForTimes(startingTimestamps)
-                .forEach(
-                        (tp, offset) -> {
-                            if (offset != null) {
-                                initialOffsets.put(tp, offset);
-                            } else {
-                                // The timestamp does not exist in the partition yet, we will just
-                                // consume from the latest.
-                                initialOffsets.put(tp, endOffsets.get(tp));
-                            }
-                        });
+        Map<TopicUriPartition, Long> topicPartitionOffsetMap =
+                partitionOffsetsRetriever.offsetsForTimes(startingTimestamps);
+
+        for (TopicUriPartition tp : partitions) {
+            // offset may not have been resolved
+            if (topicPartitionOffsetMap.containsKey(tp)) {
+                initialOffsets.put(tp, topicPartitionOffsetMap.get(tp));
+            } else {
+                initialOffsets.put(tp, endOffsets.get(tp));
+            }
+        }
         return initialOffsets;
     }
 
     @Override
     public String getAutoOffsetResetStrategy() {
-        return PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE;
+        return PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST;
     }
 }
