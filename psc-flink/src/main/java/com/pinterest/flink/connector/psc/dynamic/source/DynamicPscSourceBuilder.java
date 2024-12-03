@@ -177,16 +177,16 @@ public class DynamicPscSourceBuilder<T> {
         return this;
     }
 
-//    /**
-//     * Set the property for {@link CommonClientConfigs#GROUP_ID_CONFIG}. This will be applied to all
-//     * clusters.
-//     *
-//     * @param groupId the group id.
-//     * @return the builder.
-//     */
-//    public DynamicPscSourceBuilder<T> setGroupId(String groupId) {
-//        return setProperty(CommonClientConfigs.GROUP_ID_CONFIG, groupId);
-//    }
+    /**
+     * Set the property for {@link PscConfiguration#PSC_CONSUMER_GROUP_ID}. This will be applied to all
+     * clusters.
+     *
+     * @param groupId the group id.
+     * @return the builder.
+     */
+    public DynamicPscSourceBuilder<T> setGroupId(String groupId) {
+        return setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, groupId);
+    }
 
     /**
      * Set the client id prefix. This applies {@link PscSourceOptions#CLIENT_ID_PREFIX} to all

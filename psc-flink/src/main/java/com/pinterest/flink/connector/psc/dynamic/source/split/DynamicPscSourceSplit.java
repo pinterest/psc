@@ -45,7 +45,7 @@ public class DynamicPscSourceSplit extends PscTopicUriPartitionSplit {
         return clusterId + "-" + pscTopicUriPartitionSplit.splitId();
     }
 
-    public String getClusterId() {
+    public String getPubSubClusterId() {
         return clusterId;
     }
 

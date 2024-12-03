@@ -17,6 +17,7 @@
 
 package com.pinterest.flink.connector.psc.sink;
 
+import com.google.common.collect.Maps;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.psc.common.PscPlugin;
 import com.pinterest.psc.producer.PscProducerMessage;
@@ -25,16 +26,15 @@ import com.pinterest.psc.serde.StringDeserializer;
 import com.pinterest.psc.serde.StringSerializer;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
-import org.apache.flink.metrics.MetricGroup;
+import org.apache.flink.connector.testutils.formats.DummyInitializationContext;
 import org.apache.flink.util.TestLogger;
-import org.apache.flink.util.UserCodeClassLoader;
 
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableList;
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableMap;
 
 import org.junit.Before;
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +42,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -77,34 +79,33 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
 
     @Test
     public void testDoNotAllowMultipleTopicSelector() {
-        assertThrows(
-                IllegalStateException.class,
+        assertThatThrownBy(
                 () ->
                         PscRecordSerializationSchema.builder()
                                 .setTopicUriSelector(e -> DEFAULT_TOPIC)
-                                .setTopicUriString(DEFAULT_TOPIC));
-        assertThrows(
-                IllegalStateException.class,
+                                .setTopicUriString(DEFAULT_TOPIC))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(
                 () ->
                         PscRecordSerializationSchema.builder()
                                 .setTopicUriString(DEFAULT_TOPIC)
-                                .setTopicUriSelector(e -> DEFAULT_TOPIC));
+                                .setTopicUriSelector(e -> DEFAULT_TOPIC))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
     public void testExpectTopicSelector() {
-        assertThrows(
-                IllegalStateException.class,
+        assertThatThrownBy(
                 PscRecordSerializationSchema.builder()
-                                .setValueSerializationSchema(new SimpleStringSchema())
-                        ::build);
+                        .setValueSerializationSchema(new SimpleStringSchema())
+                        ::build)
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
     public void testExpectValueSerializer() {
-        assertThrows(
-                IllegalStateException.class,
-                PscRecordSerializationSchema.builder().setTopicUriString(DEFAULT_TOPIC)::build);
+        assertThatThrownBy(PscRecordSerializationSchema.builder().setTopicUriString(DEFAULT_TOPIC)::build)
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -122,14 +123,14 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
         final PscRecordSerializationSchema<String> schema =
                 builder.setValueSerializationSchema(serializationSchema).build();
         final PscProducerMessage<byte[], byte[]> record = schema.serialize("a", null, null);
-        assertEquals("topic-a", record.getTopicUriAsString());
-        assertNull(record.getKey());
-        assertArrayEquals(serializationSchema.serialize("a"), record.getValue());
+        assertThat(record.getTopicUriAsString()).isEqualTo("topic-a");
+        assertThat(record.getKey()).isNull();
+        assertThat(record.getValue()).isEqualTo(serializationSchema.serialize("a"));
 
         final PscProducerMessage<byte[], byte[]> record2 = schema.serialize("b", null, null);
-        assertEquals("topic-b", record2.getTopicUriAsString());
-        assertNull(record2.getKey());
-        assertArrayEquals(serializationSchema.serialize("b"), record2.getValue());
+        assertThat(record2.getTopicUriAsString()).isEqualTo("topic-b");
+        assertThat(record2.getKey()).isNull();
+        assertThat(record2.getValue()).isEqualTo(serializationSchema.serialize("b"));
     }
 
     @Test
@@ -147,8 +148,25 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
         final PscRecordSerializationSchema.PscSinkContext sinkContext = new TestSinkContext();
         schema.open(null, sinkContext);
         final PscProducerMessage<byte[], byte[]> record = schema.serialize("a", sinkContext, null);
-        assertEquals(partition, record.getPartition());
-        assertTrue(opened.get());
+        assertThat(record.getPartition()).isEqualTo(partition);
+        assertThat(opened.get()).isTrue();
+    }
+
+    @Test
+    public void testSerializeRecordWithHeaderProvider() throws Exception {
+        final HeaderProvider<String> headerProvider =
+                (ignored) ->
+                        Collections.singletonMap("a", "a".getBytes(StandardCharsets.UTF_8));
+
+        final PscRecordSerializationSchema<String> schema =
+                PscRecordSerializationSchema.builder()
+                        .setTopicUriString(DEFAULT_TOPIC)
+                        .setValueSerializationSchema(new SimpleStringSchema())
+                        .setHeaderProvider(headerProvider)
+                        .build();
+        final PscProducerMessage<byte[], byte[]> record = schema.serialize("a", null, null);
+        assertThat(record).isNotNull();
+        assertThat(record.getHeaders()).containsExactly(Maps.immutableEntry("a", "a".getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
@@ -161,13 +179,14 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
                         .setKeySerializationSchema(serializationSchema)
                         .build();
         final PscProducerMessage<byte[], byte[]> record = schema.serialize("a", null, null);
-        assertArrayEquals(record.getKey(), serializationSchema.serialize("a"));
-        assertArrayEquals(record.getValue(), serializationSchema.serialize("a"));
+        assertThat(serializationSchema.serialize("a"))
+                .isEqualTo(record.getKey())
+                .isEqualTo(record.getValue());
     }
 
     @Test
     public void testPscKeySerializerWrapperWithoutConfigurable() throws Exception {
-        final Map<String, String> config = ImmutableMap.of("simpleKey", "simpleValue");
+        final Map<String, String> config = Collections.singletonMap("simpleKey", "simpleValue");
         final PscRecordSerializationSchema<String> schema =
                 PscRecordSerializationSchema.builder()
                         .setTopicUriString(DEFAULT_TOPIC)
@@ -177,39 +196,39 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
                         .setPscKeySerializer(SimpleStringSerializer.class, config)
                         .build();
         open(schema);
-        assertEquals(configuration, config);
-        assertTrue(isKeySerializer);
-        assertTrue(configurableConfiguration.isEmpty());
+        assertThat(config).isEqualTo(configuration);
+        assertThat(isKeySerializer).isTrue();
+        assertThat(configurableConfiguration).isEmpty();
     }
 
     @Test
     public void tesPscValueSerializerWrapperWithoutConfigurable() throws Exception {
-        final Map<String, String> config = ImmutableMap.of("simpleKey", "simpleValue");
+        final Map<String, String> config = Collections.singletonMap("simpleKey", "simpleValue");
         final PscRecordSerializationSchema<String> schema =
                 PscRecordSerializationSchema.builder()
                         .setTopicUriString(DEFAULT_TOPIC)
                         .setPscValueSerializer(SimpleStringSerializer.class, config)
                         .build();
         open(schema);
-        assertEquals(configuration, config);
-        assertFalse(isKeySerializer);
-        assertTrue(configurableConfiguration.isEmpty());
+        assertThat(config).isEqualTo(configuration);
+        assertThat(isKeySerializer).isFalse();
+        assertThat(configurableConfiguration).isEmpty();
     }
 
     @Test
     public void testSerializeRecordWithPscSerializer() throws Exception {
-        final Map<String, String> config = ImmutableMap.of("configKey", "configValue");
+        final Map<String, String> config = Collections.singletonMap("configKey", "configValue");
         final PscRecordSerializationSchema<String> schema =
                 PscRecordSerializationSchema.builder()
                         .setTopicUriString(DEFAULT_TOPIC)
                         .setPscValueSerializer(ConfigurableStringSerializer.class, config)
                         .build();
         open(schema);
-        assertEquals(configurableConfiguration, config);
-        assertTrue(configuration.isEmpty());
+        assertThat(config).isEqualTo(configurableConfiguration);
+        assertThat(configuration).isEmpty();
         final Deserializer<String> deserializer = new StringDeserializer();
         final PscProducerMessage<byte[], byte[]> record = schema.serialize("a", null, null);
-        assertEquals("a", deserializer.deserialize(record.getValue()));
+        assertThat(deserializer.deserialize(record.getValue())).isEqualTo("a");
     }
 
     @Test
@@ -223,11 +242,11 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
                         .build();
         final PscProducerMessage<byte[], byte[]> recordWithTimestamp =
                 schema.serialize("a", null, 100L);
-        assertEquals(100L, (long) recordWithTimestamp.getPublishTimestamp());
+        assertThat(recordWithTimestamp.getPublishTimestamp()).isEqualTo(100L);
 
         final PscProducerMessage<byte[], byte[]> recordWithTimestampZero =
                 schema.serialize("a", null, 0L);
-        assertEquals(0L, (long) recordWithTimestampZero.getPublishTimestamp());
+        assertThat(recordWithTimestampZero.getPublishTimestamp()).isEqualTo(0L);
 
         // the below tests are commented out because PSC core injects the timestamp if it's null
 
@@ -257,7 +276,8 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
                     PscRecordSerializationSchemaBuilder<String>,
                     PscRecordSerializationSchemaBuilder<String>>
                     updater : serializers) {
-                assertThrows(IllegalStateException.class, () -> updater.apply(builder));
+                assertThatThrownBy(() -> updater.apply(builder))
+                        .isInstanceOf(IllegalStateException.class);
             }
         }
     }
@@ -267,7 +287,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
                             PscRecordSerializationSchemaBuilder<String>,
                             PscRecordSerializationSchemaBuilder<String>>>
             valueSerializationSetter() {
-        return ImmutableList.of(
+        return Arrays.asList(
                 (b) -> b.setPscValueSerializer(StringSerializer.class),
                 (b) -> b.setValueSerializationSchema(new SimpleStringSchema()),
                 (b) ->
@@ -280,7 +300,7 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
                             PscRecordSerializationSchemaBuilder<String>,
                             PscRecordSerializationSchemaBuilder<String>>>
             keySerializationSetter() {
-        return ImmutableList.of(
+        return Arrays.asList(
                 (b) -> b.setPscKeySerializer(StringSerializer.class),
                 (b) -> b.setKeySerializationSchema(new SimpleStringSchema()),
                 (b) ->
@@ -356,28 +376,6 @@ public class PscRecordSerializationSchemaBuilderTest extends TestLogger {
     }
 
     private void open(PscRecordSerializationSchema<String> schema) throws Exception {
-        schema.open(
-                new SerializationSchema.InitializationContext() {
-                    @Override
-                    public MetricGroup getMetricGroup() {
-                        return null;
-                    }
-
-                    @Override
-                    public UserCodeClassLoader getUserCodeClassLoader() {
-                        return new UserCodeClassLoader() {
-                            @Override
-                            public ClassLoader asClassLoader() {
-                                return PscRecordSerializationSchemaBuilderTest.class
-                                        .getClassLoader();
-                            }
-
-                            @Override
-                            public void registerReleaseHookIfAbsent(
-                                    String releaseHookName, Runnable releaseHook) {}
-                        };
-                    }
-                },
-                null);
+        schema.open(new DummyInitializationContext(), null);
     }
 }

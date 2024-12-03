@@ -38,11 +38,11 @@ public class ClusterMetadata implements Serializable {
     /**
      * Constructs the {@link ClusterMetadata} with the required properties.
      *
-     * @param topics the topics belonging to a cluster.
+     * @param topicUris the topics belonging to a cluster.
      * @param properties the properties to access a cluster.
      */
-    public ClusterMetadata(Set<String> topics, Properties properties) {
-        this.topicUris = topics;
+    public ClusterMetadata(Set<String> topicUris, Properties properties) {
+        this.topicUris = topicUris;
         this.properties = properties;
     }
 

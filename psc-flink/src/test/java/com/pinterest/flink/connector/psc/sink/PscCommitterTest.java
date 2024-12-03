@@ -111,15 +111,22 @@ public class PscCommitterTest {
                         super.close();
                     }
                 };
-        try (final PscCommitter committer = new PscCommitter(properties);
-                Recyclable<FlinkPscInternalProducer<Object, Object>> recyclable =
-                        new Recyclable<>(producer, p -> {})) {
+        Recyclable<FlinkPscInternalProducer<Object, Object>> recyclable =
+                new Recyclable<>(producer, p -> {
+                    try {
+                        p.close();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+        try (final PscCommitter committer = new PscCommitter(properties)) {
             final MockCommitRequest<PscCommittable> request =
                     new MockCommitRequest<>(
                             new PscCommittable(PRODUCER_ID, EPOCH, TRANSACTIONAL_ID, recyclable));
 
             committer.commit(Collections.singletonList(request));
             assertThat(recyclable.isRecycled()).isTrue();
+            assertThat(producer.isClosed()).isTrue();
             producer.close();
         }
     }

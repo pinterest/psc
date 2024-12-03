@@ -189,7 +189,7 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
         ArrayListMultimap<String, PscTopicUriPartitionSplit> clusterSplitsMap =
                 ArrayListMultimap.create();
         for (DynamicPscSourceSplit split : splits) {
-            clusterSplitsMap.put(split.getClusterId(), split);
+            clusterSplitsMap.put(split.getPubSubClusterId(), split);
         }
 
         Set<String> clusterIds = clusterSplitsMap.keySet();
@@ -263,15 +263,15 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
         // the data structures above
         for (DynamicPscSourceSplit split : currentSplitState) {
             currentMetadataFromState
-                    .computeIfAbsent(split.getClusterId(), (ignore) -> new HashSet<>())
+                    .computeIfAbsent(split.getPubSubClusterId(), (ignore) -> new HashSet<>())
                     .add(split.getPscTopicUriPartitionSplit().getTopicUri());
             // check if cluster topic exists in the metadata update
-            if (newClustersAndTopicUris.containsKey(split.getClusterId())
+            if (newClustersAndTopicUris.containsKey(split.getPubSubClusterId())
                     && newClustersAndTopicUris
-                            .get(split.getClusterId())
+                            .get(split.getPubSubClusterId())
                             .contains(split.getPscTopicUriPartitionSplit().getTopicUri())) {
                 filteredNewClusterSplitStateMap
-                        .computeIfAbsent(split.getClusterId(), (ignore) -> new ArrayList<>())
+                        .computeIfAbsent(split.getPubSubClusterId(), (ignore) -> new ArrayList<>())
                         .add(split);
             } else {
                 logger.info("Skipping outdated split due to metadata changes: {}", split);
@@ -346,8 +346,8 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
 
     private static boolean isSplitForActiveClusters(
             DynamicPscSourceSplit split, Map<String, Set<String>> metadata) {
-        return metadata.containsKey(split.getClusterId())
-                && metadata.get(split.getClusterId())
+        return metadata.containsKey(split.getPubSubClusterId())
+                && metadata.get(split.getPubSubClusterId())
                         .contains(split.getPscTopicUriPartitionSplit().getTopicUri());
     }
 

@@ -290,7 +290,7 @@ public class StoppablePscEnumContextProxy
      * periodic discovery loops on demand.
      */
     @Internal
-    public interface StoppableKafkaEnumContextProxyFactory {
+    public interface StoppablePscEnumContextProxyFactory {
 
         StoppablePscEnumContextProxy create(
                 SplitEnumeratorContext<DynamicPscSourceSplit> enumContext,
@@ -298,7 +298,7 @@ public class StoppablePscEnumContextProxy
                 PscMetadataService kafkaMetadataService,
                 Runnable signalNoMoreSplitsCallback);
 
-        static StoppableKafkaEnumContextProxyFactory getDefaultFactory() {
+        static StoppablePscEnumContextProxyFactory getDefaultFactory() {
             return (enumContext,
                     kafkaClusterId,
                     kafkaMetadataService,

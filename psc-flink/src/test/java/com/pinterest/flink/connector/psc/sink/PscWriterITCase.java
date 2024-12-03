@@ -22,33 +22,31 @@ import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaA
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
-import com.pinterest.psc.exception.ClientException;
+import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.ByteArraySerializer;
-import org.apache.flink.api.common.operators.MailboxExecutor;
 import org.apache.flink.api.common.operators.ProcessingTimeService;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.sink2.SinkWriter;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.connector.base.DeliveryGuarantee;
+import org.apache.flink.connector.base.sink.writer.TestSinkInitContext;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.groups.OperatorIOMetricGroup;
+import org.apache.flink.metrics.groups.OperatorMetricGroup;
 import org.apache.flink.metrics.groups.SinkWriterMetricGroup;
 import org.apache.flink.metrics.testutils.MetricListener;
-import org.apache.flink.runtime.mailbox.SyncMailboxExecutor;
 import org.apache.flink.runtime.metrics.groups.InternalSinkWriterMetricGroup;
+import org.apache.flink.runtime.metrics.groups.ProxyMetricGroup;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableList;
 import org.apache.flink.util.TestLoggerExtension;
 import org.apache.flink.util.UserCodeClassLoader;
-
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,11 +74,12 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
 
+import static com.pinterest.flink.connector.psc.testutils.DockerImageVersions.KAFKA;
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.drainAllRecordsFromTopic;
-import static org.apache.flink.util.DockerImageVersions.KAFKA;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /** Tests for the standalone PscWriter. */
 @ExtendWith(TestLoggerExtension.class)
@@ -91,8 +90,8 @@ public class PscWriterITCase {
     private static final Network NETWORK = Network.newNetwork();
     private static final String PSC_METRIC_WITH_GROUP_NAME = "PscProducer.incoming-byte-total";
     private static final SinkWriter.Context SINK_WRITER_CONTEXT = new DummySinkWriterContext();
-    private String topic;
-    private String topicUriStr;
+    private static String topic;
+    private static String topicUriStr;
 
     private MetricListener metricListener;
     private TriggerTimeService timeService;
@@ -140,11 +139,7 @@ public class PscWriterITCase {
 
     @Test
     public void testIncreasingRecordBasedCounters() throws Exception {
-        final OperatorIOMetricGroup operatorIOMetricGroup =
-                UnregisteredMetricGroups.createUnregisteredOperatorMetricGroup().getIOMetricGroup();
-        final InternalSinkWriterMetricGroup metricGroup =
-                InternalSinkWriterMetricGroup.mock(
-                        metricListener.getMetricGroup(), operatorIOMetricGroup);
+        final SinkWriterMetricGroup metricGroup = createSinkWriterMetricGroup();
         try (final PscWriter<Integer> writer =
                 createWriterWithConfiguration(
                         getPscClientConfiguration(), DeliveryGuarantee.NONE, metricGroup)) {
@@ -157,6 +152,15 @@ public class PscWriterITCase {
             assertThat(numRecordsOutErrors.getCount()).isEqualTo(0);
             assertThat(numRecordsSendErrors.getCount()).isEqualTo(0);
 
+            // elements for which the serializer returns null should be silently skipped
+            writer.write(null, SINK_WRITER_CONTEXT);
+            timeService.trigger();
+            assertThat(numBytesOut.getCount()).isEqualTo(0L);
+            assertThat(numRecordsOut.getCount()).isEqualTo(0);
+            assertThat(numRecordsOutErrors.getCount()).isEqualTo(0);
+            assertThat(numRecordsSendErrors.getCount()).isEqualTo(0);
+
+            // but elements for which a non-null producer record is returned should count
             writer.write(1, SINK_WRITER_CONTEXT);
             timeService.trigger();
             assertThat(numRecordsOut.getCount()).isEqualTo(1);
@@ -168,13 +172,9 @@ public class PscWriterITCase {
 
     @Test
     public void testCurrentSendTimeMetric() throws Exception {
-        final InternalSinkWriterMetricGroup metricGroup =
-                InternalSinkWriterMetricGroup.mock(metricListener.getMetricGroup());
         try (final PscWriter<Integer> writer =
                 createWriterWithConfiguration(
-                        getPscClientConfiguration(),
-                        DeliveryGuarantee.AT_LEAST_ONCE,
-                        metricGroup)) {
+                        getPscClientConfiguration(), DeliveryGuarantee.AT_LEAST_ONCE)) {
             IntStream.range(0, 100)
                     .forEach(
                             (run) -> {
@@ -197,36 +197,121 @@ public class PscWriterITCase {
     }
 
     @Test
-    void testNumRecordsOutErrorsCounterMetric() throws Exception {
+    void testFlushAsyncErrorPropagationAndErrorCounter() throws Exception {
         Properties properties = getPscClientConfiguration();
-        final InternalSinkWriterMetricGroup metricGroup =
-                InternalSinkWriterMetricGroup.mock(metricListener.getMetricGroup());
 
-        try (final PscWriter<Integer> writer =
+        final SinkWriterMetricGroup metricGroup = createSinkWriterMetricGroup();
+
+        final PscWriter<Integer> writer =
                 createWriterWithConfiguration(
-                        properties, DeliveryGuarantee.EXACTLY_ONCE, metricGroup)) {
-            final Counter numRecordsOutErrors = metricGroup.getNumRecordsOutErrorsCounter();
-            assertThat(numRecordsOutErrors.getCount()).isEqualTo(0L);
+                        properties, DeliveryGuarantee.EXACTLY_ONCE, metricGroup);
+        final Counter numRecordsOutErrors = metricGroup.getNumRecordsOutErrorsCounter();
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(0L);
 
-            writer.write(1, SINK_WRITER_CONTEXT);
-            assertThat(numRecordsOutErrors.getCount()).isEqualTo(0L);
+        triggerProducerException(writer, properties);
 
-            final String transactionalId = writer.getCurrentProducer().getTransactionalId();
+        // test flush
+        assertThatCode(() -> writer.flush(false))
+                .hasRootCauseExactlyInstanceOf(ProducerFencedException.class);
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
 
-            try (FlinkPscInternalProducer<byte[], byte[]> producer =
-                    new FlinkPscInternalProducer<>(properties, transactionalId)) {
+        assertThatCode(() -> writer.write(1, SINK_WRITER_CONTEXT))
+                .as("the exception is not thrown again")
+                .doesNotThrowAnyException();
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
+    }
 
-                producer.initTransactions();
-                producer.beginTransaction();
-                producer.send(new PscProducerMessage<>(topicUriStr, "2".getBytes()));
-                producer.commitTransaction();
-            }
+    @Test
+    void testWriteAsyncErrorPropagationAndErrorCounter() throws Exception {
+        Properties properties = getPscClientConfiguration();
 
-            writer.write(3, SINK_WRITER_CONTEXT);
-            writer.flush(false);
-            writer.prepareCommit();
-            assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
+        final SinkWriterMetricGroup metricGroup = createSinkWriterMetricGroup();
+
+        final PscWriter<Integer> writer =
+                createWriterWithConfiguration(
+                        properties, DeliveryGuarantee.EXACTLY_ONCE, metricGroup);
+        final Counter numRecordsOutErrors = metricGroup.getNumRecordsOutErrorsCounter();
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(0L);
+
+        triggerProducerException(writer, properties);
+        // to ensure that the exceptional send request has completed
+        writer.getCurrentProducer().flush();
+
+        assertThatCode(() -> writer.write(1, SINK_WRITER_CONTEXT))
+                .hasRootCauseExactlyInstanceOf(ProducerFencedException.class);
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
+
+        assertThatCode(() -> writer.write(1, SINK_WRITER_CONTEXT))
+                .as("the exception is not thrown again")
+                .doesNotThrowAnyException();
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
+    }
+
+    @Test
+    void testMailboxAsyncErrorPropagationAndErrorCounter() throws Exception {
+        Properties properties = getPscClientConfiguration();
+
+        SinkInitContext sinkInitContext =
+                new SinkInitContext(createSinkWriterMetricGroup(), timeService, null);
+
+        final PscWriter<Integer> writer =
+                createWriterWithConfiguration(
+                        properties, DeliveryGuarantee.EXACTLY_ONCE, sinkInitContext);
+        final Counter numRecordsOutErrors =
+                sinkInitContext.metricGroup.getNumRecordsOutErrorsCounter();
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(0L);
+
+        triggerProducerException(writer, properties);
+        // to ensure that the exceptional send request has completed
+        writer.getCurrentProducer().flush();
+
+        while (sinkInitContext.getMailboxExecutor().tryYield()) {
+            // execute all mails
         }
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
+
+        assertThatCode(() -> writer.write(1, SINK_WRITER_CONTEXT))
+                .as("the exception is not thrown again")
+                .doesNotThrowAnyException();
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
+    }
+
+    @Test
+    void testCloseAsyncErrorPropagationAndErrorCounter() throws Exception {
+        Properties properties = getPscClientConfiguration();
+
+        final SinkWriterMetricGroup metricGroup = createSinkWriterMetricGroup();
+
+        final PscWriter<Integer> writer =
+                createWriterWithConfiguration(
+                        properties, DeliveryGuarantee.EXACTLY_ONCE, metricGroup);
+        final Counter numRecordsOutErrors = metricGroup.getNumRecordsOutErrorsCounter();
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(0L);
+
+        triggerProducerException(writer, properties);
+        // to ensure that the exceptional send request has completed
+        writer.getCurrentProducer().flush();
+
+        // test flush
+        assertThatCode(writer::close)
+                .as("flush should throw the exception from the WriterCallback")
+                .hasRootCauseExactlyInstanceOf(ProducerFencedException.class);
+        assertThat(numRecordsOutErrors.getCount()).isEqualTo(1L);
+    }
+
+    private void triggerProducerException(PscWriter<Integer> writer, Properties properties)
+            throws IOException, ConfigurationException, ProducerException, TopicUriSyntaxException {
+        final String transactionalId = writer.getCurrentProducer().getTransactionalId();
+
+        try (FlinkPscInternalProducer<byte[], byte[]> producer =
+                     new FlinkPscInternalProducer<>(properties, transactionalId)) {
+            producer.initTransactions();
+            producer.beginTransaction();
+            producer.send(new PscProducerMessage<>(topicUriStr, "1".getBytes()));
+            producer.commitTransaction();
+        }
+
+        writer.write(1, SINK_WRITER_CONTEXT);
     }
 
     @Test
@@ -236,7 +321,7 @@ public class PscWriterITCase {
                 createWriterWithConfiguration(
                         getPscClientConfiguration(),
                         DeliveryGuarantee.AT_LEAST_ONCE,
-                        InternalSinkWriterMetricGroup.mock(metricListener.getMetricGroup()),
+                        createSinkWriterMetricGroup(),
                         meta -> metadataList.add(meta.getTopicUriPartition().getTopicUriAsString() + "-" + meta.getTopicUriPartition().getPartition() + "@" + meta.getOffset()))) {
             List<String> expected = new ArrayList<>();
             for (int i = 0; i < 100; i++) {
@@ -317,6 +402,7 @@ public class PscWriterITCase {
                         getPscClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE)) {
             assertThat(writer.getProducerPool()).hasSize(0);
 
+            writer.write(1, SINK_WRITER_CONTEXT);
             writer.flush(false);
             Collection<PscCommittable> committables0 = writer.prepareCommit();
             writer.snapshotState(1);
@@ -336,6 +422,7 @@ public class PscWriterITCase {
             committable.getProducer().get().close();
             assertThat(writer.getProducerPool()).hasSize(1);
 
+            writer.write(1, SINK_WRITER_CONTEXT);
             writer.flush(false);
             Collection<PscCommittable> committables1 = writer.prepareCommit();
             writer.snapshotState(2);
@@ -346,6 +433,30 @@ public class PscWriterITCase {
             assertThat(firstProducer == writer.getCurrentProducer())
                     .as("Expected recycled producer")
                     .isTrue();
+        }
+    }
+
+    /**
+     * Tests that if a pre-commit attempt occurs on an empty transaction, the writer should not emit
+     * a PscCommittable, and instead immediately commit the empty transaction and recycle the
+     * producer.
+     */
+    @Test
+    void prepareCommitForEmptyTransaction() throws Exception {
+        try (final PscWriter<Integer> writer =
+                     createWriterWithConfiguration(
+                             getPscClientConfiguration(), DeliveryGuarantee.EXACTLY_ONCE)) {
+            assertThat(writer.getProducerPool()).hasSize(0);
+
+            // no data written to current transaction
+            writer.flush(false);
+            Collection<PscCommittable> emptyCommittables = writer.prepareCommit();
+
+            assertThat(emptyCommittables).hasSize(0);
+            assertThat(writer.getProducerPool()).hasSize(1);
+            final FlinkPscInternalProducer<?, ?> recycledProducer =
+                    writer.getProducerPool().pop();
+            assertThat(recycledProducer.isInTransaction()).isFalse();
         }
     }
 
@@ -389,17 +500,13 @@ public class PscWriterITCase {
         config.put(configKey, configValue);
         try (final PscWriter<Integer> ignored =
                 createWriterWithConfiguration(config, guarantee)) {
-            Assertions.assertFalse(
-                    metricListener.getGauge(PSC_METRIC_WITH_GROUP_NAME).isPresent());
+            assertThat(metricListener.getGauge(PSC_METRIC_WITH_GROUP_NAME)).isNotPresent();
         }
     }
 
     private PscWriter<Integer> createWriterWithConfiguration(
             Properties config, DeliveryGuarantee guarantee) {
-        return createWriterWithConfiguration(
-                config,
-                guarantee,
-                InternalSinkWriterMetricGroup.mock(metricListener.getMetricGroup()));
+        return createWriterWithConfiguration(config, guarantee, createSinkWriterMetricGroup());
     }
 
     private PscWriter<Integer> createWriterWithConfiguration(
@@ -415,17 +522,37 @@ public class PscWriterITCase {
             SinkWriterMetricGroup sinkWriterMetricGroup,
             @Nullable Consumer<MessageId> metadataConsumer) {
         try {
-            return new PscWriter<>(
-                    guarantee,
-                    config,
-                    "test-prefix",
-                    new SinkInitContext(sinkWriterMetricGroup, timeService, metadataConsumer),
-                    new DummyRecordSerializer(),
-                    new DummySchemaContext(),
-                    ImmutableList.of());
-        } catch (ConfigurationException | ClientException | TopicUriSyntaxException e) {
+            PscSink<Integer> pscSink =
+                    PscSink.<Integer>builder()
+                            .setPscProducerConfig(config)
+                            .setDeliveryGuarantee(guarantee)
+                            .setTransactionalIdPrefix("test-prefix")
+                            .setRecordSerializer(new DummyRecordSerializer())
+                            .build();
+            return (PscWriter<Integer>) pscSink.createWriter(
+                            new SinkInitContext(sinkWriterMetricGroup, timeService, metadataConsumer));
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private PscWriter<Integer> createWriterWithConfiguration(
+            Properties config, DeliveryGuarantee guarantee, SinkInitContext sinkInitContext)
+            throws IOException {
+        PscSink<Integer> pscSink =
+                PscSink.<Integer>builder()
+                        .setPscProducerConfig(config)
+                        .setDeliveryGuarantee(guarantee)
+                        .setTransactionalIdPrefix("test-prefix")
+                        .setRecordSerializer(new DummyRecordSerializer())
+                        .build();
+        return (PscWriter<Integer>) pscSink.createWriter(sinkInitContext);
+    }
+
+    private SinkWriterMetricGroup createSinkWriterMetricGroup() {
+        DummyOperatorMetricGroup operatorMetricGroup =
+                new DummyOperatorMetricGroup(metricListener.getMetricGroup());
+        return InternalSinkWriterMetricGroup.wrap(operatorMetricGroup);
     }
 
     private static Properties getPscClientConfiguration() {
@@ -442,7 +569,7 @@ public class PscWriterITCase {
         return standardProps;
     }
 
-    private static class SinkInitContext implements Sink.InitContext {
+    private static class SinkInitContext extends TestSinkInitContext {
 
         private final SinkWriterMetricGroup metricGroup;
         private final ProcessingTimeService timeService;
@@ -463,11 +590,6 @@ public class PscWriterITCase {
         }
 
         @Override
-        public MailboxExecutor getMailboxExecutor() {
-            return new SyncMailboxExecutor();
-        }
-
-        @Override
         public ProcessingTimeService getProcessingTimeService() {
             return timeService;
         }
@@ -480,6 +602,11 @@ public class PscWriterITCase {
         @Override
         public int getNumberOfParallelSubtasks() {
             return 1;
+        }
+
+        @Override
+        public int getAttemptNumber() {
+            return 0;
         }
 
         @Override
@@ -504,24 +631,15 @@ public class PscWriterITCase {
         }
     }
 
-    private class DummyRecordSerializer implements PscRecordSerializationSchema<Integer> {
+    private static class DummyRecordSerializer implements PscRecordSerializationSchema<Integer> {
         @Override
         public PscProducerMessage<byte[], byte[]> serialize(
                 Integer element, PscSinkContext context, Long timestamp) {
+            if (element == null) {
+                // in general, serializers should be allowed to skip invalid elements
+                return null;
+            }
             return new PscProducerMessage<>(topicUriStr, ByteBuffer.allocate(4).putInt(element).array());
-        }
-    }
-
-    private static class DummySchemaContext implements SerializationSchema.InitializationContext {
-
-        @Override
-        public MetricGroup getMetricGroup() {
-            throw new UnsupportedOperationException("Not implemented.");
-        }
-
-        @Override
-        public UserCodeClassLoader getUserCodeClassLoader() {
-            throw new UnsupportedOperationException("Not implemented.");
         }
     }
 
@@ -534,6 +652,24 @@ public class PscWriterITCase {
         @Override
         public Long timestamp() {
             return null;
+        }
+    }
+
+
+    private static class DummyOperatorMetricGroup extends ProxyMetricGroup<MetricGroup>
+            implements OperatorMetricGroup {
+        private final OperatorIOMetricGroup operatorIOMetricGroup;
+
+        public DummyOperatorMetricGroup(MetricGroup parentMetricGroup) {
+            super(parentMetricGroup);
+            this.operatorIOMetricGroup =
+                    UnregisteredMetricGroups.createUnregisteredOperatorMetricGroup()
+                            .getIOMetricGroup();
+        }
+
+        @Override
+        public OperatorIOMetricGroup getIOMetricGroup() {
+            return operatorIOMetricGroup;
         }
     }
 

@@ -15,20 +15,18 @@
  * limitations under the License.
  */
 
-package com.pinterest.flink.connector.psc.sink;
+package com.pinterest.flink.connector.psc.testutils;
 
-import org.apache.flink.util.TestLogger;
-import org.junit.Test;
+/**
+ * Utility class for defining the image names and versions of Docker containers used during the Java
+ * tests. The names/versions are centralised here in order to make testing version updates easier,
+ * as well as to provide a central file to use as a key when caching testing Docker files.
+ */
+public class DockerImageVersions {
 
-import static org.assertj.core.api.Assertions.assertThat;
+    public static final String KAFKA = "confluentinc/cp-kafka:7.4.4";
 
-/** Tests for {@link TransactionalIdFactory}. */
-public class TransactionIdFactoryTest extends TestLogger {
+    public static final String SCHEMA_REGISTRY = "confluentinc/cp-schema-registry:7.4.4";
 
-    @Test
-    public void testBuildTransactionalId() {
-        final String expected = "prefix-0-2";
-        assertThat(TransactionalIdFactory.buildTransactionalId("prefix", 0, 2L))
-                .isEqualTo(expected);
-    }
+    public static final String ZOOKEEPER = "zookeeper:3.4.14";
 }

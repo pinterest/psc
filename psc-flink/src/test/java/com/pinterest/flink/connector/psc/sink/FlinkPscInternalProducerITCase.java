@@ -32,8 +32,8 @@ import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.StringDeserializer;
 import com.pinterest.psc.serde.StringSerializer;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.flink.shaded.guava30.com.google.common.collect.Lists;
 import org.apache.flink.util.TestLoggerExtension;
+import org.apache.kafka.common.errors.InvalidTxnStateException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,13 +47,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import static com.pinterest.flink.connector.psc.testutils.DockerImageVersions.KAFKA;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
-import static org.apache.flink.util.DockerImageVersions.KAFKA;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -68,19 +69,18 @@ class FlinkPscInternalProducerITCase {
     private static final KafkaContainer KAFKA_CONTAINER =
             createKafkaContainer(KAFKA, LOG).withEmbeddedZookeeper();
 
-    private static final String TRANSACTION_PREFIX = "test-transaction-";
-
     private static final String CLUSTER_URI = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
 
     @Test
     void testInitTransactionId() throws IOException {
         final String topicUriStr = CLUSTER_URI + "test-init-transactions";
+        final String transactionIdPrefix = "testInitTransactionId-";
         FlinkPscInternalProducer<String, String> reuse = null;
         try {
             int numTransactions = 20;
             reuse = new FlinkPscInternalProducer<>(getProperties(), "dummy");
             for (int i = 1; i <= numTransactions; i++) {
-                reuse.initTransactionId(TRANSACTION_PREFIX + i);
+                reuse.initTransactionId(transactionIdPrefix + i);
                 reuse.beginTransaction();
                 reuse.send(new PscProducerMessage<>(topicUriStr, "test-value-" + i));
                 if (i % 2 == 0) {
@@ -89,7 +89,7 @@ class FlinkPscInternalProducerITCase {
                     reuse.flush();
                     reuse.abortTransaction();
                 }
-                assertNumTransactions(i);
+                assertNumTransactions(i, transactionIdPrefix);
                 assertThat(readRecords(topicUriStr).asIterable().getMessages().size()).isEqualTo(i / 2);
             }
         } catch (ConfigurationException | ProducerException | TopicUriSyntaxException | ConsumerException e) {
@@ -97,6 +97,53 @@ class FlinkPscInternalProducerITCase {
         } finally {
             if (reuse != null)
                 reuse.close();
+        }
+    }
+
+    @Test
+    void testCommitResumedTransaction() throws ConfigurationException, ProducerException, TopicUriSyntaxException, IOException, ConsumerException {
+        final String topic = "test-commit-resumed-transaction";
+        final String transactionIdPrefix = "testCommitResumedTransaction-";
+        final String transactionalId = transactionIdPrefix + "id";
+
+        PscCommittable snapshottedCommittable;
+        try (FlinkPscInternalProducer<String, String> producer =
+                     new FlinkPscInternalProducer<>(getProperties(), transactionalId)) {
+            producer.initTransactions();
+            producer.beginTransaction();
+            producer.send(new PscProducerMessage<>(topic, "test-value"));
+            producer.flush();
+            snapshottedCommittable = PscCommittable.of(producer, ignored -> {});
+        }
+
+        try (FlinkPscInternalProducer<String, String> resumedProducer =
+                     new FlinkPscInternalProducer<>(getProperties(), transactionalId)) {
+            resumedProducer.resumeTransaction(
+                    snapshottedCommittable.getProducerId(), snapshottedCommittable.getEpoch());
+            resumedProducer.commitTransaction();
+        }
+
+        assertNumTransactions(1, transactionIdPrefix);
+        assertThat(readRecords(topic).asIterable().getMessages().size()).isEqualTo(1);
+    }
+
+    @Test
+    void testCommitResumedEmptyTransactionShouldFail() throws ConfigurationException, ProducerException, TopicUriSyntaxException, IOException {
+        PscCommittable snapshottedCommittable;
+        try (FlinkPscInternalProducer<String, String> producer =
+                     new FlinkPscInternalProducer<>(getProperties(), "dummy")) {
+            producer.initTransactions();
+            producer.beginTransaction();
+            snapshottedCommittable = PscCommittable.of(producer, ignored -> {});
+        }
+
+        try (FlinkPscInternalProducer<String, String> resumedProducer =
+                     new FlinkPscInternalProducer<>(getProperties(), "dummy")) {
+            resumedProducer.resumeTransaction(
+                    snapshottedCommittable.getProducerId(), snapshottedCommittable.getEpoch());
+
+            assertThatThrownBy(resumedProducer::commitTransaction)
+                    .isInstanceOf(InvalidTxnStateException.class);
         }
     }
 
@@ -148,15 +195,15 @@ class FlinkPscInternalProducerITCase {
     }
 
     private static List<ThrowingConsumer<FlinkPscInternalProducer<?, ?>>> provideTransactionsFinalizer() {
-        return Lists.newArrayList(
+        return Arrays.asList(
                 FlinkPscInternalProducer::commitTransaction,
                 FlinkPscInternalProducer::abortTransaction);
     }
 
-    private void assertNumTransactions(int numTransactions) throws ConfigurationException, ConsumerException {
+    private void assertNumTransactions(int numTransactions, String transactionalIdPrefix) throws ConfigurationException, ConsumerException {
         List<PscTransactionLog.TransactionRecord> transactions =
                 new PscTransactionLog(CLUSTER_URI, getProperties())
-                        .getTransactions(id -> id.startsWith(TRANSACTION_PREFIX));
+                        .getTransactions(id -> id.startsWith(transactionalIdPrefix));
         assertThat(
                         transactions.stream()
                                 .map(PscTransactionLog.TransactionRecord::getTransactionId)

@@ -83,7 +83,7 @@ public class DynamicPscSourceEnumerator
     private final OffsetsInitializer startingOffsetsInitializer;
     private final OffsetsInitializer stoppingOffsetInitializer;
     private final Boundedness boundedness;
-    private final StoppablePscEnumContextProxy.StoppableKafkaEnumContextProxyFactory
+    private final StoppablePscEnumContextProxy.StoppablePscEnumContextProxyFactory
             stoppablePscEnumContextProxyFactory;
 
     // options
@@ -114,7 +114,7 @@ public class DynamicPscSourceEnumerator
                 properties,
                 boundedness,
                 dynamicPscSourceEnumState,
-                StoppablePscEnumContextProxy.StoppableKafkaEnumContextProxyFactory
+                StoppablePscEnumContextProxy.StoppablePscEnumContextProxyFactory
                         .getDefaultFactory());
     }
 
@@ -128,7 +128,7 @@ public class DynamicPscSourceEnumerator
             Properties properties,
             Boundedness boundedness,
             DynamicPscSourceEnumState dynamicPscSourceEnumState,
-            StoppablePscEnumContextProxy.StoppableKafkaEnumContextProxyFactory
+            StoppablePscEnumContextProxy.StoppablePscEnumContextProxyFactory
                     stoppablePscEnumContextProxyFactory) {
         this.pscStreamSubscriber = pscStreamSubscriber;
         this.boundedness = boundedness;
@@ -459,7 +459,7 @@ public class DynamicPscSourceEnumerator
         ArrayListMultimap<String, PscTopicUriPartitionSplit> kafkaPartitionSplits =
                 ArrayListMultimap.create();
         for (DynamicPscSourceSplit split : splits) {
-            kafkaPartitionSplits.put(split.getClusterId(), split.getPscTopicUriPartitionSplit());
+            kafkaPartitionSplits.put(split.getPubSubClusterId(), split.getPscTopicUriPartitionSplit());
         }
 
         // add splits back and assign pending splits for all enumerators

@@ -52,7 +52,7 @@ public class DynamicPscSourceSplitSerializer
     public byte[] serialize(DynamicPscSourceSplit split) throws IOException {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(baos)) {
-            out.writeUTF(split.getClusterId());
+            out.writeUTF(split.getPubSubClusterId());
             out.writeInt(pscTopicUriPartitionSplitSerializer.getVersion());
             out.write(pscTopicUriPartitionSplitSerializer.serialize(split.getPscTopicUriPartitionSplit()));
             out.flush();

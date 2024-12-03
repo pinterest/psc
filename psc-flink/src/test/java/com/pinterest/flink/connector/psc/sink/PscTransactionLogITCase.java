@@ -47,11 +47,10 @@ import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.Transacti
 import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.TransactionState.Ongoing;
 import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.TransactionState.PrepareAbort;
 import static com.pinterest.flink.connector.psc.sink.PscTransactionLog.TransactionState.PrepareCommit;
+import static com.pinterest.flink.connector.psc.testutils.DockerImageVersions.KAFKA;
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
-import static org.apache.flink.util.DockerImageVersions.KAFKA;
-import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Tests for {@link PscTransactionLog} to retrieve abortable PSC transactions. */
 public class PscTransactionLogITCase extends TestLogger {
@@ -87,9 +86,8 @@ public class PscTransactionLogITCase extends TestLogger {
         final PscTransactionLog transactionLog =
                 new PscTransactionLog(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI.getTopicUriAsString(), getPscClientConfiguration());
         final List<PscTransactionLog.TransactionRecord> transactions = transactionLog.getTransactions();
-        assertThat(
-                transactions,
-                containsInAnyOrder(
+        assertThat(transactions)
+                .containsExactlyInAnyOrder(
                         new PscTransactionLog.TransactionRecord(buildTransactionalId(1), Empty),
                         new PscTransactionLog.TransactionRecord(buildTransactionalId(1), Ongoing),
                         new PscTransactionLog.TransactionRecord(buildTransactionalId(1), PrepareCommit),
@@ -101,7 +99,7 @@ public class PscTransactionLogITCase extends TestLogger {
                         new PscTransactionLog.TransactionRecord(buildTransactionalId(3), Empty),
                         new PscTransactionLog.TransactionRecord(buildTransactionalId(3), Ongoing),
                         new PscTransactionLog.TransactionRecord(buildTransactionalId(4), Empty),
-                        new PscTransactionLog.TransactionRecord(buildTransactionalId(4), Ongoing)));
+                        new PscTransactionLog.TransactionRecord(buildTransactionalId(4), Ongoing));
     }
 
     private void committedTransaction(long id) throws ConfigurationException, ProducerException {
