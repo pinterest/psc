@@ -196,7 +196,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
         }
         final PscSink<RowData> pscSink =
                 sinkBuilder
-                        .setDeliverGuarantee(deliveryGuarantee)
+                        .setDeliveryGuarantee(deliveryGuarantee)
                         .setPscProducerConfig(properties)
                         .setRecordSerializer(
                                 new DynamicPscRecordSerializationSchema(
@@ -217,7 +217,7 @@ public class PscDynamicSink implements DynamicTableSink, SupportsWritingMetadata
                         ProviderContext providerContext, DataStream<RowData> dataStream) {
                     final boolean objectReuse =
                             dataStream.getExecutionEnvironment().getConfig().isObjectReuseEnabled();
-                    final ReducingUpsertSink<?> sink =
+                    final ReducingUpsertSink<?, ?> sink =
                             new ReducingUpsertSink<>(
                                     pscSink,
                                     physicalDataType,

@@ -33,24 +33,20 @@ import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 import com.pinterest.psc.producer.transaction.TransactionManagerUtils;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
-import org.apache.flink.shaded.guava30.com.google.common.base.Joiner;
 import org.apache.kafka.clients.producer.internals.TransactionalRequestResult;
-import org.apache.kafka.common.Node;
-import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 /**
  * Internal flink PSC producer.
@@ -101,11 +97,13 @@ public class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         return super.initTransactions(topicUri);
     }
 
+    /*
     @Override
     public void sendOffsetsToTransaction(Map<TopicUriPartition, MessageId> offsets, String consumerGroupId) throws ProducerException, ConfigurationException {
         ensureNotClosed();
         super.sendOffsetsToTransaction(offsets, consumerGroupId);
     }
+    */
 
     @Override
     public Future<MessageId> send(PscProducerMessage<K, V> record) throws ProducerException, ConfigurationException {
@@ -140,8 +138,9 @@ public class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
             LOG.debug(
                     "Closed internal PscProducer {}. Stacktrace: {}",
                     System.identityHashCode(this),
-                    Joiner.on("\n").join(Thread.currentThread().getStackTrace()));
-        }
+                    Arrays.stream(Thread.currentThread().getStackTrace())
+                            .map(StackTraceElement::toString)
+                            .collect(Collectors.joining("\n")));        }
         closed = true;
     }
 

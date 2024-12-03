@@ -48,13 +48,17 @@ public class PscTopicUriPartitionAssigner {
      * @return index of the target subtask that the PSC topic URI partition should be assigned to.
      */
     public static int assign(PscTopicUriPartition partition, int numParallelSubtasks) {
+        return assign(partition.getTopicUriStr(), partition.getPartition(), numParallelSubtasks);
+    }
+
+    public static int assign(String topicUriStr, int partition, int numParallelSubtasks) {
         // note: this hash is different from flink-kafka-connector in that the topicUri string is used to calculate
         // instead of the topic name itself
-        int startIndex = ((partition.getTopicUriStr().hashCode() * 31) & 0x7FFFFFFF) % numParallelSubtasks;
+        int startIndex = ((topicUriStr.hashCode() * 31) & 0x7FFFFFFF) % numParallelSubtasks;
 
         // here, the assumption is that the id of PSC topic URI partitions are always ascending
         // starting from 0, and therefore can be used directly as the offset clockwise from the start index
-        return (startIndex + partition.getPartition()) % numParallelSubtasks;
+        return (startIndex + partition) % numParallelSubtasks;
     }
 
 }

@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.streaming.connectors.psc.config.BoundedMode;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
@@ -54,6 +55,9 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
@@ -99,6 +103,7 @@ class PscConnectorOptionsUtil {
     public static void validateTableSourceOptions(ReadableConfig tableOptions) {
         validateSourceTopic(tableOptions);
         validateScanStartupMode(tableOptions);
+        validateScanBoundedMode(tableOptions);
     }
 
     public static void validateTableSinkOptions(ReadableConfig tableOptions) {
@@ -181,6 +186,49 @@ class PscConnectorOptionsUtil {
                         });
     }
 
+    static void validateScanBoundedMode(ReadableConfig tableOptions) {
+        tableOptions
+                .getOptional(SCAN_BOUNDED_MODE)
+                .ifPresent(
+                        mode -> {
+                            switch (mode) {
+                                case TIMESTAMP:
+                                    if (!tableOptions
+                                            .getOptional(SCAN_BOUNDED_TIMESTAMP_MILLIS)
+                                            .isPresent()) {
+                                        throw new ValidationException(
+                                                String.format(
+                                                        "'%s' is required in '%s' bounded mode"
+                                                                + " but missing.",
+                                                        SCAN_BOUNDED_TIMESTAMP_MILLIS.key(),
+                                                        PscConnectorOptions.ScanBoundedMode.TIMESTAMP));
+                                    }
+
+                                    break;
+                                case SPECIFIC_OFFSETS:
+                                    if (!tableOptions
+                                            .getOptional(SCAN_BOUNDED_SPECIFIC_OFFSETS)
+                                            .isPresent()) {
+                                        throw new ValidationException(
+                                                String.format(
+                                                        "'%s' is required in '%s' bounded mode"
+                                                                + " but missing.",
+                                                        SCAN_BOUNDED_SPECIFIC_OFFSETS.key(),
+                                                        PscConnectorOptions.ScanBoundedMode.SPECIFIC_OFFSETS));
+                                    }
+                                    if (!isSingleTopicUri(tableOptions)) {
+                                        throw new ValidationException(
+                                                "Currently PSC source only supports specific offset for single topicUri.");
+                                    }
+                                    String specificOffsets =
+                                            tableOptions.get(SCAN_BOUNDED_SPECIFIC_OFFSETS);
+                                    parseSpecificOffsets(
+                                            specificOffsets, SCAN_BOUNDED_SPECIFIC_OFFSETS.key());
+                                    break;
+                            }
+                        });
+    }
+
     private static void validateSinkPartitioner(ReadableConfig tableOptions) {
         tableOptions
                 .getOptional(SINK_PARTITIONER)
@@ -239,6 +287,23 @@ class PscConnectorOptionsUtil {
         return options;
     }
 
+    public static BoundedOptions getBoundedOptions(ReadableConfig tableOptions) {
+        final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
+        final BoundedMode boundedMode =
+                PscConnectorOptionsUtil.fromOption(tableOptions.get(SCAN_BOUNDED_MODE));
+        if (boundedMode == BoundedMode.SPECIFIC_OFFSETS) {
+            buildBoundedOffsets(tableOptions, tableOptions.get(TOPIC_URI).get(0), specificOffsets);
+        }
+
+        final BoundedOptions options = new BoundedOptions();
+        options.boundedMode = boundedMode;
+        options.specificOffsets = specificOffsets;
+        if (boundedMode == BoundedMode.TIMESTAMP) {
+            options.boundedTimestampMillis = tableOptions.get(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        }
+        return options;
+    }
+
     private static void buildSpecificOffsets(
             ReadableConfig tableOptions,
             String topic,
@@ -251,6 +316,22 @@ class PscConnectorOptionsUtil {
                     final PscTopicUriPartition topicPartition =
                             new PscTopicUriPartition(topic, partition);
                     specificOffsets.put(topicPartition, offset);
+                });
+    }
+
+    public static void buildBoundedOffsets(
+            ReadableConfig tableOptions,
+            String topic,
+            Map<PscTopicUriPartition, Long> specificOffsets) {
+        String specificOffsetsEndOpt = tableOptions.get(SCAN_BOUNDED_SPECIFIC_OFFSETS);
+        final Map<Integer, Long> offsetMap =
+                parseSpecificOffsets(specificOffsetsEndOpt, SCAN_BOUNDED_SPECIFIC_OFFSETS.key());
+
+        offsetMap.forEach(
+                (partition, offset) -> {
+                    final PscTopicUriPartition topicUriPartition =
+                            new PscTopicUriPartition(topic, partition);
+                    specificOffsets.put(topicUriPartition, offset);
                 });
     }
 
@@ -274,6 +355,29 @@ class PscConnectorOptionsUtil {
             default:
                 throw new TableException(
                         "Unsupported startup mode. Validator should have checked that.");
+        }
+    }
+
+    /**
+     * Returns the {@link BoundedMode} of PSC Consumer by passed-in table-specific {@link
+     * com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.ScanBoundedMode}.
+     */
+    private static BoundedMode fromOption(PscConnectorOptions.ScanBoundedMode scanBoundedMode) {
+        switch (scanBoundedMode) {
+            case UNBOUNDED:
+                return BoundedMode.UNBOUNDED;
+            case LATEST_OFFSET:
+                return BoundedMode.LATEST;
+            case GROUP_OFFSETS:
+                return BoundedMode.GROUP_OFFSETS;
+            case TIMESTAMP:
+                return BoundedMode.TIMESTAMP;
+            case SPECIFIC_OFFSETS:
+                return BoundedMode.SPECIFIC_OFFSETS;
+
+            default:
+                throw new TableException(
+                        "Unsupported bounded mode. Validator should have checked that.");
         }
     }
 
@@ -577,6 +681,13 @@ class PscConnectorOptionsUtil {
         public StartupMode startupMode;
         public Map<PscTopicUriPartition, Long> specificOffsets;
         public long startupTimestampMillis;
+    }
+
+    /** PSC bounded options. * */
+    public static class BoundedOptions {
+        public BoundedMode boundedMode;
+        public Map<PscTopicUriPartition, Long> specificOffsets;
+        public long boundedTimestampMillis;
     }
 
     private PscConnectorOptionsUtil() {}

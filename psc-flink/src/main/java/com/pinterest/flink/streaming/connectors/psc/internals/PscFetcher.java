@@ -29,6 +29,7 @@ import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import com.pinterest.flink.streaming.connectors.psc.PscDeserializationSchema;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.util.Collector;
+import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.SerializedValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -166,6 +167,12 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
                         }
                     }
                 }
+            }
+        }  catch (Handover.ClosedException ex) {
+            if (running) {
+                // rethrow, only if we are running, if fetcher is not running we should not throw
+                // the ClosedException, as we are stopping gracefully
+                ExceptionUtils.rethrowException(ex);
             }
         } finally {
             // this signals the consumer thread that no more work is to be done

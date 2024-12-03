@@ -51,10 +51,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.DELIVERY_GUARANTEE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_INTERVAL;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_MAX_ROWS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
@@ -66,9 +72,11 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.autoCompleteSchemaRegistrySubject;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createKeyFormatProjection;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createValueFormatProjection;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getBoundedOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getPscProperties;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUriPattern;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUris;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateScanBoundedMode;
 
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
@@ -98,7 +106,17 @@ public class UpsertPscDynamicTableFactory
         options.add(SINK_PARALLELISM);
         options.add(SINK_BUFFER_FLUSH_INTERVAL);
         options.add(SINK_BUFFER_FLUSH_MAX_ROWS);
+        options.add(SCAN_BOUNDED_MODE);
+        options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
+        options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(DELIVERY_GUARANTEE);
+        options.add(TRANSACTIONAL_ID_PREFIX);
         return options;
+    }
+
+    @Override
+    public Set<ConfigOption<?>> forwardOptions() {
+        return Stream.of(DELIVERY_GUARANTEE, TRANSACTIONAL_ID_PREFIX).collect(Collectors.toSet());
     }
 
     @Override
@@ -126,6 +144,8 @@ public class UpsertPscDynamicTableFactory
         // always use earliest to keep data integrity
         StartupMode earliest = StartupMode.EARLIEST;
 
+        final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
+
         return new PscDynamicSource(
                 context.getPhysicalRowDataType(),
                 keyDecodingFormat,
@@ -139,6 +159,9 @@ public class UpsertPscDynamicTableFactory
                 earliest,
                 Collections.emptyMap(),
                 0,
+                boundedOptions.boundedMode,
+                boundedOptions.specificOffsets,
+                boundedOptions.boundedTimestampMillis,
                 true,
                 context.getObjectIdentifier().asSummaryString());
     }
@@ -163,6 +186,7 @@ public class UpsertPscDynamicTableFactory
                 keyEncodingFormat,
                 valueEncodingFormat,
                 context.getPrimaryKeyIndexes());
+        PscConnectorOptionsUtil.validateDeliveryGuarantee(tableOptions);
 
         Tuple2<int[], int[]> keyValueProjections =
                 createKeyValueProjections(context.getCatalogTable());
@@ -188,7 +212,7 @@ public class UpsertPscDynamicTableFactory
                 tableOptions.get(TOPIC_URI).get(0),
                 properties,
                 null,
-                DeliveryGuarantee.AT_LEAST_ONCE,
+                tableOptions.get(DELIVERY_GUARANTEE),
                 true,
                 flushMode,
                 parallelism,
@@ -221,6 +245,7 @@ public class UpsertPscDynamicTableFactory
             Format valueFormat,
             int[] primaryKeyIndexes) {
         validateTopic(tableOptions);
+        validateScanBoundedMode(tableOptions);
         validateFormat(keyFormat, valueFormat, tableOptions);
         validatePKConstraints(primaryKeyIndexes);
     }
