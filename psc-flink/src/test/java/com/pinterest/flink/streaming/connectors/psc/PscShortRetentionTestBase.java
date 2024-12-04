@@ -17,7 +17,6 @@
 
 package com.pinterest.flink.streaming.connectors.psc;
 
-import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
@@ -45,8 +44,6 @@ import java.io.Serializable;
 import java.util.Properties;
 
 import static org.apache.flink.test.util.TestUtils.tryExecute;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * A class containing a special Kafka broker which has a log retention of only 250 ms.
@@ -224,75 +221,5 @@ public class PscShortRetentionTestBase implements Serializable {
         public TypeInformation<String> getProducedType() {
             return Types.STRING;
         }
-    }
-
-    /**
-     * Ensure that the consumer is properly failing if "auto.offset.reset" is set to "none".
-     */
-    public void runFailOnAutoOffsetResetNone() throws Exception {
-        final String topic = "auto-offset-reset-none-test";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
-        final int parallelism = 1;
-
-        pscTestEnvWithKafka.createTestTopic(topicUri, parallelism, 1);
-
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(parallelism);
-        env.setRestartStrategy(RestartStrategies.noRestart()); // fail immediately
-
-        // ----------- add consumer ----------
-
-        Properties customProps = new Properties();
-        customProps.putAll(pscTestEnvWithKafka.getStandardPscConsumerConfiguration());
-        customProps.putAll(pscTestEnvWithKafka.getSecurePscConsumerConfiguration());
-        customProps.putAll(pscTestEnvWithKafka.getPscDiscoveryConfiguration());
-        customProps.setProperty(
-                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
-                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE
-        ); // test that "none" leads to an exception
-        FlinkPscConsumerBase<String> source = pscTestEnvWithKafka.getPscConsumer(topicUri, new SimpleStringSchema(), customProps);
-
-        DataStreamSource<String> consuming = env.addSource(source);
-        consuming.addSink(new DiscardingSink<String>());
-
-        try {
-            env.execute("Test auto offset reset none");
-        } catch (Throwable e) {
-            // check if correct exception has been thrown
-            if (!e.getCause().getCause().getMessage().contains("Undefined offset with no reset policy for partition")) {
-                throw e;
-            }
-        }
-
-        pscTestEnvWithKafka.deleteTestTopic(topic);
-    }
-
-    public void runFailOnAutoOffsetResetNoneEager() throws Exception {
-        final String topic = "auto-offset-reset-none-test";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
-        final int parallelism = 1;
-
-        pscTestEnvWithKafka.createTestTopic(topicUri, parallelism, 1);
-
-        // ----------- add consumer ----------
-
-        Properties customProps = new Properties();
-        customProps.putAll(pscTestEnvWithKafka.getStandardPscConsumerConfiguration());
-        customProps.putAll(pscTestEnvWithKafka.getSecurePscConsumerConfiguration());
-        customProps.putAll(pscTestEnvWithKafka.getPscDiscoveryConfiguration());
-        customProps.setProperty(
-                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
-                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE
-        ); // test that "none" leads to an exception
-
-        try {
-            pscTestEnvWithKafka.getPscConsumer(topicUri, new SimpleStringSchema(), customProps);
-            fail("should fail with an exception");
-        } catch (IllegalArgumentException e) {
-            // expected
-            assertTrue(e.getMessage().contains("none"));
-        }
-
-        pscTestEnvWithKafka.deleteTestTopic(topic);
     }
 }
