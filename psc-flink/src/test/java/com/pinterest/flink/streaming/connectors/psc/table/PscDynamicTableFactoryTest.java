@@ -24,17 +24,22 @@ import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceOptions;
 import com.pinterest.flink.connector.psc.source.PscSourceTestUtils;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.config.BoundedMode;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.flink.streaming.connectors.psc.testutils.MockPartitionOffsetsRetriever;
+import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.ByteArraySerializer;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
+import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.Configuration;
@@ -44,7 +49,6 @@ import org.apache.flink.formats.avro.RowDataToAvroConverters;
 import org.apache.flink.formats.avro.registry.confluent.ConfluentRegistryAvroSerializationSchema;
 import org.apache.flink.formats.avro.registry.confluent.debezium.DebeziumAvroSerializationSchema;
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableList;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
 import org.apache.flink.table.api.DataTypes;
@@ -96,14 +100,14 @@ import java.util.stream.Collectors;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.AVRO_CONFLUENT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.DEBEZIUM_AVRO_CONFLUENT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.PROPERTIES_PREFIX;
-import static org.apache.flink.core.testutils.FlinkAssertions.containsCause;
+import static org.apache.flink.core.testutils.FlinkAssertions.anyCauseMatches;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSink;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSource;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Abstract test base for {@link PscDynamicTableFactory}. */
+/** Tests for {@link PscDynamicTableFactory}. */
 @ExtendWith(TestLoggerExtension.class)
 public class PscDynamicTableFactoryTest {
 
@@ -147,12 +151,6 @@ public class PscDynamicTableFactoryTest {
         PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
 
         PSC_FINAL_SINK_PROPERTIES.putAll(PSC_SINK_PROPERTIES);
-        PSC_FINAL_SINK_PROPERTIES.setProperty(
-                PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
-        PSC_FINAL_SINK_PROPERTIES.setProperty(
-                PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
-        PSC_FINAL_SINK_PROPERTIES.put(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS, 3600000);
-
         PSC_FINAL_SOURCE_PROPERTIES.putAll(PSC_SOURCE_PROPERTIES);
     }
 
@@ -435,6 +433,154 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
+    public void testBoundedSpecificOffsetsValidate() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put(
+                                    PscConnectorOptions.SCAN_BOUNDED_MODE.key(),
+                                    "specific-offsets");
+                        });
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .cause()
+                .hasMessageContaining(
+                        "'scan.bounded.specific-offsets' is required in 'specific-offsets' bounded mode but missing.");
+    }
+
+    @Test
+    public void testBoundedSpecificOffsets() {
+        testBoundedOffsets(
+                "specific-offsets",
+                options -> {
+                    options.put("scan.bounded.specific-offsets", "partition:0,offset:2");
+                },
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(TOPIC_URI, 0);
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.noInteractions());
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, 2L);
+                });
+    }
+
+    @Test
+    public void testBoundedLatestOffset() {
+        testBoundedOffsets(
+                "latest-offset",
+                options -> {},
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(TOPIC, 0);
+                    long endOffsets = 123L;
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.latest(
+                                            (tps) ->
+                                                    Collections.singletonMap(
+                                                            partition, endOffsets)));
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, endOffsets);
+                });
+    }
+
+    @Test
+    public void testBoundedGroupOffsets() {
+        testBoundedOffsets(
+                "group-offsets",
+                options -> {},
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(TOPIC, 0);
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.noInteractions());
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, PscTopicUriPartitionSplit.COMMITTED_OFFSET);
+                });
+    }
+
+    @Test
+    public void testBoundedTimestamp() {
+        testBoundedOffsets(
+                "timestamp",
+                options -> {
+                    options.put("scan.bounded.timestamp-millis", "1");
+                },
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(TOPIC, 0);
+                    long offsetForTimestamp = 123L;
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.timestampAndEnd(
+                                            partitions -> {
+                                                assertThat(partitions)
+                                                        .containsOnlyKeys(partition)
+                                                        .containsEntry(partition, 1L);
+                                                Map<TopicUriPartition, Long> result =
+                                                        new HashMap<>();
+                                                result.put(
+                                                        partition,
+                                                        1L);
+                                                return result;
+                                            },
+                                            partitions -> {
+                                                Map<TopicUriPartition, Long> result = new HashMap<>();
+                                                result.put(
+                                                        partition,
+                                                        // the end offset is bigger than given by
+                                                        // timestamp
+                                                        // to make sure the one for timestamp is
+                                                        // used
+                                                        offsetForTimestamp + 1000L);
+                                                return result;
+                                            }));
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, offsetForTimestamp);
+                });
+    }
+
+    private void testBoundedOffsets(
+            String boundedMode,
+            Consumer<Map<String, String>> optionsConfig,
+            Consumer<PscSource<?>> validator) {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put(PscConnectorOptions.SCAN_BOUNDED_MODE.key(), boundedMode);
+                            optionsConfig.accept(options);
+                        });
+        final DynamicTableSource tableSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(tableSource).isInstanceOf(PscDynamicSource.class);
+        ScanTableSource.ScanRuntimeProvider provider =
+                ((PscDynamicSource) tableSource)
+                        .getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(provider).isInstanceOf(DataStreamScanProvider.class);
+        final PscSource<?> pscSource = assertPscSource(provider);
+        validator.accept(pscSource);
+    }
+
+    @Test
     public void testTableSink() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
@@ -476,7 +622,7 @@ public class PscDynamicTableFactoryTest {
 
     @Test
     public void testTableSinkSemanticTranslation() {
-        final List<String> semantics = ImmutableList.of("exactly-once", "at-least-once", "none");
+        final List<String> semantics = Arrays.asList("exactly-once", "at-least-once", "none");
         final EncodingFormat<SerializationSchema<RowData>> valueEncodingFormat =
                 new EncodingFormatMock(",");
         for (final String semantic : semantics) {
@@ -700,7 +846,7 @@ public class PscDynamicTableFactoryTest {
         }
 
         if (avroFormats.contains(keyFormat)) {
-            assert sink.keyEncodingFormat != null;
+            assertThat(sink.keyEncodingFormat).isNotNull();
             SerializationSchema<RowData> actualKeyEncoder =
                     sink.keyEncodingFormat.createRuntimeEncoder(
                             new SinkRuntimeProviderContext(false), SCHEMA_DATA_TYPE);
@@ -748,9 +894,9 @@ public class PscDynamicTableFactoryTest {
                         })
                 .isInstanceOf(ValidationException.class)
                 .satisfies(
-                        containsCause(
-                                new ValidationException(
-                                        "Option 'topic-uri' and 'topic-pattern' shouldn't be set together.")));
+                        anyCauseMatches(
+                                ValidationException.class,
+                                "Option 'topic' and 'topic-pattern' shouldn't be set together."));
     }
 
     @Test
@@ -767,10 +913,10 @@ public class PscDynamicTableFactoryTest {
                         })
                 .isInstanceOf(ValidationException.class)
                 .satisfies(
-                        containsCause(
-                                new ValidationException(
-                                        "'scan.startup.timestamp-millis' "
-                                                + "is required in 'timestamp' startup mode but missing.")));
+                        anyCauseMatches(
+                                ValidationException.class,
+                                "'scan.startup.timestamp-millis' "
+                                        + "is required in 'timestamp' startup mode but missing."));
     }
 
     @Test
@@ -788,10 +934,10 @@ public class PscDynamicTableFactoryTest {
                         })
                 .isInstanceOf(ValidationException.class)
                 .satisfies(
-                        containsCause(
-                                new ValidationException(
-                                        "'scan.startup.specific-offsets' "
-                                                + "is required in 'specific-offsets' startup mode but missing.")));
+                        anyCauseMatches(
+                                ValidationException.class,
+                                "'scan.startup.specific-offsets' "
+                                        + "is required in 'specific-offsets' startup mode but missing."));
     }
 
     @Test
@@ -807,10 +953,9 @@ public class PscDynamicTableFactoryTest {
                         })
                 .isInstanceOf(ValidationException.class)
                 .satisfies(
-                        containsCause(
-                                new ValidationException(
-                                        "Could not find and instantiate partitioner "
-                                                + "class 'abc'")));
+                        anyCauseMatches(
+                                ValidationException.class,
+                                "Could not find and instantiate partitioner " + "class 'abc'"));
     }
 
     @Test
@@ -827,10 +972,10 @@ public class PscDynamicTableFactoryTest {
                         })
                 .isInstanceOf(ValidationException.class)
                 .satisfies(
-                        containsCause(
-                                new ValidationException(
-                                        "Currently 'round-robin' partitioner only works "
-                                                + "when option 'key.fields' is not specified.")));
+                        anyCauseMatches(
+                                ValidationException.class,
+                                "Currently 'round-robin' partitioner only works "
+                                        + "when option 'key.fields' is not specified."));
     }
 
     @Test
@@ -854,9 +999,9 @@ public class PscDynamicTableFactoryTest {
                         })
                 .isInstanceOf(ValidationException.class)
                 .satisfies(
-                        containsCause(
-                                new ValidationException(
-                                        "sink.transactional-id-prefix must be specified when using DeliveryGuarantee.EXACTLY_ONCE.")));
+                        anyCauseMatches(
+                                ValidationException.class,
+                                "sink.transactional-id-prefix must be specified when using DeliveryGuarantee.EXACTLY_ONCE."));
     }
 
     @Test
@@ -955,6 +1100,82 @@ public class PscDynamicTableFactoryTest {
                                 + " guarantee the semantic of primary key.");
     }
 
+    @Test
+    public void testDiscoverPartitionByDefault() {
+        Map<String, String> tableSourceOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.remove("scan.topic-partition-discovery.interval"));
+        final PscDynamicSource actualSource =
+                (PscDynamicSource) createTableSource(SCHEMA, tableSourceOptions);
+        Properties props = new Properties();
+        props.putAll(PSC_SOURCE_PROPERTIES);
+        // The default partition discovery interval is 5 minutes
+        props.setProperty("partition.discovery.interval.ms", "300000");
+        final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_0), OFFSET_0);
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_1), OFFSET_1);
+        final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat =
+                new DecodingFormatMock(",", true);
+        // Test scan source equals
+        final PscDynamicSource expectedKafkaSource =
+                createExpectedScanSource(
+                        SCHEMA_DATA_TYPE,
+                        null,
+                        valueDecodingFormat,
+                        new int[0],
+                        new int[] {0, 1, 2},
+                        null,
+                        Collections.singletonList(TOPIC),
+                        null,
+                        props,
+                        StartupMode.SPECIFIC_OFFSETS,
+                        specificOffsets,
+                        0);
+        assertThat(actualSource).isEqualTo(expectedKafkaSource);
+        ScanTableSource.ScanRuntimeProvider provider =
+                actualSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertPscSource(provider);
+    }
+
+    @Test
+    public void testDisableDiscoverPartition() {
+        Map<String, String> tableSourceOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.put("scan.topic-partition-discovery.interval", "0"));
+        final PscDynamicSource actualSource =
+                (PscDynamicSource) createTableSource(SCHEMA, tableSourceOptions);
+        Properties props = new Properties();
+        props.putAll(PSC_SOURCE_PROPERTIES);
+        // Disable discovery if the partition discovery interval is 0 minutes
+        props.setProperty("partition.discovery.interval.ms", "0");
+        final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_0), OFFSET_0);
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_1), OFFSET_1);
+        final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat =
+                new DecodingFormatMock(",", true);
+        // Test scan source equals
+        final PscDynamicSource expectedKafkaSource =
+                createExpectedScanSource(
+                        SCHEMA_DATA_TYPE,
+                        null,
+                        valueDecodingFormat,
+                        new int[0],
+                        new int[] {0, 1, 2},
+                        null,
+                        Collections.singletonList(TOPIC),
+                        null,
+                        props,
+                        StartupMode.SPECIFIC_OFFSETS,
+                        specificOffsets,
+                        0);
+        assertThat(actualSource).isEqualTo(expectedKafkaSource);
+        ScanTableSource.ScanRuntimeProvider provider =
+                actualSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertPscSource(provider);
+    }
+
     // --------------------------------------------------------------------------------------------
     // Utilities
     // --------------------------------------------------------------------------------------------
@@ -985,6 +1206,9 @@ public class PscDynamicTableFactoryTest {
                 startupMode,
                 specificStartupOffsets,
                 startupTimestampMillis,
+                BoundedMode.UNBOUNDED,
+                Collections.emptyMap(),
+                0,
                 false,
                 FactoryMocks.IDENTIFIER.asSummaryString());
     }

@@ -494,7 +494,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                         .setValueSerializationSchema(serSchema)
                                         .setPartitioner(partitioner)
                                         .build())
-                        .setDeliverGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
+                        .setDeliveryGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
                         .setPscProducerConfig(producerProperties)
                         .build());
         env.execute("Write sequence");
