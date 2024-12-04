@@ -20,11 +20,11 @@ package com.pinterest.flink.connector.psc.testutils;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableMap;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
+import com.pinterest.flink.connector.psc.dynamic.metadata.PscMetadataService;
+import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
 import org.apache.flink.annotation.VisibleForTesting;
-import org.apache.flink.connector.kafka.dynamic.metadata.ClusterMetadata;
-import org.apache.flink.connector.kafka.dynamic.metadata.KafkaMetadataService;
-import org.apache.flink.connector.kafka.dynamic.metadata.KafkaStream;
-import org.apache.kafka.clients.CommonClientConfigs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.DumperOptions;
@@ -90,13 +90,13 @@ import java.util.stream.Collectors;
  * and consuming from both clusters, and third consuming from only from the new cluster after all
  * data from the old cluster has been read.
  */
-public class YamlFileMetadataService implements KafkaMetadataService {
+public class YamlFileMetadataService implements PscMetadataService {
     private static final Logger logger = LoggerFactory.getLogger(YamlFileMetadataService.class);
     private final String metadataFilePath;
     private final Duration refreshInterval;
     private Instant lastRefresh;
     // current metadata should be accessed from #getAllStreams()
-    private transient Set<KafkaStream> streamMetadata;
+    private transient Set<PscStream> streamMetadata;
     private transient Yaml yaml;
 
     /**
@@ -117,17 +117,17 @@ public class YamlFileMetadataService implements KafkaMetadataService {
      * <p>This obtains the all stream metadata and enforces the ttl configuration on the metadata.
      */
     @Override
-    public Set<KafkaStream> getAllStreams() {
+    public Set<PscStream> getAllStreams() {
         refreshIfNeeded();
         return streamMetadata;
     }
 
     /** {@inheritDoc} */
     @Override
-    public Map<String, KafkaStream> describeStreams(Collection<String> streamIds) {
-        ImmutableMap.Builder<String, KafkaStream> builder = ImmutableMap.builder();
-        Set<KafkaStream> streams = getAllStreams();
-        for (KafkaStream stream : streams) {
+    public Map<String, PscStream> describeStreams(Collection<String> streamIds) {
+        ImmutableMap.Builder<String, PscStream> builder = ImmutableMap.builder();
+        Set<PscStream> streams = getAllStreams();
+        for (PscStream stream : streams) {
             if (streamIds.contains(stream.getStreamId())) {
                 builder.put(stream.getStreamId(), stream);
             }
@@ -166,22 +166,22 @@ public class YamlFileMetadataService implements KafkaMetadataService {
     /**
      * A utility method for writing metadata in the expected yaml format.
      *
-     * @param kafkaStreams list of {@link KafkaStream}
+     * @param pscStreams list of {@link PscStream}
      * @param metadataFile the metadata {@link File}
      */
-    public static void saveToYamlFromKafkaStreams(List<KafkaStream> kafkaStreams, File metadataFile)
+    public static void saveToYamlFromKafkaStreams(List<PscStream> pscStreams, File metadataFile)
             throws IOException {
         saveToYaml(
-                kafkaStreams.stream()
+                pscStreams.stream()
                         .map(YamlFileMetadataService::convertToStreamMetadata)
                         .collect(Collectors.toList()),
                 metadataFile);
     }
 
-    private static StreamMetadata convertToStreamMetadata(KafkaStream kafkaStream) {
+    private static StreamMetadata convertToStreamMetadata(PscStream pscStream) {
         return new StreamMetadata(
-                kafkaStream.getStreamId(),
-                kafkaStream.getClusterMetadataMap().entrySet().stream()
+                pscStream.getStreamId(),
+                pscStream.getClusterMetadataMap().entrySet().stream()
                         .map(
                                 entry ->
                                         new StreamMetadata.ClusterMetadata(
@@ -189,9 +189,8 @@ public class YamlFileMetadataService implements KafkaMetadataService {
                                                 entry.getValue()
                                                         .getProperties()
                                                         .getProperty(
-                                                                CommonClientConfigs
-                                                                        .BOOTSTRAP_SERVERS_CONFIG),
-                                                new ArrayList<>(entry.getValue().getTopics())))
+                                                                PscFlinkConfiguration.CLUSTER_URI_CONFIG),
+                                                new ArrayList<>(entry.getValue().getTopicUris())))
                         .collect(Collectors.toList()));
     }
 
@@ -208,7 +207,7 @@ public class YamlFileMetadataService implements KafkaMetadataService {
     }
 
     @VisibleForTesting
-    Set<KafkaStream> parseFile() throws IOException {
+    Set<PscStream> parseFile() throws IOException {
         if (yaml == null) {
             yaml = initYamlParser();
         }
@@ -220,7 +219,7 @@ public class YamlFileMetadataService implements KafkaMetadataService {
                     "Input stream of metadata file has size: {}",
                     Files.newInputStream(Paths.get(metadataFilePath)).available());
         }
-        Set<KafkaStream> kafkaStreams = new HashSet<>();
+        Set<PscStream> kafkaStreams = new HashSet<>();
 
         for (StreamMetadata streamMetadata : streamMetadataList) {
             Map<String, ClusterMetadata> clusterMetadataMap = new HashMap<>();
@@ -231,20 +230,20 @@ public class YamlFileMetadataService implements KafkaMetadataService {
                 if (clusterMetadata.getClusterId() != null) {
                     kafkaClusterId = clusterMetadata.getClusterId();
                 } else {
-                    kafkaClusterId = clusterMetadata.getBootstrapServers();
+                    kafkaClusterId = clusterMetadata.getClusterUriString();
                 }
 
                 Properties properties = new Properties();
                 properties.setProperty(
-                        CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG,
-                        clusterMetadata.getBootstrapServers());
+                        PscFlinkConfiguration.CLUSTER_URI_CONFIG,
+                        clusterMetadata.getClusterUriString());
                 clusterMetadataMap.put(
                         kafkaClusterId,
                         new ClusterMetadata(
                                 new HashSet<>(clusterMetadata.getTopics()), properties));
             }
 
-            kafkaStreams.add(new KafkaStream(streamMetadata.getStreamId(), clusterMetadataMap));
+            kafkaStreams.add(new PscStream(streamMetadata.getStreamId(), clusterMetadataMap));
         }
 
         logger.debug("From {} loaded metadata: {}", metadataFilePath, kafkaStreams);
@@ -327,14 +326,14 @@ public class YamlFileMetadataService implements KafkaMetadataService {
         /** Information to connect to a particular cluster. */
         public static class ClusterMetadata {
             private String clusterId;
-            private String bootstrapServers;
+            private String clusterUriString;
             private List<String> topics;
 
             public ClusterMetadata() {}
 
-            public ClusterMetadata(String clusterId, String bootstrapServers, List<String> topics) {
+            public ClusterMetadata(String clusterId, String clusterUriString, List<String> topics) {
                 this.clusterId = clusterId;
-                this.bootstrapServers = bootstrapServers;
+                this.clusterUriString = clusterUriString;
                 this.topics = topics;
             }
 
@@ -346,13 +345,13 @@ public class YamlFileMetadataService implements KafkaMetadataService {
                 this.clusterId = clusterId;
             }
 
-            public String getBootstrapServers() {
-                return bootstrapServers;
+            public String getClusterUriString() {
+                return clusterUriString;
             }
 
-//            public void setBootstrapServers(String bootstrapServers) {
-//                this.bootstrapServers = bootstrapServers;
-//            }
+            public void setClusterUriString(String clusterUriString) {
+                this.clusterUriString = clusterUriString;
+            }
 
             public List<String> getTopics() {
                 return topics;

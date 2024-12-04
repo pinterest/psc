@@ -31,9 +31,8 @@ import java.util.Optional;
 
 import static com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics.PARTITION_GROUP;
 import static com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics.TOPIC_URI_GROUP;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Unit test for {@link PscSourceReaderMetrics}. */
 public class PscSourceReaderMetricsTest {
@@ -94,12 +93,12 @@ public class PscSourceReaderMetricsTest {
                 metricListener.getCounter(
                         PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP,
                         PscSourceReaderMetrics.COMMITS_SUCCEEDED_METRIC_COUNTER);
-        assertTrue(commitsSucceededCounter.isPresent());
-        assertEquals(0L, commitsSucceededCounter.get().getCount());
+        assertThat(commitsSucceededCounter).isPresent();
+        assertThat(commitsSucceededCounter.get().getCount()).isEqualTo(0L);
 
         pscSourceReaderMetrics.recordSucceededCommit();
 
-        assertEquals(1L, commitsSucceededCounter.get().getCount());
+        assertThat(commitsSucceededCounter.get().getCount()).isEqualTo(1L);
     }
 
     @Test
@@ -108,12 +107,10 @@ public class PscSourceReaderMetricsTest {
         final PscSourceReaderMetrics pscSourceReaderMetrics =
                 new PscSourceReaderMetrics(
                         InternalSourceReaderMetricGroup.mock(metricListener.getMetricGroup()));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> pscSourceReaderMetrics.recordCurrentOffset(FOO_0, 15213L));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> pscSourceReaderMetrics.recordCommittedOffset(FOO_0, 15213L));
+        assertThatThrownBy(() -> pscSourceReaderMetrics.recordCurrentOffset(FOO_0, 15213L))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> pscSourceReaderMetrics.recordCommittedOffset(FOO_0, 15213L))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -127,8 +124,8 @@ public class PscSourceReaderMetricsTest {
                 metricListener.getCounter(
                         PscSourceReaderMetrics.PSC_SOURCE_READER_METRIC_GROUP,
                         PscSourceReaderMetrics.COMMITS_FAILED_METRIC_COUNTER);
-        assertTrue(commitsFailedCounter.isPresent());
-        assertEquals(1L, commitsFailedCounter.get().getCount());
+        assertThat(commitsFailedCounter).isPresent();
+        assertThat(commitsFailedCounter.get().getCount()).isEqualTo(1L);
     }
 
     // ----------- Assertions --------------
@@ -143,8 +140,8 @@ public class PscSourceReaderMetricsTest {
                         PARTITION_GROUP,
                         String.valueOf(tp.getPartition()),
                         PscSourceReaderMetrics.CURRENT_OFFSET_METRIC_GAUGE);
-        assertTrue(currentOffsetGauge.isPresent());
-        assertEquals(expectedOffset, (long) currentOffsetGauge.get().getValue());
+        assertThat(currentOffsetGauge).isPresent();
+        assertThat((long) currentOffsetGauge.get().getValue()).isEqualTo(expectedOffset);
     }
 
     private void assertCommittedOffset(
@@ -157,7 +154,7 @@ public class PscSourceReaderMetricsTest {
                         PARTITION_GROUP,
                         String.valueOf(tp.getPartition()),
                         PscSourceReaderMetrics.COMMITTED_OFFSET_METRIC_GAUGE);
-        assertTrue(committedOffsetGauge.isPresent());
-        assertEquals(expectedOffset, (long) committedOffsetGauge.get().getValue());
+        assertThat(committedOffsetGauge).isPresent();
+        assertThat((long) committedOffsetGauge.get().getValue()).isEqualTo(expectedOffset);
     }
 }

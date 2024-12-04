@@ -32,7 +32,7 @@ import com.pinterest.flink.connector.psc.testutils.MockPscMetadataService;
 import com.pinterest.flink.connector.psc.testutils.TwoKafkaContainers;
 import com.pinterest.flink.connector.psc.testutils.YamlFileMetadataService;
 import com.pinterest.flink.streaming.connectors.psc.DynamicPscSourceTestHelperWithKafkaAsPubSub;
-\import com.pinterest.flink.streaming.connectors.psc.PscTestBaseWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscTestBaseWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.IntegerDeserializer;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;

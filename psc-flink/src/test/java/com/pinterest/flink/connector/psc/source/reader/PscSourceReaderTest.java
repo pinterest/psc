@@ -48,21 +48,22 @@ import org.apache.flink.metrics.Gauge;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.metrics.testutils.MetricListener;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
+import org.apache.flink.util.function.SerializableSupplier;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.hamcrest.MatcherAssert;
-import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,8 @@ import static com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv.NUM_P
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static org.apache.flink.core.testutils.CommonTestUtils.waitUtil;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /** Unit tests for {@link PscSourceReader}. */
 public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartitionSplit> {
@@ -189,7 +192,26 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                 (PscSourceReader<Integer>)
                         createReader(Boundedness.CONTINUOUS_UNBOUNDED, groupId)) {
             reader.snapshotState(100L);
-            reader.notifyCheckpointComplete(100L);
+            reader.snapshotState(101L);
+            reader.snapshotState(102L);
+
+            // After each snapshot, a new entry should have been added to the offsets-to-commit
+            // cache for the checkpoint
+            final Map<Long, Map<TopicPartition, OffsetAndMetadata>> expectedOffsetsToCommit =
+                    new HashMap<>();
+            expectedOffsetsToCommit.put(100L, new HashMap<>());
+            expectedOffsetsToCommit.put(101L, new HashMap<>());
+            expectedOffsetsToCommit.put(102L, new HashMap<>());
+            assertThat(reader.getOffsetsToCommit()).isEqualTo(expectedOffsetsToCommit);
+
+            // only notify up to checkpoint 101L; all offsets prior to 101L should be evicted from
+            // cache, leaving only 102L
+            reader.notifyCheckpointComplete(101L);
+
+            final Map<Long, Map<TopicPartition, OffsetAndMetadata>>
+                    expectedOffsetsToCommitAfterNotify = new HashMap<>();
+            expectedOffsetsToCommitAfterNotify.put(102L, new HashMap<>());
+            assertThat(reader.getOffsetsToCommit()).isEqualTo(expectedOffsetsToCommitAfterNotify);
         }
         // Verify the committed offsets.
         try (AdminClient adminClient = PscSourceTestEnv.getAdminClient()) {
@@ -277,7 +299,8 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                                 Boundedness.CONTINUOUS_UNBOUNDED,
                                 new TestingReaderContext(),
                                 (ignore) -> {},
-                                properties)) {
+                                properties,
+                                null)) {
             reader.addSplits(
                     getSplits(numSplits, NUM_RECORDS_PER_SPLIT, Boundedness.CONTINUOUS_UNBOUNDED));
             ValidatingSourceOutput output = new ValidatingSourceOutput();
@@ -356,9 +379,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
 
             // Metric "commit-total" of PscConsumer should be greater than 0
             // It's hard to know the exactly number of commit because of the retry
-            MatcherAssert.assertThat(
-                    getPscConsumerMetric("commit-total", metricListener),
-                    Matchers.greaterThan(0L));
+            assertThat(getPscConsumerMetric("commit-total", metricListener)).isGreaterThan(0L);
 
             // Committed offset should be NUM_RECORD_PER_SPLIT
             assertThat(getCommittedOffsetMetric(tp0, metricListener))
@@ -371,7 +392,7 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                     metricListener.getCounter(
                             PSC_SOURCE_READER_METRIC_GROUP, COMMITS_SUCCEEDED_METRIC_COUNTER);
             assertThat(commitsSucceeded).isPresent();
-            MatcherAssert.assertThat(commitsSucceeded.get().getCount(), Matchers.greaterThan(0L));
+            assertThat(commitsSucceeded.get().getCount()).isGreaterThan(0L);
         }
     }
 
@@ -402,11 +423,9 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                     new TestingReaderOutput<>(),
                     () -> reader.getNumAliveFetchers() == 0,
                     "The split fetcher did not exit before timeout.");
-            MatcherAssert.assertThat(
-                    finishedSplits,
-                    Matchers.containsInAnyOrder(
+            assertThat(finishedSplits).containsExactlyInAnyOrder(
                             PscTopicUriPartitionSplit.toSplitId(normalSplit.getTopicUriPartition()),
-                            PscTopicUriPartitionSplit.toSplitId(emptySplit.getTopicUriPartition())));
+                            PscTopicUriPartitionSplit.toSplitId(emptySplit.getTopicUriPartition()));
         }
     }
 
@@ -442,6 +461,91 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             assertThat(finishedSplits)
                     .contains(emptySplit0.splitId(), emptySplit1.splitId());
         }
+    }
+
+    @Test
+    public void testSupportsPausingOrResumingSplits() throws Exception {
+        final Set<String> finishedSplits = new HashSet<>();
+
+        try (final PscSourceReader<Integer> reader =
+                     (PscSourceReader<Integer>)
+                             createReader(
+                                     Boundedness.BOUNDED,
+                                     "groupId",
+                                     new TestingReaderContext(),
+                                     finishedSplits::addAll)) {
+            PscTopicUriPartitionSplit split1 =
+                    new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC_URI_STR, 0), 0, NUM_RECORDS_PER_SPLIT);
+            PscTopicUriPartitionSplit split2 =
+                    new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC_URI_STR, 1), 0, NUM_RECORDS_PER_SPLIT);
+            reader.addSplits(Arrays.asList(split1, split2));
+
+            TestingReaderOutput<Integer> output = new TestingReaderOutput<>();
+
+            reader.pauseOrResumeSplits(
+                    Collections.singleton(split1.splitId()), Collections.emptyList());
+
+            pollUntil(
+                    reader,
+                    output,
+                    () ->
+                            finishedSplits.contains(split2.splitId())
+                                    && output.getEmittedRecords().size() == NUM_RECORDS_PER_SPLIT,
+                    "The split fetcher did not exit before timeout.");
+
+            reader.pauseOrResumeSplits(
+                    Collections.emptyList(), Collections.singleton(split1.splitId()));
+
+            pollUntil(
+                    reader,
+                    output,
+                    () ->
+                            finishedSplits.contains(split1.splitId())
+                                    && output.getEmittedRecords().size()
+                                    == NUM_RECORDS_PER_SPLIT * 2,
+                    "The split fetcher did not exit before timeout.");
+
+            assertThat(finishedSplits).containsExactly(split1.splitId(), split2.splitId());
+        }
+    }
+
+    @Test
+    public void testThatReaderDoesNotCallRackIdSupplierOnInit() throws Exception {
+        SerializableSupplier<String> rackIdSupplier = Mockito.mock(SerializableSupplier.class);
+
+        try (PscSourceReader<Integer> reader =
+                     (PscSourceReader<Integer>)
+                             createReader(
+                                     Boundedness.CONTINUOUS_UNBOUNDED,
+                                     new TestingReaderContext(),
+                                     (ignore) -> {},
+                                     new Properties(),
+                                     rackIdSupplier)) {
+            // Do nothing here
+        }
+
+        verify(rackIdSupplier, never()).get();
+    }
+
+    @Test
+    public void testThatReaderDoesCallRackIdSupplierOnSplitAssignment() throws Exception {
+        SerializableSupplier<String> rackIdSupplier = Mockito.mock(SerializableSupplier.class);
+        Mockito.when(rackIdSupplier.get()).thenReturn("use1-az1");
+
+        try (PscSourceReader<Integer> reader =
+                     (PscSourceReader<Integer>)
+                             createReader(
+                                     Boundedness.CONTINUOUS_UNBOUNDED,
+                                     new TestingReaderContext(),
+                                     (ignore) -> {},
+                                     new Properties(),
+                                     rackIdSupplier)) {
+            reader.addSplits(
+                    Collections.singletonList(
+                            new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC_URI_STR, 1), 1L)));
+        }
+
+        verify(rackIdSupplier).get();
     }
 
     // ------------------------------------------
@@ -500,14 +604,15 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             throws Exception {
         Properties properties = new Properties();
         properties.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, groupId);
-        return createReader(boundedness, context, splitFinishedHook, properties);
+        return createReader(boundedness, context, splitFinishedHook, properties, null);
     }
 
     private SourceReader<Integer, PscTopicUriPartitionSplit> createReader(
             Boundedness boundedness,
             SourceReaderContext context,
             Consumer<Collection<String>> splitFinishedHook,
-            Properties props)
+            Properties props,
+            SerializableSupplier<String> rackIdSupplier)
             throws Exception {
         props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
         props.setProperty(PscConfiguration.PSC_METRICS_FREQUENCY_MS, "100");
@@ -527,6 +632,10 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
                         .setProperties(props);
         if (boundedness == Boundedness.BOUNDED) {
             builder.setBounded(OffsetsInitializer.latest());
+        }
+
+        if (rackIdSupplier != null) {
+            builder.setRackIdSupplier(rackIdSupplier);
         }
 
         return PscSourceTestUtils.createReaderWithFinishedSplitHook(

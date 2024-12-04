@@ -22,7 +22,6 @@ import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
-import org.apache.flink.util.ExceptionUtils;
 
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
@@ -37,9 +36,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.apache.flink.core.testutils.FlinkAssertions.anyCauseMatches;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Unit tests for {@link PscSubscriber}. */
 public class PscSubscriberTest {
@@ -82,7 +81,7 @@ public class PscSubscriberTest {
         final Set<TopicUriPartition> expectedSubscribedPartitions =
                 new HashSet<>(PscSourceTestEnv.getPartitionsForTopics(topics));
 
-        assertEquals(expectedSubscribedPartitions, subscribedPartitions);
+        assertThat(subscribedPartitions).isEqualTo(expectedSubscribedPartitions);
     }
 
     @Test
@@ -96,15 +95,15 @@ public class PscSubscriberTest {
 
         subscribedPartitionsPlaintext.forEach(tup -> {
             if (tup.getTopicUri().getTopic().equals(TOPIC1)) {
-                assertEquals(TOPIC_URI1_SECURE, tup.getTopicUri().getTopicUriAsString());
+                assertThat(tup.getTopicUri().getTopicUriAsString()).isEqualTo(TOPIC_URI1_SECURE);
             } else if (tup.getTopicUri().getTopic().equals(TOPIC2)) {
-                assertEquals(TOPIC_URI2, tup.getTopicUri().getTopicUriAsString());
+                assertThat(tup.getTopicUri().getTopicUriAsString()).isEqualTo(TOPIC_URI2);
             } else {
                 throw new RuntimeException("Unexpected topic: " + tup.getTopicUri().getTopic());
             }
         });
 
-        assertEquals(subscribedPartitionsPlaintext, subscribedPartitionsSecure);
+        assertThat(subscribedPartitionsSecure).isEqualTo(subscribedPartitionsPlaintext);
     }
 
     @Test
@@ -113,15 +112,9 @@ public class PscSubscriberTest {
                 PscSubscriber.getTopicUriListSubscriber(
                         Collections.singletonList(NON_EXISTING_TOPIC_URI_PARTITION.getTopicUriAsString()));
 
-        Throwable t =
-                assertThrows(
-                        RuntimeException.class,
-                        () -> subscriber.getSubscribedTopicUriPartitions(pscMetadataClient, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI));
-
-        assertTrue(
-                "Exception should be caused by UnknownTopicOrPartitionException",
-                ExceptionUtils.findThrowable(t, UnknownTopicOrPartitionException.class)
-                        .isPresent());
+        assertThatThrownBy(() -> subscriber.getSubscribedTopicUriPartitions(pscMetadataClient, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI))
+                .isInstanceOf(RuntimeException.class)
+                .satisfies(anyCauseMatches(UnknownTopicOrPartitionException.class));
     }
 
     @Test
@@ -135,7 +128,7 @@ public class PscSubscriberTest {
                 new HashSet<>(
                         PscSourceTestEnv.getPartitionsForTopics(Collections.singleton(TOPIC_URI2)));
 
-        assertEquals(expectedSubscribedPartitions, subscribedPartitions);
+        assertThat(subscribedPartitions).isEqualTo(expectedSubscribedPartitions);
     }
 
     @Test
@@ -150,7 +143,7 @@ public class PscSubscriberTest {
         final Set<TopicUriPartition> subscribedPartitions =
                 subscriber.getSubscribedTopicUriPartitions(pscMetadataClient, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI);
 
-        assertEquals(partitions, subscribedPartitions);
+        assertThat(subscribedPartitions).isEqualTo(partitions);
     }
 
     @Test
@@ -160,14 +153,8 @@ public class PscSubscriberTest {
                 PscSubscriber.getPartitionSetSubscriber(
                         Collections.singleton(nonExistingPartition));
 
-        Throwable t =
-                assertThrows(
-                        RuntimeException.class,
-                        () -> subscriber.getSubscribedTopicUriPartitions(pscMetadataClient, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI));
-
-        assertEquals(
-                String.format(
-                        "Partition '%s' does not exist on PubSub brokers", nonExistingPartition),
-                t.getMessage());
+        assertThatThrownBy(() -> subscriber.getSubscribedTopicUriPartitions(pscMetadataClient, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage(String.format("Partition '%s' does not exist on PubSub brokers", nonExistingPartition));
     }
 }

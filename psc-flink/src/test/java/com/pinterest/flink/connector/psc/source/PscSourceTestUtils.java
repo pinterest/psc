@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.connector.psc.source;
 
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.reader.PscSourceReader;
 import org.apache.flink.api.connector.source.SourceReaderContext;
 import org.apache.flink.configuration.Configuration;
@@ -49,5 +50,10 @@ public class PscSourceTestUtils {
     /** Get configuration of PscSource. */
     public static Configuration getPscSourceConfiguration(PscSource<?> pscSource) {
         return pscSource.getConfiguration();
+    }
+
+    /** Get stopping offsets initializer. */
+    public static OffsetsInitializer getStoppingOffsetsInitializer(PscSource<?> pscSource) {
+        return pscSource.getStoppingOffsetsInitializer();
     }
 }

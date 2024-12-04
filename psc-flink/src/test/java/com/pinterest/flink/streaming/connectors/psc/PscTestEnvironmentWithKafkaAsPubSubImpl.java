@@ -236,8 +236,13 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
                                 int numberOfPartitions,
                                 int replicationFactor,
                                 Properties properties) {
+        createNewTopic(topicUriString, numberOfPartitions, replicationFactor, getStandardKafkaProperties());
+    }
+
+    public static void createNewTopic(
+            String topicUriString, int numberOfPartitions, int replicationFactor, Properties properties) {
         LOG.info("Creating topic {}", topicUriString);
-        try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
+        try (AdminClient adminClient = AdminClient.create(properties)) {
             Map<String, String> topicConfigs = new HashMap<>();
             topicConfigs.put("retention.ms", Long.toString(Long.MAX_VALUE));
             NewTopic topicObj = new NewTopic(BaseTopicUri.validate(topicUriString).getTopic(), numberOfPartitions, (short) replicationFactor).configs(topicConfigs);
@@ -246,7 +251,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
             // try to create it assuming that it's not a topicUriString
             if (e instanceof TopicUriSyntaxException) {
                 LOG.warn("Trying to create assuming that {} is just the topicName", topicUriString);
-                try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
+                try (AdminClient adminClient = AdminClient.create(properties)) {
                     NewTopic topicObj = new NewTopic(topicUriString, numberOfPartitions, (short) replicationFactor);
                     adminClient.createTopics(Collections.singleton(topicObj)).all().get();
                 } catch (Exception e2) {

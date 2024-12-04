@@ -33,7 +33,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Test for {@link PscSourceEnumStateSerializer}. */
 public class PscSourceEnumStateSerializerTest {
@@ -45,7 +45,11 @@ public class PscSourceEnumStateSerializerTest {
 
     @Test
     public void testEnumStateSerde() throws IOException {
-        final PscSourceEnumState state = new PscSourceEnumState(constructTopicPartitions());
+        final PscSourceEnumState state = new PscSourceEnumState(
+                constructTopicPartitions(0),
+                constructTopicPartitions(NUM_PARTITIONS_PER_TOPIC),
+                true
+        );
         final PscSourceEnumStateSerializer serializer = new PscSourceEnumStateSerializer();
 
         final byte[] bytes = serializer.serialize(state);
@@ -53,38 +57,52 @@ public class PscSourceEnumStateSerializerTest {
         final PscSourceEnumState restoredState =
                 serializer.deserialize(serializer.getVersion(), bytes);
 
-        assertEquals(state.assignedPartitions(), restoredState.assignedPartitions());
+        assertThat(restoredState.assignedPartitions()).isEqualTo(state.assignedPartitions());
+        assertThat(restoredState.unassignedInitialPartitions())
+                .isEqualTo(state.unassignedInitialPartitions());
+        assertThat(restoredState.initialDiscoveryFinished()).isTrue();
     }
 
     @Test
     public void testBackwardCompatibility() throws IOException {
 
-        final Set<TopicUriPartition> topicPartitions = constructTopicPartitions();
+        final Set<TopicUriPartition> topicPartitions = constructTopicPartitions(0);
         final Map<Integer, Set<PscTopicUriPartitionSplit>> splitAssignments =
                 toSplitAssignments(topicPartitions);
 
         // Create bytes in the way of PscEnumStateSerializer version 0 doing serialization
-        final byte[] bytes =
+        final byte[] bytesV0 =
                 SerdeUtils.serializeSplitAssignments(
                         splitAssignments, new PscTopicUriPartitionSplitSerializer());
+        // Create bytes in the way of KafkaEnumStateSerializer version 1 doing serialization
+        final byte[] bytesV1 =
+                PscSourceEnumStateSerializer.serializeTopicPartitions(topicPartitions);
 
-        // Deserialize above bytes with PscEnumStateSerializer version 1 to check backward
+        // Deserialize above bytes with PscEnumStateSerializer version 2 to check backward
         // compatibility
-        final PscSourceEnumState pscSourceEnumState =
-                new PscSourceEnumStateSerializer().deserialize(0, bytes);
+        final PscSourceEnumState pscSourceEnumStateV0 =
+                new PscSourceEnumStateSerializer().deserialize(0, bytesV0);
+        final PscSourceEnumState pscSourceEnumStateV1 =
+                new PscSourceEnumStateSerializer().deserialize(1, bytesV1);
 
-        assertEquals(topicPartitions, pscSourceEnumState.assignedPartitions());
+        assertThat(pscSourceEnumStateV0.assignedPartitions()).isEqualTo(topicPartitions);
+        assertThat(pscSourceEnumStateV0.unassignedInitialPartitions()).isEmpty();
+        assertThat(pscSourceEnumStateV0.initialDiscoveryFinished()).isTrue();
+
+        assertThat(pscSourceEnumStateV1.assignedPartitions()).isEqualTo(topicPartitions);
+        assertThat(pscSourceEnumStateV1.unassignedInitialPartitions()).isEmpty();
+        assertThat(pscSourceEnumStateV1.initialDiscoveryFinished()).isTrue();
     }
 
-    private Set<TopicUriPartition> constructTopicPartitions() {
+    private Set<TopicUriPartition> constructTopicPartitions(int startPartition) {
         // Create topic partitions for readers.
         // Reader i will be assigned with NUM_PARTITIONS_PER_TOPIC splits, with topic name
         // "topic-{i}" and
-        // NUM_PARTITIONS_PER_TOPIC partitions.
+        // NUM_PARTITIONS_PER_TOPIC partitions. The starting partition number is startPartition
         // Totally NUM_READERS * NUM_PARTITIONS_PER_TOPIC partitions will be created.
         Set<TopicUriPartition> topicPartitions = new HashSet<>();
         for (int readerId = 0; readerId < NUM_READERS; readerId++) {
-            for (int partition = 0; partition < NUM_PARTITIONS_PER_TOPIC; partition++) {
+            for (int partition = startPartition; partition < startPartition + NUM_PARTITIONS_PER_TOPIC; partition++) {
                 topicPartitions.add(new TopicUriPartition(TOPIC_PREFIX + readerId, partition));
             }
         }

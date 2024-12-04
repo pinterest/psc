@@ -26,7 +26,8 @@ import java.net.URL;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/** A external context factory for {@link DynamicPscSource} connector testing framework. */
+/** A external context factory for {@link com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSource}
+ * connector testing framework. */
 public class DynamicPscSourceExternalContextFactory
         implements ExternalContextFactory<DynamicPscSourceExternalContext> {
 

@@ -22,6 +22,7 @@ import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplitSerializer;
 import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connector.base.source.utils.SerdeUtils;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 
@@ -158,7 +159,8 @@ public class PscSourceEnumStateSerializer
         }
     }
 
-    private static byte[] serializeTopicPartitions(Collection<TopicUriPartition> topicUriPartitions)
+    @VisibleForTesting
+    public static byte[] serializeTopicPartitions(Collection<TopicUriPartition> topicUriPartitions)
             throws IOException {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(baos)) {

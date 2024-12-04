@@ -21,9 +21,9 @@ package com.pinterest.flink.connector.psc.testutils;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.io.Resources;
-import org.apache.flink.connector.kafka.dynamic.metadata.ClusterMetadata;
-import org.apache.flink.connector.kafka.dynamic.metadata.KafkaStream;
-import org.apache.kafka.clients.CommonClientConfigs;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
+import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -41,22 +41,22 @@ public class YamlFileMetadataServiceTest {
         YamlFileMetadataService yamlFileMetadataService =
                 new YamlFileMetadataService(
                         Resources.getResource("stream-metadata.yaml").getPath(), Duration.ZERO);
-        Set<KafkaStream> kafkaStreams = yamlFileMetadataService.parseFile();
+        Set<PscStream> kafkaStreams = yamlFileMetadataService.parseFile();
 
         Properties propertiesForCluster0 = new Properties();
         propertiesForCluster0.setProperty(
-                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "bootstrap-server-0:443");
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, "bootstrap-server-0:443");
         Properties propertiesForCluster1 = new Properties();
         propertiesForCluster1.setProperty(
-                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "bootstrap-server-1:443");
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, "bootstrap-server-1:443");
         Properties propertiesForCluster2 = new Properties();
         propertiesForCluster2.setProperty(
-                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "bootstrap-server-2:443");
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, "bootstrap-server-2:443");
 
         assertThat(kafkaStreams)
                 .containsExactlyInAnyOrderElementsOf(
                         ImmutableSet.of(
-                                new KafkaStream(
+                                new PscStream(
                                         "stream0",
                                         ImmutableMap.of(
                                                 "cluster0",
@@ -67,7 +67,7 @@ public class YamlFileMetadataServiceTest {
                                                 new ClusterMetadata(
                                                         ImmutableSet.of("topic2", "topic3"),
                                                         propertiesForCluster1))),
-                                new KafkaStream(
+                                new PscStream(
                                         "stream1",
                                         ImmutableMap.of(
                                                 "cluster2",

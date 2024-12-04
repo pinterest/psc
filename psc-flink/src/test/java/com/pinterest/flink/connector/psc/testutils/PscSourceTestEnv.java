@@ -52,7 +52,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Base class for KafkaSource unit tests. */
 public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
@@ -273,7 +273,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
         }
         consumer.commitSync(toCommit);
         Map<TopicUriPartition, Long> toVerify = metadataClient.listOffsetsForConsumerGroup(PscTestUtils.getClusterUri(), GROUP_ID, committedOffsets.keySet(), Duration.ofSeconds(10));
-        assertEquals("The offsets are not committed", committedOffsets, toVerify);
+        assertThat(toVerify).as("The offsets are not committed").isEqualTo(committedOffsets);
     }
 
     public static void produceMessages(Collection<PscProducerMessage<String, Integer>> records)

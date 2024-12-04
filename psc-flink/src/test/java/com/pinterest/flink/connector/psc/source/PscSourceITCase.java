@@ -56,7 +56,6 @@ import org.apache.flink.streaming.api.operators.StreamMap;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.util.CloseableIterator;
 import org.apache.flink.util.Collector;
-import org.apache.flink.util.DockerImageVersions;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -87,7 +86,6 @@ import static com.pinterest.flink.connector.psc.testutils.PscSourceExternalConte
 import static com.pinterest.flink.connector.psc.testutils.PscSourceExternalContext.SplitMappingMode.TOPIC;
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Unite test class for {@link PscSource}. */
 public class PscSourceITCase {
@@ -153,10 +151,9 @@ public class PscSourceITCase {
             stream.addSink(new DiscardingSink<>());
             JobExecutionResult result = env.execute();
 
-            assertEquals(
-                    Arrays.asList(
-                            currentTimestamp + 1L, currentTimestamp + 2L, currentTimestamp + 3L),
-                    result.getAccumulatorResult("timestamp"));
+            assertThat(result.<List<Long>>getAccumulatorResult("timestamp"))
+                    .containsExactly(
+                            currentTimestamp + 1L, currentTimestamp + 2L, currentTimestamp + 3L);
         }
 
         @ParameterizedTest(name = "Object reuse in deserializer = {arguments}")
@@ -232,7 +229,7 @@ public class PscSourceITCase {
                 // Since we have two topics, the expected sum value should be doubled
                 expectedSum *= 2;
 
-                assertEquals(expectedSum, actualSum.get());
+                assertThat(actualSum.get()).isEqualTo(expectedSum);
             }
         }
 
@@ -550,12 +547,12 @@ public class PscSourceITCase {
                     int firstExpectedValue =
                             Integer.parseInt(tp.substring(tp.lastIndexOf('-') + 1));
                     for (int i = 0; i < values.size(); i++) {
-                        assertEquals(
-                                firstExpectedValue + i,
-                                (int) values.get(i),
-                                String.format(
-                                        "The %d-th value for partition %s should be %d",
-                                        i, tp, firstExpectedValue + i));
+                        assertThat((int) values.get(i))
+                                .as(
+                                        String.format(
+                                                "The %d-th value for partition %s should be %d",
+                                                i, tp, firstExpectedValue + i))
+                                .isEqualTo(firstExpectedValue + i);
                     }
                 });
     }
