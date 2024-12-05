@@ -5,7 +5,7 @@ import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
-import org.testcontainers.shaded.org.apache.commons.lang.StringUtils;
+import org.testcontainers.shaded.org.apache.commons.lang3.StringUtils;
 
 import java.util.Properties;
 

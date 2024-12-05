@@ -21,6 +21,7 @@ package com.pinterest.flink.connector.psc.source;
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.connector.psc.testutils.DockerImageVersions;
 import com.pinterest.flink.connector.psc.testutils.PscSourceExternalContextFactory;
 import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
