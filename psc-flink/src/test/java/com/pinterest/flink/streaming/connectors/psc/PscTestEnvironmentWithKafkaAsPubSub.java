@@ -68,6 +68,7 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
      * Configuration class for {@link PscTestEnvironmentWithKafkaAsPubSub}.
      */
     public static class Config {
+        private int numKafkaClusters = 1;
         private int kafkaServersNumber = 1;
         private Properties kafkaServerProperties = null;
         private boolean secureMode = false;

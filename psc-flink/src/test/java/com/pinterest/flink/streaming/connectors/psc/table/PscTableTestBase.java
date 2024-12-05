@@ -19,13 +19,13 @@
 package com.pinterest.flink.streaming.connectors.psc.table;
 
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.connector.psc.testutils.DockerImageVersions;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.test.util.AbstractTestBase;
-import org.apache.flink.util.DockerImageVersions;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsResult;

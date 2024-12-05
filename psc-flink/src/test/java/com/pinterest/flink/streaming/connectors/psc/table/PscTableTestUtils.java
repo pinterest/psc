@@ -41,9 +41,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.HamcrestCondition.matching;
 
 /** Utils for psc table tests. */
 public class PscTableTestUtils {
@@ -68,9 +69,26 @@ public class PscTableTestUtils {
         return collectedRows;
     }
 
+    /**
+     * Variant of {@link #collectRows(Table, int)} for bounded queries. This should not run
+     * indefinitely if there is a bounded number of returned rows.
+     */
+    public static List<Row> collectAllRows(Table table) throws Exception {
+        final TableResult result = table.execute();
+
+        final List<Row> collectedRows = new ArrayList<>();
+        try (CloseableIterator<Row> iterator = result.collect()) {
+            while (iterator.hasNext()) {
+                collectedRows.add(iterator.next());
+            }
+        }
+
+        return collectedRows;
+    }
+
     public static List<String> readLines(String resource) throws IOException {
         final URL url = PscChangelogTableITCase.class.getClassLoader().getResource(resource);
-        assert url != null;
+        assertThat(url).isNotNull();
         Path path = new File(url.getFile()).toPath();
         return Files.readAllLines(path);
     }
@@ -81,8 +99,11 @@ public class PscTableTestUtils {
         Collections.sort(expected);
         CommonTestUtils.waitUtil(
                 () -> {
-                    List<String> actual = TestValuesTableFactory.getResults(sinkName);
-                    Collections.sort(actual);
+                    List<String> actual =
+                            TestValuesTableFactory.getResults(sinkName).stream()
+                                    .map(PscTableTestUtils::rowToString)
+                                    .sorted()
+                                    .collect(Collectors.toList());
                     return expected.equals(actual);
                 },
                 timeout,
@@ -99,12 +120,20 @@ public class PscTableTestUtils {
             actualData.computeIfAbsent(key, k -> new LinkedList<>()).add(row);
         }
         // compare key first
-        assertEquals("Actual result: " + actual, expectedData.size(), actualData.size());
+        assertThat(actualData).as("Actual result: " + actual).hasSameSizeAs(expectedData);
         // compare by value
         for (Row key : expectedData.keySet()) {
-            assertThat(
-                    actualData.get(key),
-                    TableTestMatchers.deepEqualTo(expectedData.get(key), false));
+            assertThat(actualData.get(key))
+                    .satisfies(
+                            matching(TableTestMatchers.deepEqualTo(expectedData.get(key), false)));
+        }
+    }
+
+    private static String rowToString(Object o) {
+        if (o instanceof Row) {
+            return ((Row) o).toString();
+        } else {
+            return o.toString();
         }
     }
 }

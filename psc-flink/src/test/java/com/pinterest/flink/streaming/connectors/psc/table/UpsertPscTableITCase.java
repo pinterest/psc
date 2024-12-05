@@ -33,13 +33,16 @@ import org.junit.runners.Parameterized;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.collectAllRows;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.collectRows;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.comparedWithKeyAndOrder;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.waitingExpectedResults;
@@ -49,7 +52,8 @@ import static org.apache.flink.api.common.typeinfo.Types.ROW_NAMED;
 import static org.apache.flink.api.common.typeinfo.Types.STRING;
 import static org.apache.flink.table.planner.factories.TestValuesTableFactory.changelogRow;
 import static org.apache.flink.table.utils.TableTestMatchers.deepEqualTo;
-import static org.junit.Assert.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.HamcrestCondition.matching;
 
 /** Upsert-psc IT cases. */
 @RunWith(Parameterized.class)
@@ -196,7 +200,72 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 LocalDateTime.parse("2020-03-11T13:12:11.120"),
                                 "payload"));
 
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
+
+        // ------------- cleanup -------------------
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testBufferedUpsertSinkWithoutAssigningWatermark() throws Exception {
+        final String topic = "buffered_upsert_topic_without_assigning_watermark_" + format;
+        createTestTopic(topic, 1, 1);
+        String bootstraps = getBootstrapServers();
+        env.setParallelism(1);
+
+        Table table =
+                tEnv.fromDataStream(
+                        env.fromElements(
+                                        Row.of(1, null, "payload 1"),
+                                        Row.of(2, null, "payload 2"),
+                                        Row.of(3, null, "payload 3"),
+                                        Row.of(3, null, "payload"))
+                                .returns(
+                                        ROW_NAMED(
+                                                new String[] {"k_id", "ts", "payload"},
+                                                INT,
+                                                LOCAL_DATE_TIME,
+                                                STRING)),
+                        Schema.newBuilder()
+                                .column("k_id", DataTypes.INT())
+                                .column("ts", DataTypes.TIMESTAMP(3))
+                                .column("payload", DataTypes.STRING())
+                                .build());
+
+        final String createTable =
+                String.format(
+                        "CREATE TABLE upsert_kafka (\n"
+                                + "  `k_id` INTEGER,\n"
+                                + "  `ts` TIMESTAMP(3),\n"
+                                + "  `payload` STRING,\n"
+                                + "  PRIMARY KEY (k_id) NOT ENFORCED"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-kafka',\n"
+                                + "  'topic' = '%s',\n"
+                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'sink.buffer-flush.max-rows' = '2',\n"
+                                + "  'sink.buffer-flush.interval' = '100000',\n"
+                                + "  'value.format' = '%s',\n"
+                                + "  'value.fields-include' = 'ALL',\n"
+                                + "  'key.csv.null-literal' = '<NULL>',\n"
+                                + "  'value.csv.null-literal' = '<NULL>'\n"
+                                + ")",
+                        topic, bootstraps, "csv", "csv");
+
+        tEnv.executeSql(createTable);
+
+        table.executeInsert("upsert_kafka").await();
+
+        final List<Row> result = collectRows(tEnv.sqlQuery("SELECT * FROM upsert_kafka"), 3);
+        final List<Row> expected =
+                Arrays.asList(
+                        changelogRow("+I", 1, null, "payload 1"),
+                        changelogRow("+I", 2, null, "payload 2"),
+                        changelogRow("+I", 3, null, "payload"));
+
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
 
         // ------------- cleanup -------------------
 
@@ -301,7 +370,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 42,
                                 "payload"));
 
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
 
         // ------------- cleanup -------------------
 
@@ -403,7 +472,203 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 100L,
                                 "payload"));
 
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
+
+        // ------------- cleanup -------------------
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testUpsertPscSourceSinkWithBoundedSpecificOffsets() throws Exception {
+        final String topic = "bounded_upsert_" + format + "_" + UUID.randomUUID();
+        createTestTopic(topic, 1, 1);
+
+        // ---------- Produce an event time stream into Kafka -------------------
+        final String bootstraps = getBootstrapServers();
+
+        // table with upsert-kafka connector, bounded mode up to offset=2
+        final String createTableSql =
+                String.format(
+                        "CREATE TABLE upsert_kafka (\n"
+                                + "  `user_id` BIGINT,\n"
+                                + "  `event_id` BIGINT,\n"
+                                + "  `payload` STRING,\n"
+                                + "  PRIMARY KEY (event_id, user_id) NOT ENFORCED"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-kafka',\n"
+                                + "  'topic' = '%s',\n"
+                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'value.format' = '%s',\n"
+                                + "  'value.fields-include' = 'ALL',\n"
+                                + "  'scan.bounded.mode' = 'specific-offsets',\n"
+                                + "  'scan.bounded.specific-offsets' = 'partition:0,offset:2'"
+                                + ")",
+                        topic, bootstraps, format, format);
+        tEnv.executeSql(createTableSql);
+
+        // insert multiple values to have more records past offset=2
+        final String insertValuesSql =
+                "INSERT INTO upsert_kafka\n"
+                        + "VALUES\n"
+                        + " (1, 100, 'payload 1'),\n"
+                        + " (1, 100, 'payload 1-new'),\n"
+                        + " (2, 101, 'payload 2'),\n"
+                        + " (3, 102, 'payload 3')";
+        tEnv.executeSql(insertValuesSql).await();
+
+        // results should only have records up to offset=2
+        final List<Row> results = collectAllRows(tEnv.sqlQuery("SELECT * from upsert_kafka"));
+        final List<Row> expected =
+                Arrays.asList(
+                        changelogRow("+I", 1L, 100L, "payload 1"),
+                        changelogRow("-U", 1L, 100L, "payload 1"),
+                        changelogRow("+U", 1L, 100L, "payload 1-new"));
+        assertThat(results).satisfies(matching(deepEqualTo(expected, true)));
+
+        // ------------- cleanup -------------------
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testUpsertPscSourceSinkWithBoundedTimestamp() throws Exception {
+        final String topic = "bounded_upsert_" + format + "_" + UUID.randomUUID();
+        createTestTopic(topic, 1, 1);
+
+        // ---------- Produce an event time stream into Kafka -------------------
+        final String bootstraps = getBootstrapServers();
+
+        // table with upsert-kafka connector, bounded mode up to timestamp 2023-03-10T14:00:00.000
+        final String createTableSql =
+                String.format(
+                        "CREATE TABLE upsert_kafka (\n"
+                                + "  `user_id` BIGINT,\n"
+                                + "  `timestamp` TIMESTAMP(3) METADATA,\n"
+                                + "  `event_id` BIGINT,\n"
+                                + "  `payload` STRING,\n"
+                                + "  PRIMARY KEY (event_id, user_id) NOT ENFORCED"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-kafka',\n"
+                                + "  'topic' = '%s',\n"
+                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'value.format' = '%s',\n"
+                                + "  'value.fields-include' = 'ALL',\n"
+                                + "  'scan.bounded.mode' = 'timestamp',\n"
+                                + "  'scan.bounded.timestamp-millis' = '%d'"
+                                + ")",
+                        topic,
+                        bootstraps,
+                        format,
+                        format,
+                        LocalDateTime.parse("2023-03-10T14:00:00.000")
+                                .atZone(ZoneId.systemDefault())
+                                .toInstant()
+                                .toEpochMilli());
+        tEnv.executeSql(createTableSql);
+
+        // insert multiple values with timestamp starting from 2023-03-08 up to 2023-03-11
+        final String insertValuesSql =
+                "INSERT INTO upsert_kafka\n"
+                        + "VALUES\n"
+                        + " (1, TIMESTAMP '2023-03-08 08:10:10.666', 100, 'payload 1'),\n"
+                        + " (2, TIMESTAMP '2023-03-09 13:12:11.123', 101, 'payload 2'),\n"
+                        + " (1, TIMESTAMP '2023-03-10 12:09:50.321', 100, 'payload 1-new'),\n"
+                        + " (2, TIMESTAMP '2023-03-11 17:15:13.457', 101, 'payload 2-new')";
+        tEnv.executeSql(insertValuesSql).await();
+
+        // results should only have records up to timestamp 2023-03-10T14:00:00.000
+        final List<Row> results = collectAllRows(tEnv.sqlQuery("SELECT * from upsert_kafka"));
+        final List<Row> expected =
+                Arrays.asList(
+                        changelogRow(
+                                "+I",
+                                1L,
+                                LocalDateTime.parse("2023-03-08T08:10:10.666"),
+                                100L,
+                                "payload 1"),
+                        changelogRow(
+                                "+I",
+                                2L,
+                                LocalDateTime.parse("2023-03-09T13:12:11.123"),
+                                101L,
+                                "payload 2"),
+                        changelogRow(
+                                "-U",
+                                1L,
+                                LocalDateTime.parse("2023-03-08T08:10:10.666"),
+                                100L,
+                                "payload 1"),
+                        changelogRow(
+                                "+U",
+                                1L,
+                                LocalDateTime.parse("2023-03-10T12:09:50.321"),
+                                100L,
+                                "payload 1-new"));
+        assertThat(results).satisfies(matching(deepEqualTo(expected, true)));
+
+        // ------------- cleanup -------------------
+
+        deleteTestTopic(topic);
+    }
+
+    /**
+     * Tests that setting bounded end offset that is before the earliest offset results in 0
+     * results.
+     */
+    @Test
+    public void testUpsertPscSourceSinkWithZeroLengthBoundedness() throws Exception {
+        final String topic = "bounded_upsert_" + format + "_" + UUID.randomUUID();
+        createTestTopic(topic, 1, 1);
+
+        // ---------- Produce an event time stream into Kafka -------------------
+        final String bootstraps = getBootstrapServers();
+
+        // table with upsert-kafka connector, bounded mode up to timestamp 2023-03-10T14:00:00.000
+        final String createTableSql =
+                String.format(
+                        "CREATE TABLE upsert_kafka (\n"
+                                + "  `user_id` BIGINT,\n"
+                                + "  `timestamp` TIMESTAMP(3) METADATA,\n"
+                                + "  `event_id` BIGINT,\n"
+                                + "  `payload` STRING,\n"
+                                + "  PRIMARY KEY (event_id, user_id) NOT ENFORCED"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-kafka',\n"
+                                + "  'topic' = '%s',\n"
+                                + "  'properties.bootstrap.servers' = '%s',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'value.format' = '%s',\n"
+                                + "  'value.fields-include' = 'ALL',\n"
+                                + "  'scan.bounded.mode' = 'timestamp',\n"
+                                + "  'scan.bounded.timestamp-millis' = '%d'"
+                                + ")",
+                        topic,
+                        bootstraps,
+                        format,
+                        format,
+                        LocalDateTime.parse("2023-03-10T14:00:00.000")
+                                .atZone(ZoneId.systemDefault())
+                                .toInstant()
+                                .toEpochMilli());
+        tEnv.executeSql(createTableSql);
+
+        // insert multiple values with timestamp starting from 2023-03-11 (which is past the bounded
+        // end timestamp)
+        final String insertValuesSql =
+                "INSERT INTO upsert_kafka\n"
+                        + "VALUES\n"
+                        + " (1, TIMESTAMP '2023-03-11 08:10:10.666', 100, 'payload 1'),\n"
+                        + " (2, TIMESTAMP '2023-03-12 13:12:11.123', 101, 'payload 2'),\n"
+                        + " (1, TIMESTAMP '2023-03-13 12:09:50.321', 100, 'payload 1-new'),\n"
+                        + " (2, TIMESTAMP '2023-03-14 17:15:13.457', 101, 'payload 2-new')";
+        tEnv.executeSql(insertValuesSql).await();
+
+        // results should be empty
+        final List<Row> results = collectAllRows(tEnv.sqlQuery("SELECT * from upsert_kafka"));
+        assertThat(results).satisfies(matching(deepEqualTo(Collections.emptyList(), true)));
 
         // ------------- cleanup -------------------
 
@@ -823,7 +1088,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
 
         // we ignore the orders for easier comparing, as we already verified ordering in
         // testAggregate()
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
     }
 
     private void temporalJoinUpsertPsc(String userTable) throws Exception {
@@ -917,6 +1182,6 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                         format, userTable)),
                         7);
 
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
     }
 }
