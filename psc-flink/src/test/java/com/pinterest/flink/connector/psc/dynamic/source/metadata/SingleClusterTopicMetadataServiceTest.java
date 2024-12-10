@@ -52,11 +52,11 @@ class SingleClusterTopicMetadataServiceTest {
         DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(TOPIC1, 3);
 
         kafkaClusterTestEnvMetadata0 =
-                DynamicPscSourceTestHelperWithKafkaAsPubSub.getKafkaClusterTestEnvMetadata(0);
+                DynamicPscSourceTestHelperWithKafkaAsPubSub.getClusterTestEnvMetadata(0);
 
         pscMetadataService =
                 new SingleClusterTopicUriMetadataService(
-                        kafkaClusterTestEnvMetadata0.getKafkaClusterId(),
+                        kafkaClusterTestEnvMetadata0.getPubSubClusterId(),
                         kafkaClusterTestEnvMetadata0.getStandardProperties());
     }
 
@@ -74,7 +74,7 @@ class SingleClusterTopicMetadataServiceTest {
                         new PscStream(
                                 TOPIC0,
                                 ImmutableMap.of(
-                                        kafkaClusterTestEnvMetadata0.getKafkaClusterId(),
+                                        kafkaClusterTestEnvMetadata0.getPubSubClusterId(),
                                         new ClusterMetadata(
                                                 Collections.singleton(TOPIC0),
                                                 kafkaClusterTestEnvMetadata0
@@ -82,7 +82,7 @@ class SingleClusterTopicMetadataServiceTest {
                         new PscStream(
                                 TOPIC1,
                                 Collections.singletonMap(
-                                        kafkaClusterTestEnvMetadata0.getKafkaClusterId(),
+                                        kafkaClusterTestEnvMetadata0.getPubSubClusterId(),
                                         new ClusterMetadata(
                                                 Collections.singleton(TOPIC1),
                                                 kafkaClusterTestEnvMetadata0
@@ -100,7 +100,7 @@ class SingleClusterTopicMetadataServiceTest {
                                 new PscStream(
                                         TOPIC1,
                                         Collections.singletonMap(
-                                                kafkaClusterTestEnvMetadata0.getKafkaClusterId(),
+                                                kafkaClusterTestEnvMetadata0.getPubSubClusterId(),
                                                 new ClusterMetadata(
                                                         Collections.singleton(TOPIC1),
                                                         kafkaClusterTestEnvMetadata0

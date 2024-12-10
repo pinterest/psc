@@ -44,11 +44,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Unit tests for {@link OffsetsInitializer}. */
 public class OffsetsInitializerTest {
     private static final String TOPIC = "topic";
-    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC;
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
     private static final String TOPIC2 = "topic2";
-    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC2;
     private static final String EMPTY_TOPIC3 = "topic3";
-    private static final String EMPTY_TOPIC_URI3 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + EMPTY_TOPIC3;
+    private static final String EMPTY_TOPIC_URI3 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + EMPTY_TOPIC3;
     private static PscSourceEnumerator.PartitionOffsetsRetrieverImpl retriever;
 
     @BeforeClass
@@ -59,7 +59,7 @@ public class OffsetsInitializerTest {
         PscSourceTestEnv.createTestTopic(EMPTY_TOPIC_URI3);
         retriever =
                 new PscSourceEnumerator.PartitionOffsetsRetrieverImpl(
-                        PscSourceTestEnv.getMetadataClient(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI, PscSourceTestEnv.GROUP_ID);
+                        PscSourceTestEnv.getMetadataClient(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI, PscSourceTestEnv.GROUP_ID);
     }
 
     @AfterClass

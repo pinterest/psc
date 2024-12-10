@@ -25,6 +25,7 @@ import com.pinterest.flink.connector.psc.dynamic.source.split.DynamicPscSourceSp
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.streaming.connectors.psc.DynamicPscSourceTestHelperWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.ByteArrayDeserializer;
@@ -59,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscSourceSplit> {
     private static final String TOPIC = "DynamicPscSourceReaderTest";
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
 
     // we are testing two clusters and SourceReaderTestBase expects there to be a total of 10 splits
     private static final int NUM_SPLITS_PER_CLUSTER = 5;
@@ -72,7 +74,7 @@ public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscS
 
         DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(TOPIC, NUM_SPLITS_PER_CLUSTER, 1);
         DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                TOPIC, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
+                TOPIC_URI, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
         clusterId0 = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPubSubClusterId(0);
         clusterId1 = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPubSubClusterId(1);
     }
@@ -96,11 +98,11 @@ public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscS
 
             // start reader
             reader.start();
-            PscStream kafkaStream = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPscStream(TOPIC);
+            PscStream pscStream = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPscStream(TOPIC);
 
             // remove cluster 0
-            kafkaStream.getClusterMetadataMap().remove(clusterId0);
-            reader.handleSourceEvents(new MetadataUpdateEvent(Collections.singleton(kafkaStream)));
+            pscStream.getClusterMetadataMap().remove(clusterId0);
+            reader.handleSourceEvents(new MetadataUpdateEvent(Collections.singleton(pscStream)));
 
             List<DynamicPscSourceSplit> splitsWithoutCluster0 =
                     splits.stream()
@@ -231,12 +233,12 @@ public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscS
             reader.addSplits(ImmutableList.of(cluster0Split, cluster1Split));
 
             // metadata change with a topic changing
-            PscStream kafkaStream = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPscStream(TOPIC);
+            PscStream pscStream = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPscStream(TOPIC);
             Set<String> topicsForCluster1 =
-                    kafkaStream.getClusterMetadataMap().get(clusterId1).getTopicUris();
+                    pscStream.getClusterMetadataMap().get(clusterId1).getTopics();
             topicsForCluster1.clear();
             topicsForCluster1.add("new topic");
-            reader.handleSourceEvents(new MetadataUpdateEvent(Collections.singleton(kafkaStream)));
+            reader.handleSourceEvents(new MetadataUpdateEvent(Collections.singleton(pscStream)));
             // same split but earlier offset
             DynamicPscSourceSplit newCluster0Split =
                     new DynamicPscSourceSplit(
@@ -315,15 +317,15 @@ public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscS
         String kafkaClusterId;
         int splitIdForCluster = splitId % NUM_SPLITS_PER_CLUSTER;
         if (splitId < NUM_SPLITS_PER_CLUSTER) {
-            kafkaClusterId = "kafka-cluster-0";
+            kafkaClusterId = "pubsub-cluster-0";
         } else {
-            kafkaClusterId = "kafka-cluster-1";
+            kafkaClusterId = "pubsub-cluster-1";
         }
 
         return new DynamicPscSourceSplit(
                 kafkaClusterId,
                 new PscTopicUriPartitionSplit(
-                        new TopicUriPartition(TOPIC, splitIdForCluster), 0L, stoppingOffset));
+                        new TopicUriPartition(TOPIC_URI, splitIdForCluster), 0L, stoppingOffset));
     }
 
     @Override

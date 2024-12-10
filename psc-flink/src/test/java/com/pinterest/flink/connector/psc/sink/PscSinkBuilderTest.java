@@ -87,7 +87,7 @@ public class PscSinkBuilderTest extends TestLogger {
 //                .setBootstrapServers("testServer")
                 .setRecordSerializer(
                         PscRecordSerializationSchema.builder()
-                                .setTopicUriString(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "topic")
+                                .setTopicUriString(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic")
                                 .setValueSerializationSchema(new SimpleStringSchema())
                                 .build());
     }
@@ -96,7 +96,7 @@ public class PscSinkBuilderTest extends TestLogger {
         return new PscSinkBuilder<String>()
                 .setRecordSerializer(
                         PscRecordSerializationSchema.builder()
-                                .setTopicUriString(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "topic")
+                                .setTopicUriString(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic")
                                 .setValueSerializationSchema(new SimpleStringSchema())
                                 .build());
     }

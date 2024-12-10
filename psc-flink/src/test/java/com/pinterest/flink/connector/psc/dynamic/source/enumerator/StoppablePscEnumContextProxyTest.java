@@ -20,10 +20,13 @@ package com.pinterest.flink.connector.psc.dynamic.source.enumerator;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
 import com.pinterest.flink.connector.psc.dynamic.source.split.DynamicPscSourceSplit;
 import com.pinterest.flink.connector.psc.testutils.MockPscMetadataService;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.psc.exception.PscException;
 import org.apache.flink.api.connector.source.SplitEnumeratorContext;
 import org.apache.flink.api.connector.source.mocks.MockSplitEnumeratorContext;
 import org.apache.flink.core.testutils.CommonTestUtils;
@@ -138,13 +141,16 @@ public class StoppablePscEnumContextProxyTest {
     private StoppablePscEnumContextProxy createStoppablePscEnumContextProxy(
             SplitEnumeratorContext enumContext, String contextKafkaCluster) {
 
+        Properties props = new Properties();
+        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+
         PscStream mockStream =
                 new PscStream(
                         "mock-stream",
                         ImmutableMap.of(
                                 ACTIVE_PUBSUB_CLUSTER,
                                 new ClusterMetadata(
-                                        ImmutableSet.of("mock-topic"), new Properties())));
+                                        ImmutableSet.of("mock-topic"), props)));
 
         return new StoppablePscEnumContextProxy(
                 contextKafkaCluster,
@@ -161,7 +167,7 @@ public class StoppablePscEnumContextProxyTest {
                 () -> {
                     if (throwExceptionFromMainCallable) {
                         // mock Kafka Exception
-                        throw new TimeoutException("PubSub server timed out");
+                        throw new PscException("PubSub server timed out");
                     } else {
                         // ignore output
                         return null;

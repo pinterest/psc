@@ -327,7 +327,7 @@ public class FlinkPscProducerBaseTest {
     private static class NoOpFlinkKafkaProducer<T> extends FlinkPscProducerBase<T> {
         private static final long serialVersionUID = 1L;
 
-        private static final String NOOP_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "noop-topic";
+        private static final String NOOP_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "noop-topic";
 
         private transient PscProducer<?, ?> mockProducer;
         private transient List<Callback> pendingCallbacks;

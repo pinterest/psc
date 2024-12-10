@@ -56,8 +56,8 @@ public class DynamicPscSourceSplit extends PscTopicUriPartitionSplit {
     @Override
     public String toString() {
         return MoreObjects.toStringHelper(this)
-                .add("kafkaClusterId", clusterId)
-                .add("kafkaPartitionSplit", pscTopicUriPartitionSplit)
+                .add("clusterId", clusterId)
+                .add("pscTopicUriPartitionSplit", pscTopicUriPartitionSplit)
                 .toString();
     }
 

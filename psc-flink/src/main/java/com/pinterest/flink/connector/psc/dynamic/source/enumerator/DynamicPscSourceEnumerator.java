@@ -161,9 +161,9 @@ public class DynamicPscSourceEnumerator
         this.latestPscStreams = dynamicPscSourceEnumState.getPscStreams();
 
         Map<String, Properties> clusterProperties = new HashMap<>();
-        for (PscStream kafkaStream : latestPscStreams) {
+        for (PscStream pscStream : latestPscStreams) {
             for (Entry<String, ClusterMetadata> entry :
-                    kafkaStream.getClusterMetadataMap().entrySet()) {
+                    pscStream.getClusterMetadataMap().entrySet()) {
                 clusterProperties.put(entry.getKey(), entry.getValue().getProperties());
             }
         }
@@ -234,32 +234,32 @@ public class DynamicPscSourceEnumerator
 
     private void onHandleSubscribedStreamsFetch(Set<PscStream> fetchedPscStreams, Throwable t) {
         firstDiscoveryComplete = true;
-        Set<PscStream> handledFetchKafkaStreams =
+        Set<PscStream> handledFetchPscStreams =
                 handleFetchSubscribedStreamsError(fetchedPscStreams, t);
 
-        Map<String, Set<String>> newClustersTopicsMap = new HashMap<>();
+        Map<String, Set<String>> newClustersToTopicUrisMap = new HashMap<>();
         Map<String, Properties> clusterProperties = new HashMap<>();
-        for (PscStream kafkaStream : handledFetchKafkaStreams) {
+        for (PscStream pscStream : handledFetchPscStreams) {
             for (Entry<String, ClusterMetadata> entry :
-                    kafkaStream.getClusterMetadataMap().entrySet()) {
-                String kafkaClusterId = entry.getKey();
+                    pscStream.getClusterMetadataMap().entrySet()) {
+                String clusterId = entry.getKey();
                 ClusterMetadata clusterMetadata = entry.getValue();
 
-                newClustersTopicsMap
-                        .computeIfAbsent(kafkaClusterId, (unused) -> new HashSet<>())
+                newClustersToTopicUrisMap
+                        .computeIfAbsent(clusterId, (unused) -> new HashSet<>())
                         .addAll(clusterMetadata.getTopicUris());
-                clusterProperties.put(kafkaClusterId, clusterMetadata.getProperties());
+                clusterProperties.put(clusterId, clusterMetadata.getProperties());
             }
         }
 
         // don't do anything if no change
-        if (latestClusterTopicsMap.equals(newClustersTopicsMap)) {
+        if (latestClusterTopicsMap.equals(newClustersToTopicUrisMap)) {
             return;
         }
 
         if (logger.isInfoEnabled()) {
             MapDifference<String, Set<String>> metadataDifference =
-                    Maps.difference(latestClusterTopicsMap, newClustersTopicsMap);
+                    Maps.difference(latestClusterTopicsMap, newClustersToTopicUrisMap);
             logger.info(
                     "Common cluster topics after metadata refresh: {}",
                     metadataDifference.entriesInCommon());
@@ -281,8 +281,8 @@ public class DynamicPscSourceEnumerator
         logger.info("Closing enumerators due to metadata change");
 
         closeAllEnumeratorsAndContexts();
-        latestClusterTopicsMap = newClustersTopicsMap;
-        latestPscStreams = handledFetchKafkaStreams;
+        latestClusterTopicsMap = newClustersToTopicUrisMap;
+        latestPscStreams = handledFetchPscStreams;
         sendMetadataUpdateEventToAvailableReaders();
 
         // create enumerators
@@ -384,6 +384,9 @@ public class DynamicPscSourceEnumerator
         PscPropertiesUtil.copyProperties(fetchedProperties, consumerProps);
         PscPropertiesUtil.copyProperties(properties, consumerProps);
         PscPropertiesUtil.setClientIdPrefix(consumerProps, clusterId);
+
+        System.out.println("fetchedProperties: " + fetchedProperties);
+        Thread.dumpStack();
 
         PscSourceEnumerator enumerator =
                 new PscSourceEnumerator(

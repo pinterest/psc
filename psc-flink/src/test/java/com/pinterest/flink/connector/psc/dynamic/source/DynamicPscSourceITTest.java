@@ -33,6 +33,7 @@ import com.pinterest.flink.connector.psc.testutils.TwoKafkaContainers;
 import com.pinterest.flink.connector.psc.testutils.YamlFileMetadataService;
 import com.pinterest.flink.streaming.connectors.psc.DynamicPscSourceTestHelperWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.PscTestBaseWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.IntegerDeserializer;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -82,7 +83,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.apache.flink.connector.kafka.dynamic.source.metrics.KafkaClusterMetricGroup.DYNAMIC_KAFKA_SOURCE_METRIC_GROUP;
+import static com.pinterest.flink.connector.psc.dynamic.source.metrics.PscClusterMetricGroup.DYNAMIC_PSC_SOURCE_METRIC_GROUP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -91,6 +92,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class DynamicPscSourceITTest extends TestLogger {
 
     private static final String TOPIC = "DynamicPscSourceITTest";
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
     private static final int NUM_PARTITIONS = 3;
     private static final int NUM_RECORDS_PER_SPLIT = 5;
 
@@ -109,12 +111,12 @@ public class DynamicPscSourceITTest extends TestLogger {
             DynamicPscSourceTestHelperWithKafkaAsPubSub.setup();
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(TOPIC, NUM_PARTITIONS, 1);
             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                    TOPIC, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT);
+                    TOPIC_URI, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT);
 
             kafkaClusterTestEnvMetadata0 =
-                    DynamicPscSourceTestHelperWithKafkaAsPubSub.getKafkaClusterTestEnvMetadata(0);
+                    DynamicPscSourceTestHelperWithKafkaAsPubSub.getClusterTestEnvMetadata(0);
             kafkaClusterTestEnvMetadata1 =
-                    DynamicPscSourceTestHelperWithKafkaAsPubSub.getKafkaClusterTestEnvMetadata(1);
+                    DynamicPscSourceTestHelperWithKafkaAsPubSub.getClusterTestEnvMetadata(1);
         }
 
         @BeforeEach
@@ -211,7 +213,7 @@ public class DynamicPscSourceITTest extends TestLogger {
 
             PscMetadataService pscMetadataService =
                     new SingleClusterTopicUriMetadataService(
-                            kafkaClusterTestEnvMetadata0.getKafkaClusterId(),
+                            kafkaClusterTestEnvMetadata0.getPubSubClusterId(),
                             kafkaClusterTestEnvMetadata0.getStandardProperties());
 
             DynamicPscSource<Integer> dynamicKafkaSource =
@@ -252,6 +254,7 @@ public class DynamicPscSourceITTest extends TestLogger {
         void testMigrationUsingFileMetadataService() throws Throwable {
             // setup topics on two clusters
             String fixedTopic = "test-file-metadata-service";
+            String fixedTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + fixedTopic;
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(fixedTopic, NUM_PARTITIONS);
 
             // Flink job config and env
@@ -278,7 +281,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                     testStreamId,
                     fixedTopic,
                     ImmutableList.of(
-                            DynamicPscSourceTestHelperWithKafkaAsPubSub.getKafkaClusterTestEnvMetadata(0)));
+                            DynamicPscSourceTestHelperWithKafkaAsPubSub.getClusterTestEnvMetadata(0)));
 
             DynamicPscSource<Integer> dynamicKafkaSource =
                     DynamicPscSource.<Integer>builder()
@@ -295,13 +298,13 @@ public class DynamicPscSourceITTest extends TestLogger {
                     env.fromSource(
                             dynamicKafkaSource,
                             WatermarkStrategy.noWatermarks(),
-                            "dynamic-kafka-src");
+                            "dynamic-psc-src");
             List<Integer> results = new ArrayList<>();
 
             AtomicInteger latestValueOffset =
                     new AtomicInteger(
                             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                                    0, fixedTopic, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0));
+                                    0, fixedTopicUri, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0));
 
             try (CloseableIterator<Integer> iterator = stream.executeAndCollect()) {
                 CommonTestUtils.waitUtil(
@@ -314,7 +317,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                                     latestValueOffset.set(
                                             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                                                     0,
-                                                    fixedTopic,
+                                                    fixedTopicUri,
                                                     NUM_PARTITIONS,
                                                     NUM_RECORDS_PER_SPLIT,
                                                     latestValueOffset.get()));
@@ -324,9 +327,9 @@ public class DynamicPscSourceITTest extends TestLogger {
                                             fixedTopic,
                                             ImmutableList.of(
                                                     DynamicPscSourceTestHelperWithKafkaAsPubSub
-                                                            .getKafkaClusterTestEnvMetadata(0),
+                                                            .getClusterTestEnvMetadata(0),
                                                     DynamicPscSourceTestHelperWithKafkaAsPubSub
-                                                            .getKafkaClusterTestEnvMetadata(1)));
+                                                            .getClusterTestEnvMetadata(1)));
                                 }
 
                                 // trigger another metadata update to remove old cluster
@@ -334,7 +337,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                                     latestValueOffset.set(
                                             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                                                     1,
-                                                    fixedTopic,
+                                                    fixedTopicUri,
                                                     NUM_PARTITIONS,
                                                     NUM_RECORDS_PER_SPLIT,
                                                     latestValueOffset.get()));
@@ -344,7 +347,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                                             fixedTopic,
                                             ImmutableList.of(
                                                     DynamicPscSourceTestHelperWithKafkaAsPubSub
-                                                            .getKafkaClusterTestEnvMetadata(1)));
+                                                            .getClusterTestEnvMetadata(1)));
                                 }
                             } catch (NoSuchElementException e) {
                                 // swallow and wait
@@ -376,12 +379,12 @@ public class DynamicPscSourceITTest extends TestLogger {
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(0, "stream-pattern-test-1", NUM_PARTITIONS);
             int lastValueOffset =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                            0, "stream-pattern-test-1", NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
+                            0, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "stream-pattern-test-1", NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(0, "stream-pattern-test-2", NUM_PARTITIONS);
             lastValueOffset =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                             0,
-                            "stream-pattern-test-2",
+                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "stream-pattern-test-2",
                             NUM_PARTITIONS,
                             NUM_RECORDS_PER_SPLIT,
                             lastValueOffset);
@@ -389,7 +392,7 @@ public class DynamicPscSourceITTest extends TestLogger {
             final int totalRecords =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                             1,
-                            "stream-pattern-test-3",
+                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "stream-pattern-test-3",
                             NUM_PARTITIONS,
                             NUM_RECORDS_PER_SPLIT,
                             lastValueOffset);
@@ -401,11 +404,11 @@ public class DynamicPscSourceITTest extends TestLogger {
 
             Set<PscStream> pscStreams =
                     getPscStreams(
-                            kafkaClusterTestEnvMetadata0.getKafkaClusterId(),
+                            kafkaClusterTestEnvMetadata0.getPubSubClusterId(),
                             kafkaClusterTestEnvMetadata0.getStandardProperties(),
                             ImmutableSet.of("stream-pattern-test-1", "stream-pattern-test-2"));
 
-            writeClusterMetadataToFile(metadataFile, pscStreams);
+            writeClusterMetadataToFile(metadataFile, pscStreams, kafkaClusterTestEnvMetadata0.getBrokerConnectionStrings());
 
             // Flink job config and env
             StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -450,11 +453,11 @@ public class DynamicPscSourceITTest extends TestLogger {
                                     pscStreams.add(
                                             getPscStream(
                                                     kafkaClusterTestEnvMetadata1
-                                                            .getKafkaClusterId(),
+                                                            .getPubSubClusterId(),
                                                     kafkaClusterTestEnvMetadata1
                                                             .getStandardProperties(),
                                                     "stream-pattern-test-3"));
-                                    writeClusterMetadataToFile(metadataFile, pscStreams);
+                                    writeClusterMetadataToFile(metadataFile, pscStreams, kafkaClusterTestEnvMetadata1.getBrokerConnectionStrings());
                                 }
                             } catch (NoSuchElementException e) {
                                 // swallow
@@ -477,6 +480,7 @@ public class DynamicPscSourceITTest extends TestLogger {
         void testMetricsLifecycleManagement() throws Throwable {
             // setup topics on two clusters
             String fixedTopic = "test-metrics-lifecycle-mgmt";
+            String fixedTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + fixedTopic;
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(fixedTopic, NUM_PARTITIONS);
 
             // Flink job config and env
@@ -504,7 +508,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                     testStreamId,
                     fixedTopic,
                     ImmutableList.of(
-                            DynamicPscSourceTestHelperWithKafkaAsPubSub.getKafkaClusterTestEnvMetadata(0)));
+                            DynamicPscSourceTestHelperWithKafkaAsPubSub.getClusterTestEnvMetadata(0)));
 
             DynamicPscSource<Integer> dynamicKafkaSource =
                     DynamicPscSource.<Integer>builder()
@@ -525,7 +529,7 @@ public class DynamicPscSourceITTest extends TestLogger {
 
             int latestValueOffset =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                            0, fixedTopic, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
+                            0, fixedTopicUri, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
             List<Integer> results = new ArrayList<>();
             try (CloseableIterator<Integer> iterator = stream.executeAndCollect()) {
                 while (results.size() < latestValueOffset && iterator.hasNext()) {
@@ -539,14 +543,14 @@ public class DynamicPscSourceITTest extends TestLogger {
                                         .collect(Collectors.toList()));
 
                 // should contain cluster 0 metrics
-                assertThat(findMetrics(reporter, DYNAMIC_KAFKA_SOURCE_METRIC_GROUP))
+                assertThat(findMetrics(reporter, DYNAMIC_PSC_SOURCE_METRIC_GROUP))
                         .allSatisfy(
                                 metricName ->
                                         assertThat(metricName)
                                                 .containsPattern(
                                                         ".*"
-                                                                + DYNAMIC_KAFKA_SOURCE_METRIC_GROUP
-                                                                + "\\.kafkaCluster\\.kafka-cluster-0.*"));
+                                                                + DYNAMIC_PSC_SOURCE_METRIC_GROUP
+                                                                + "\\.pscCluster\\.pubsub-cluster-0.*"));
 
                 // setup test data for cluster 1 and stop consuming from cluster 0
                 latestValueOffset =
@@ -561,33 +565,33 @@ public class DynamicPscSourceITTest extends TestLogger {
                         testStreamId,
                         fixedTopic,
                         ImmutableList.of(
-                                DynamicPscSourceTestHelperWithKafkaAsPubSub.getKafkaClusterTestEnvMetadata(1)));
+                                DynamicPscSourceTestHelperWithKafkaAsPubSub.getClusterTestEnvMetadata(1)));
                 while (results.size() < latestValueOffset && iterator.hasNext()) {
                     results.add(iterator.next());
                 }
 
                 // cluster 0 is not being consumed from, metrics should not appear
-                assertThat(findMetrics(reporter, DYNAMIC_KAFKA_SOURCE_METRIC_GROUP))
+                assertThat(findMetrics(reporter, DYNAMIC_PSC_SOURCE_METRIC_GROUP))
                         .allSatisfy(
                                 metricName ->
                                         assertThat(metricName)
                                                 .doesNotContainPattern(
                                                         ".*"
-                                                                + DYNAMIC_KAFKA_SOURCE_METRIC_GROUP
-                                                                + "\\.kafkaCluster\\.kafka-cluster-0.*"));
+                                                                + DYNAMIC_PSC_SOURCE_METRIC_GROUP
+                                                                + "\\.pscCluster\\.pubsub-cluster-0.*"));
 
-                assertThat(findMetrics(reporter, DYNAMIC_KAFKA_SOURCE_METRIC_GROUP))
+                assertThat(findMetrics(reporter, DYNAMIC_PSC_SOURCE_METRIC_GROUP))
                         .allSatisfy(
                                 metricName ->
                                         assertThat(metricName)
                                                 .containsPattern(
                                                         ".*"
-                                                                + DYNAMIC_KAFKA_SOURCE_METRIC_GROUP
-                                                                + "\\.kafkaCluster\\.kafka-cluster-1.*"));
+                                                                + DYNAMIC_PSC_SOURCE_METRIC_GROUP
+                                                                + "\\.pscCluster\\.pubsub-cluster-1.*"));
             }
         }
 
-        private void writeClusterMetadataToFile(File metadataFile, Set<PscStream> pscStreams)
+        private void writeClusterMetadataToFile(File metadataFile, Set<PscStream> pscStreams, String bootstrapServers)
                 throws IOException {
             List<YamlFileMetadataService.StreamMetadata> streamMetadataList = new ArrayList<>();
             for (PscStream pscStream : pscStreams) {
@@ -599,11 +603,9 @@ public class DynamicPscSourceITTest extends TestLogger {
                     YamlFileMetadataService.StreamMetadata.ClusterMetadata clusterMetadata =
                             new YamlFileMetadataService.StreamMetadata.ClusterMetadata();
                     clusterMetadata.setClusterId(entry.getKey());
-//                    clusterMetadata.setBootstrapServers(
-//                            entry.getValue()
-//                                    .getProperties()
-//                                    .getProperty(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG));
-                    clusterMetadata.setTopics(new ArrayList<>(entry.getValue().getTopicUris()));
+
+                    clusterMetadata.setBootstrapServers(bootstrapServers);
+                    clusterMetadata.setTopics(new ArrayList<>(entry.getValue().getTopics()));
                     clusterMetadataList.add(clusterMetadata);
                 }
 
@@ -626,13 +628,13 @@ public class DynamicPscSourceITTest extends TestLogger {
             List<YamlFileMetadataService.StreamMetadata.ClusterMetadata> clusterMetadata =
                     kafkaClusterTestEnvMetadataList.stream()
                             .map(
-                                    KafkaClusterTestEnvMetadata ->
+                                    clusterTestEnvMetadata ->
                                             new YamlFileMetadataService.StreamMetadata
                                                     .ClusterMetadata(
-                                                    KafkaClusterTestEnvMetadata.getKafkaClusterId(),
-                                                    KafkaClusterTestEnvMetadata
-                                                            .getBrokerConnectionStrings(),
-                                                    ImmutableList.of(topic)))
+                                                    clusterTestEnvMetadata.getPubSubClusterId(),
+                                                    clusterTestEnvMetadata.getClusterUriStr(),
+                                                    ImmutableList.of(topic),
+                                                    clusterTestEnvMetadata.getBrokerConnectionStrings()))
                             .collect(Collectors.toList());
             YamlFileMetadataService.StreamMetadata streamMetadata =
                     new YamlFileMetadataService.StreamMetadata(streamId, clusterMetadata);

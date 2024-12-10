@@ -20,6 +20,7 @@ package com.pinterest.flink.connector.psc.testutils;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
 import com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSource;
@@ -27,6 +28,7 @@ import com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSourceBuilder;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.flink.streaming.connectors.psc.DynamicPscSourceTestHelperWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSubImpl;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.StringDeserializer;
@@ -34,11 +36,12 @@ import com.pinterest.psc.serde.StringSerializer;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.Source;
-import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.connector.testframe.external.ExternalSystemSplitDataWriter;
 import org.apache.flink.connector.testframe.external.source.DataStreamSourceExternalContext;
 import org.apache.flink.connector.testframe.external.source.TestingSourceSettings;
 import org.apache.flink.core.testutils.CommonTestUtils;
+import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.TopicListing;
 import org.slf4j.Logger;
@@ -77,12 +80,21 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
     public DynamicPscSourceExternalContext(
             List<String> bootstrapServerList, List<URL> connectorJarPaths) {
         this.connectorJarPaths = connectorJarPaths;
+
         Properties propertiesForCluster0 = new Properties();
-//        propertiesForCluster0.setProperty(
-//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServerList.get(0));
+        propertiesForCluster0.setProperty(
+                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServerList.get(0));
+        propertiesForCluster0.setProperty(
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+
         Properties propertiesForCluster1 = new Properties();
-//        propertiesForCluster1.setProperty(
-//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServerList.get(1));
+        propertiesForCluster1.setProperty(
+                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServerList.get(1));
+        propertiesForCluster1.setProperty(
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER2_URI_PREFIX);
+
+        PscTestUtils.putDiscoveryProperties(propertiesForCluster0, bootstrapServerList.get(0), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        PscTestUtils.putDiscoveryProperties(propertiesForCluster1, bootstrapServerList.get(1), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER2_URI_PREFIX);
 
         this.clusterPropertiesMap =
                 ImmutableMap.of(
@@ -97,7 +109,7 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
 
         builder.setStreamPattern(STREAM_ID_PATTERN)
                 .setPscMetadataService(new MockPscMetadataService(pscStreams))
-                .setGroupId("DynamicKafkaSourceExternalContext")
+                .setGroupId("DynamicPscSourceExternalContext")
                 .setDeserializer(
                         PscRecordDeserializationSchema.valueOnly(StringDeserializer.class));
 
@@ -112,32 +124,33 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
     public ExternalSystemSplitDataWriter<String> createSourceSplitDataWriter(
             TestingSourceSettings sourceSettings) {
         int suffix = splitDataWriters.size();
-        List<Tuple2<String, String>> clusterTopics = setupSplits(String.valueOf(suffix));
-        SplitDataWriter splitDataWriter = new SplitDataWriter(clusterPropertiesMap, clusterTopics);
+        List<Tuple3<String, String, String>> clusterTopicsTopicUris = setupSplits(String.valueOf(suffix));
+        SplitDataWriter splitDataWriter = new SplitDataWriter(clusterPropertiesMap, clusterTopicsTopicUris);
         this.splitDataWriters.add(splitDataWriter);
         return splitDataWriter;
     }
 
-    private List<Tuple2<String, String>> setupSplits(String suffix) {
+    private List<Tuple3<String, String, String>> setupSplits(String suffix) {
         PscStream pscStream = getPscStream(suffix + randomTopicSuffix);
         logger.info("Setting up splits for {}", pscStream);
-        List<Tuple2<String, String>> clusterTopics =
+        List<Tuple3<String, String, String>> clusterTopicsTopicUris =
                 pscStream.getClusterMetadataMap().entrySet().stream()
                         .flatMap(
                                 entry ->
-                                        entry.getValue().getTopicUris().stream()
-                                                .map(topic -> Tuple2.of(entry.getKey(), topic)))
+                                        entry.getValue().getTopics().stream()
+                                                .map(topic -> Tuple3.of(entry.getKey(), topic, entry.getValue().getClusterUriStr() + topic)))
                         .collect(Collectors.toList());
 
-        for (Tuple2<String, String> clusterTopic : clusterTopics) {
+        for (Tuple3<String, String, String> clusterTopic : clusterTopicsTopicUris) {
             String cluster = clusterTopic.f0;
             String topic = clusterTopic.f1;
+            String topicUri = clusterTopic.f2;
             PscTestEnvironmentWithKafkaAsPubSubImpl.createNewTopic(
                     topic, NUM_PARTITIONS, 1, clusterPropertiesMap.get(cluster));
         }
 
         pscStreams.add(pscStream);
-        return clusterTopics;
+        return clusterTopicsTopicUris;
     }
 
     private PscStream getPscStream(String suffix) {
@@ -178,10 +191,10 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
         // need to clear topics
         Map<String, List<String>> clusterTopics = new HashMap<>();
         for (SplitDataWriter splitDataWriter : splitDataWriters) {
-            for (Tuple2<String, String> clusterTopic : splitDataWriter.getClusterTopics()) {
+            for (Tuple3<String, String, String> clusterTopicTopicUri : splitDataWriter.getClusterTopicsTopicUris()) {
                 clusterTopics
-                        .computeIfAbsent(clusterTopic.f0, unused -> new ArrayList<>())
-                        .add(clusterTopic.f1);
+                        .computeIfAbsent(clusterTopicTopicUri.f0, unused -> new ArrayList<>())
+                        .add(clusterTopicTopicUri.f1);
             }
         }
         for (Map.Entry<String, List<String>> entry : clusterTopics.entrySet()) {
@@ -211,22 +224,23 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
 
     private static class SplitDataWriter implements ExternalSystemSplitDataWriter<String> {
         private final Map<String, Properties> clusterPropertiesMap;
-        private final List<Tuple2<String, String>> clusterTopics;
+        private final List<Tuple3<String, String, String>> clusterTopicsTopicUris;
 
         public SplitDataWriter(
                 Map<String, Properties> clusterPropertiesMap,
-                List<Tuple2<String, String>> clusterTopics) {
+                List<Tuple3<String, String, String>> clusterTopicsTopicUris) {
             this.clusterPropertiesMap = clusterPropertiesMap;
-            this.clusterTopics = clusterTopics;
+            this.clusterTopicsTopicUris = clusterTopicsTopicUris;
         }
 
         @Override
         public void writeRecords(List<String> records) {
             int counter = 0;
             try {
-                for (Tuple2<String, String> clusterTopic : clusterTopics) {
-                    String cluster = clusterTopic.f0;
-                    String topic = clusterTopic.f1;
+                for (Tuple3<String, String, String> clusterTopicTopicUri : clusterTopicsTopicUris) {
+                    String cluster = clusterTopicTopicUri.f0;
+                    String topic = clusterTopicTopicUri.f1;
+                    String topicUri = clusterTopicTopicUri.f2;
                     List<PscProducerMessage<String, String>> producerRecords = new ArrayList<>();
                     for (int j = 0; j < NUM_PARTITIONS; j++) {
                         for (int k = 0; k < NUM_TEST_RECORDS_PER_SPLIT; k++) {
@@ -235,7 +249,7 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
                             }
 
                             producerRecords.add(
-                                    new PscProducerMessage<>(topic, j, null, records.get(counter++)));
+                                    new PscProducerMessage<>(topicUri, j, null, records.get(counter++)));
                         }
                     }
 
@@ -255,8 +269,8 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
         @Override
         public void close() throws Exception {}
 
-        public List<Tuple2<String, String>> getClusterTopics() {
-            return clusterTopics;
+        public List<Tuple3<String, String, String>> getClusterTopicsTopicUris() {
+            return clusterTopicsTopicUris;
         }
     }
 }

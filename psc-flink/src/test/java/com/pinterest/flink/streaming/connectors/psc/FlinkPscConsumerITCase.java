@@ -49,7 +49,7 @@ import java.util.concurrent.CountDownLatch;
 @TestInstance(Lifecycle.PER_CLASS)
 public class FlinkPscConsumerITCase {
     private static final String TOPIC1 = "FlinkKafkaConsumerITCase_topic1";
-    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
+    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC1;
 
     @ClassRule
     public static final MiniClusterWithClientResource MINI_CLUSTER =

@@ -85,7 +85,7 @@ public class SingleClusterTopicUriMetadataService implements PscMetadataService 
     @Override
     public Map<String, PscStream> describeStreams(Collection<String> streamIds) {
         List<TopicUri> streamIdsConvertedToTopicUriList = streamIds.stream()
-                .map(streamId -> clusterUri.getTopicUriAsString() + "/" + streamId)
+                .map(streamId -> clusterUri.getTopicUriAsString() + streamId)
                 .map(topicUriStr -> {
                     try {
                         return BaseTopicUri.validate(topicUriStr);

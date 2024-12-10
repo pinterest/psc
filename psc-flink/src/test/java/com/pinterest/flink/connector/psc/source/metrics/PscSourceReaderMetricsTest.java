@@ -37,10 +37,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** Unit test for {@link PscSourceReaderMetrics}. */
 public class PscSourceReaderMetricsTest {
 
-    private static final TopicUriPartition FOO_0 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "foo", 0);
-    private static final TopicUriPartition FOO_1 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "foo", 1);
-    private static final TopicUriPartition BAR_0 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "bar", 0);
-    private static final TopicUriPartition BAR_1 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "bar", 1);
+    private static final TopicUriPartition FOO_0 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "foo", 0);
+    private static final TopicUriPartition FOO_1 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "foo", 1);
+    private static final TopicUriPartition BAR_0 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "bar", 0);
+    private static final TopicUriPartition BAR_1 = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "bar", 1);
 
     @Test
     public void testCurrentOffsetTracking() {

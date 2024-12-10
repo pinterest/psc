@@ -50,7 +50,7 @@ public class PscFlinkConfiguration {
 
     public static TopicUri validateAndGetBaseClusterUri(Properties properties) throws TopicUriSyntaxException {
         if (!properties.containsKey(CLUSTER_URI_CONFIG)) {
-            throw new IllegalArgumentException("Cluster URI is required for transactional producer");
+            throw new IllegalArgumentException("Cluster URI not found");
         }
         return BaseTopicUri.validate(properties.getProperty(CLUSTER_URI_CONFIG));
     }

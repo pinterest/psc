@@ -39,7 +39,6 @@ import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.producer.PscProducerMessage;
-import kafka.server.KafkaServer;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
@@ -183,11 +182,11 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
             pscConsumerConfiguration.setProperty("psc.consumer.fetch.max.wait.ms", "2000");
             pscConsumerConfiguration.setProperty("psc.consumer.heartbeat.interval.ms", "1000");
             pscConsumerConfiguration.setProperty("psc.discovery.topic.uri.prefixes",
-                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
             pscConsumerConfiguration.setProperty("psc.discovery.connection.urls", "localhost:80");
             pscConsumerConfiguration.setProperty("psc.discovery.security.protocols", "plaintext");
             pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
-            DataStream<String> stream = getStream(see, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "doesntexist", new SimpleStringSchema(), pscConsumerConfiguration);
+            DataStream<String> stream = getStream(see, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "doesntexist", new SimpleStringSchema(), pscConsumerConfiguration);
             stream.print();
             see.execute("No broker test");
         } catch (JobExecutionException jee) {
@@ -224,7 +223,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final int parallelism = 3;
         final int recordsInEachPartition = 50;
 
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "testCommitOffsetsToKafkaTopic", recordsInEachPartition, parallelism, 1);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -314,7 +313,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final int parallelism = 3;
         final int recordsInEachPartition = 50;
 
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "testAutoOffsetRetrievalAndCommitToKafkaTopic", recordsInEachPartition, parallelism, 1);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -399,7 +398,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final int parallelism = 3;
         final int recordsInEachPartition = 50;
 
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "testStartFromEarliestOffsetsTopic", recordsInEachPartition, parallelism, 1);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -442,7 +441,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         // all already existing data in the topic URI, before the consuming topology has
         // started, should be ignored
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "testStartFromLatestOffsetsTopic", recordsInEachPartition, parallelism, 1);
 
         // the committed offsets should be ignored
@@ -485,7 +484,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
                     pscTestEnvWithKafka
                             .getSourceBuilder(topicUri.getTopicUriAsString(), deserSchema, readConfiguration)
                             .setStartingOffsets(OffsetsInitializer.latest())
-                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX)
                             .build();
             stream = env.fromSource(source, WatermarkStrategy.noWatermarks(), "KafkaSource");
         } else {
@@ -603,7 +602,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final int parallelism = 3;
         final int recordsInEachPartition = 50;
 
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "testStartFromGroupOffsetsTopic", recordsInEachPartition, parallelism, 1);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -671,7 +670,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final int parallelism = 4;
         final int recordsInEachPartition = 50;
 
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "testStartFromSpecificOffsetsTopic", recordsInEachPartition, parallelism, 1);
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -733,7 +732,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         // the appended sequence
         // is assured to be larger than the timestamp of the original sequence.
         long firstTimestamp = System.currentTimeMillis();
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "runStartFromTimestamp", initialRecordsInEachPartition, parallelism, 1);
 
         long secondTimestamp = 0;
@@ -786,9 +785,9 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
     @RetryOnException(times = 2, exception = org.apache.kafka.common.errors.NotLeaderForPartitionException.class)
     public void runSimpleConcurrentProducerConsumerTopology() throws Exception {
         final String topic = "concurrentProducerConsumerTopic_" + UUID.randomUUID().toString();
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final String additionalEmptyTopic = "additionalEmptyTopic_" + UUID.randomUUID().toString();
-        final String additionalEmptyTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + additionalEmptyTopic;
+        final String additionalEmptyTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + additionalEmptyTopic;
 
         final int parallelism = 3;
         final int elementsPerPartition = 100;
@@ -919,7 +918,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
     public void runOneToOneExactlyOnceTest() throws Exception {
 
         final String topic = "oneToOneTopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final int parallelism = 5;
         final int numElementsPerPartition = 1000;
         final int totalElements = parallelism * numElementsPerPartition;
@@ -964,7 +963,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      */
     public void runOneSourceMultiplePartitionsExactlyOnceTest() throws Exception {
         final String topic = "oneToManyTopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final int numPartitions = 5;
         final int numElementsPerPartition = 1000;
         final int totalElements = numPartitions * numElementsPerPartition;
@@ -1011,7 +1010,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      */
     public void runMultipleSourcesOnePartitionExactlyOnceTest() throws Exception {
         final String topic = "manyToOneTopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final int numPartitions = 5;
         final int numElementsPerPartition = 1000;
         final int totalElements = numPartitions * numElementsPerPartition;
@@ -1060,7 +1059,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      */
     public void runCancelingOnFullInputTest() throws Exception {
         final String topic = "cancelingOnFullTopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
 
         final int parallelism = 3;
         createTestTopic(topic, parallelism, 1);
@@ -1140,7 +1139,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      */
     public void runCancelingOnEmptyInputTest() throws Exception {
         final String topic = "cancelingOnEmptyInputTopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
 
         final int parallelism = 3;
         createTestTopic(topicUri, parallelism, 1);
@@ -1209,7 +1208,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final List<String> topicUris = new ArrayList<>();
         for (int i = 0; i < numTopics; i++) {
             final String topic = "topic-" + i;
-            final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+            final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
             topicUris.add(topicUri);
             // create topic
             createTestTopic(topic, i + 1 /* partitions */, 1);
@@ -1229,7 +1228,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
                         for (int topicId = 0; topicId < numTopics; topicId++) {
                             for (int i = 0; i < numElements; i++) {
-                                ctx.collect(new Tuple3<>(partition, i, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "topic-" + topicId));
+                                ctx.collect(new Tuple3<>(partition, i, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic-" + topicId));
                             }
                         }
                     }
@@ -1248,7 +1247,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
             Tuple2WithTopicSchema schema = new Tuple2WithTopicSchema(env.getConfig());
             pscTestEnvWithKafka.produceIntoKafka(
                     stream,
-                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "test",
+                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "test",
                     schema,
                     pscProducerConfiguration,
                     null
@@ -1257,7 +1256,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
             TestDeserializer schema = new TestDeserializer(env.getConfig());
             pscTestEnvWithKafka.produceIntoKafka(
                     stream,
-                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "test",
+                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "test",
                     schema,
                     pscProducerConfiguration
             );
@@ -1327,7 +1326,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
     public void runBigRecordTestTopology() throws Exception {
 
         final String topic = "bigRecordTestTopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final int parallelism = 1; // otherwise, the kafka mini clusters may run out of heap space
 
         createTestTopic(topic, parallelism, 1);
@@ -1432,7 +1431,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
     public void runBrokerFailureTest() throws Exception {
         final String topic = "brokerFailureTestTopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
 
         final int parallelism = 2;
         final int numElementsPerPartition = 1000;
@@ -1480,7 +1479,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
     public void runKeyValueTest() throws Exception {
         final String topic = "keyvaluetest";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
         final int elementCount = 5000;
 
@@ -1576,7 +1575,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      */
     public void runAllDeletesTest() throws Exception {
         final String topic = "alldeletestest";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         createTestTopic(topicUri, 1, 1);
         final int elementCount = 300;
 
@@ -1655,7 +1654,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
     public void runEndOfStreamTest() throws Exception {
 
         final int elementCount = 300;
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
                 "testEndOfStream", elementCount, 1, 1);
 
         // read using custom schema
@@ -1691,7 +1690,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
     public void runCollectingSchemaTest() throws Exception {
 
         final int elementCount = 20;
-        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX
+        final TopicUri topicUri = writeSequence(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX
                 + "testCollectingSchema", elementCount, 1, 1);
 
         // read using custom schema
@@ -1750,7 +1749,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
         // create a stream with 5 topics
         final String topic = "metricsStream";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         createTestTopic(topic, 5, 1);
 
         final Tuple1<Throwable> error = new Tuple1<>(null);
@@ -1986,7 +1985,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         if (useNewSource) {
             PscSourceBuilder<Tuple2<Integer, Integer>> sourceBuilder =
                     pscTestEnvWithKafka.getSourceBuilder(topicUri, deser, cc)
-                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
             Map<TopicUriPartition, Long> startOffsets = new HashMap<>();
             if (specificStartupOffsets != null) {
                 specificStartupOffsets.forEach(
@@ -2333,7 +2332,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
             PscSource<Tuple2<Integer, Integer>> source =
                     pscTestEnvWithKafka.getSourceBuilder(topicUri, deserSchema, readConfiguration)
                             .setStartingOffsets(OffsetsInitializer.earliest())
-                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX)
                             .build();
             dataStreamSource = readEnv.fromSource(source, WatermarkStrategy.noWatermarks(), "PscSource");
         } else {
@@ -2432,7 +2431,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         if (useNewSource) {
             PscSource<T> pscSource =
                     pscTestEnvWithKafka.getSourceBuilder(topicUris, schema, props)
-                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX)
                             .build();
             return env.fromSource(pscSource, WatermarkStrategy.noWatermarks(), "PscSource");
         } else {
@@ -2450,7 +2449,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         if (useNewSource) {
             PscSource<T> pscSource =
                     pscTestEnvWithKafka.getSourceBuilder(topicUris, schema, props)
-                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX)
                             .build();
             return env.fromSource(pscSource, WatermarkStrategy.noWatermarks(), "PscSource");
         } else {
@@ -2498,29 +2497,9 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
 
                 if (failer && numElementsTotal >= failCount) {
                     // shut down a Kafka broker
-                    KafkaServer toShutDown = null;
-                    for (KafkaServer server : pscTestEnvWithKafka.getBrokers()) {
-
-                        if (pscTestEnvWithKafka.getBrokerId(server) == shutdownBrokerId) {
-                            toShutDown = server;
-                            break;
-                        }
-                    }
-
-                    if (toShutDown == null) {
-                        StringBuilder listOfBrokers = new StringBuilder();
-                        for (KafkaServer server : pscTestEnvWithKafka.getBrokers()) {
-                            listOfBrokers.append(pscTestEnvWithKafka.getBrokerId(server));
-                            listOfBrokers.append(" ; ");
-                        }
-
-                        throw new Exception("Cannot find broker to shut down: " + shutdownBrokerId
-                                + " ; available brokers: " + listOfBrokers.toString());
-                    } else {
-                        hasBeenCheckpointedBeforeFailure = hasBeenCheckpointed;
-                        killedLeaderBefore = true;
-                        toShutDown.shutdown();
-                    }
+                    pscTestEnvWithKafka.stopBroker(shutdownBrokerId);
+                    hasBeenCheckpointedBeforeFailure = hasBeenCheckpointed;
+                    killedLeaderBefore = true;
                 }
             }
             return value;

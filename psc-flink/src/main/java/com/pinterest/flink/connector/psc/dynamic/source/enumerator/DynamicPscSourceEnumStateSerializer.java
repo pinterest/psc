@@ -130,20 +130,11 @@ public class DynamicPscSourceEnumStateSerializer
                 String clusterId = entry.getKey();
                 ClusterMetadata clusterMetadata = entry.getValue();
                 out.writeUTF(clusterId);
-                out.writeInt(clusterMetadata.getTopicUris().size());
-                for (String topic : clusterMetadata.getTopicUris()) {
+                out.writeInt(clusterMetadata.getTopics().size());
+                for (String topic : clusterMetadata.getTopics()) {
                     out.writeUTF(topic);
                 }
-
-                // only write cluster URI for now, can extend later to serialize the complete
-                // properties
-                out.writeUTF(
-                        Preconditions.checkNotNull(
-                                clusterMetadata
-                                        .getProperties()
-                                        .getProperty(
-                                                PscFlinkConfiguration.CLUSTER_URI_CONFIG,
-                                                "cluster.uri must be specified in properties")));
+                serializeProperties(clusterMetadata.getProperties(), out);
             }
         }
     }
@@ -164,10 +155,8 @@ public class DynamicPscSourceEnumStateSerializer
                     topics.add(in.readUTF());
                 }
 
-                String clusterUri = in.readUTF();
                 Properties properties = new Properties();
-                properties.setProperty(
-                        PscFlinkConfiguration.CLUSTER_URI_CONFIG, clusterUri);
+                deserializeProperties(properties, in);
 
                 clusterMetadataMap.put(clusterId, new ClusterMetadata(topics, properties));
             }
@@ -176,6 +165,21 @@ public class DynamicPscSourceEnumStateSerializer
         }
 
         return pscStreams;
+    }
+
+    private void serializeProperties(Properties properties, DataOutputStream out) throws IOException {
+        out.writeInt(properties.size());
+        for (Map.Entry<Object, Object> entry : properties.entrySet()) {
+            out.writeUTF(entry.getKey().toString());
+            out.writeUTF(entry.getValue().toString());
+        }
+    }
+
+    private void deserializeProperties(Properties properties, DataInputStream in) throws IOException {
+        int size = in.readInt();
+        for (int i = 0; i < size; i++) {
+            properties.setProperty(in.readUTF(), in.readUTF());
+        }
     }
 
     private static byte[] readNBytes(DataInputStream in, int size) throws IOException {

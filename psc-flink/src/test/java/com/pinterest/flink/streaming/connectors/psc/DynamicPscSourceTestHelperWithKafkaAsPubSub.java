@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
 import com.pinterest.flink.connector.psc.dynamic.source.MetadataUpdateEvent;
@@ -55,8 +56,8 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
         shutDownServices();
     }
 
-    public static ClusterTestEnvMetadata getKafkaClusterTestEnvMetadata(int kafkaClusterIdx) {
-        return kafkaClusters.get(kafkaClusterIdx);
+    public static ClusterTestEnvMetadata getClusterTestEnvMetadata(int clusterIdx) {
+        return pubsubClusters.get(clusterIdx);
     }
 
     public static MetadataUpdateEvent getMetadataUpdateEvent(String topic) {
@@ -64,7 +65,7 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
     }
 
     public static String getPubSubClusterId(int clusterIdx) {
-        return kafkaClusters.get(clusterIdx).getKafkaClusterId();
+        return pubsubClusters.get(clusterIdx).getPubSubClusterId();
     }
 
     /** Stream is a topic across multiple clusters. */
@@ -72,7 +73,9 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
         Map<String, ClusterMetadata> clusterMetadataMap = new HashMap<>();
         for (int i = 0; i < NUM_PUBSUB_CLUSTERS; i++) {
             ClusterTestEnvMetadata kafkaClusterTestEnvMetadata =
-                    getKafkaClusterTestEnvMetadata(i);
+                    getClusterTestEnvMetadata(i);
+            kafkaClusterTestEnvMetadata.getStandardProperties().setProperty(
+                    PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
             Set<String> topics = new HashSet<>();
             topics.add(topic);
@@ -81,7 +84,7 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
                     new ClusterMetadata(
                             topics, kafkaClusterTestEnvMetadata.getStandardProperties());
             clusterMetadataMap.put(
-                    kafkaClusterTestEnvMetadata.getKafkaClusterId(), clusterMetadata);
+                    kafkaClusterTestEnvMetadata.getPubSubClusterId(), clusterMetadata);
         }
 
         return new PscStream(topic, clusterMetadataMap);
@@ -103,7 +106,7 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
 
     private static void createTopic(
             int kafkaClusterIdx, String topic, int numPartitions, int replicationFactor) {
-        kafkaClusters
+        pubsubClusters
                 .get(kafkaClusterIdx)
                 .getPscTestEnvironmentWithKafkaAsPubSub()
                 .createTestTopic(topic, numPartitions, replicationFactor);
@@ -111,7 +114,7 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
 
     /** Produces [0, numPartitions*numRecordsPerSplit) range of records to the specified topic. */
     public static List<PscProducerMessage<String, Integer>> produceToKafka(
-            String topic, int numPartitions, int numRecordsPerSplit) throws Throwable {
+            String topicUri, int numPartitions, int numRecordsPerSplit) throws Throwable {
         List<PscProducerMessage<String, Integer>> records = new ArrayList<>();
 
         int counter = 0;
@@ -121,9 +124,9 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
             for (int part = 0; part < numPartitions; part++) {
                 for (int i = 0; i < numRecordsPerSplit; i++) {
                     PscProducerMessage<String, Integer> message = new PscProducerMessage<>(
-                            topic,
+                            topicUri,
                             part,
-                            topic + "-" + part,
+                            topicUri + "-" + part,
                             counter++);
                     message.setHeader("flink.kafka-cluster-name", kafkaClusterId.getBytes(StandardCharsets.UTF_8));
                     recordsForCluster.add(message);
@@ -139,11 +142,11 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
 
     /**
      * Produces [recordValueStartingOffset, recordValueStartingOffset +
-     * numPartitions*numRecordsPerSplit) range of records to the specified topic and cluster.
+     * numPartitions*numRecordsPerSplit) range of records to the specified topicUri and cluster.
      */
     public static int produceToKafka(
             int kafkaClusterIdx,
-            String topic,
+            String topicUri,
             int numPartitions,
             int numRecordsPerSplit,
             int recordValueStartingOffset)
@@ -154,9 +157,9 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
         for (int part = 0; part < numPartitions; part++) {
             for (int i = 0; i < numRecordsPerSplit; i++) {
                 PscProducerMessage<String, Integer> message = new PscProducerMessage<>(
-                        topic,
+                        topicUri,
                         part,
-                        topic + "-" + part,
+                        topicUri + "-" + part,
                         counter++);
                 message.setHeader("flink.kafka-cluster-name", kafkaClusterId.getBytes(StandardCharsets.UTF_8));
                 recordsForCluster.add(message);
@@ -181,7 +184,7 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
             Class<? extends Serializer<V>> valueSerializerClass)
             throws Throwable {
         produceToKafka(
-                kafkaClusters.get(id).getStandardProperties(),
+                pubsubClusters.get(id).getStandardProperties(),
                 records,
                 keySerializerClass,
                 valueSerializerClass);
@@ -198,8 +201,8 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
         props.putAll(clusterProperties);
         props.setProperty(PscConfiguration.PSC_PRODUCER_ACKS, "all");
         props.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, keySerializerClass.getName());
-        props.setProperty(
-                PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, valueSerializerClass.getName());
+        props.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, valueSerializerClass.getName());
+        props.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
 
         AtomicReference<Throwable> sendingError = new AtomicReference<>();
         Callback callback =

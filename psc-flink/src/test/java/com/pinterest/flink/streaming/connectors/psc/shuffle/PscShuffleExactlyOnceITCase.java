@@ -117,7 +117,7 @@ public class PscShuffleExactlyOnceITCase extends PscShuffleTestBase {
             TimeCharacteristic timeCharacteristic) throws Exception {
 
         String topic = topic("failure_recovery", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final int numberOfPartitions = 1;
         final int producerParallelism = 1;
         final int failAfterElements = numElementsPerProducer * numberOfPartitions * 2 / 3;
@@ -151,7 +151,7 @@ public class PscShuffleExactlyOnceITCase extends PscShuffleTestBase {
             int numElementsPerProducer,
             TimeCharacteristic timeCharacteristic) throws Exception {
         String topic = topic("partition_failure_recovery", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final int numberOfPartitions = 3;
         final int producerParallelism = 2;
         final int failAfterElements = numElementsPerProducer * producerParallelism * 2 / 3;

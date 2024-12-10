@@ -127,8 +127,8 @@ public abstract class PscTableTestBase extends AbstractTestBase {
         standardProps.put("zookeeper.session.timeout.ms", zkTimeoutMills);
         standardProps.put("zookeeper.connection.timeout.ms", zkTimeoutMills);
         standardProps.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "flink-tests-client");
-        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
-        standardProps.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        standardProps.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
         return standardProps;
     }

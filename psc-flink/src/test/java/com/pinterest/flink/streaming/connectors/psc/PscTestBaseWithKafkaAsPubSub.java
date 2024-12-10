@@ -18,6 +18,8 @@
 package com.pinterest.flink.streaming.connectors.psc;
 
 import com.google.common.base.MoreObjects;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.connector.psc.testutils.PscTestUtils;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumerMessage;
@@ -101,7 +103,7 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
 
     protected static PscTestEnvironmentWithKafkaAsPubSub pscTestEnvWithKafka;
 
-    public static List<ClusterTestEnvMetadata> kafkaClusters = new ArrayList<>();
+    public static List<ClusterTestEnvMetadata> pubsubClusters = new ArrayList<>();
 
     @ClassRule
     public static TemporaryFolder tempFolder = new TemporaryFolder();
@@ -162,10 +164,14 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
             PscTestEnvironmentWithKafkaAsPubSub.Config environmentConfig, int numKafkaClusters) throws Exception {
         for (int i = 0; i < numKafkaClusters; i++) {
             startClusters(environmentConfig);
+            PscTestUtils.putDiscoveryProperties(standardPscConsumerConfiguration, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+            PscTestUtils.putDiscoveryProperties(securePscConsumerConfiguration, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+            standardPscConsumerConfiguration.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+            securePscConsumerConfiguration.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
             ClusterTestEnvMetadata kafkaClusterTestEnvMetadata =
                     new ClusterTestEnvMetadata(
-                            i, pscTestEnvWithKafka, standardKafkaProperties, brokerConnectionStrings, secureKafkaProperties);
-            kafkaClusters.add(kafkaClusterTestEnvMetadata);
+                            i, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, pscTestEnvWithKafka, standardPscConsumerConfiguration, brokerConnectionStrings, securePscConsumerConfiguration);
+            pubsubClusters.add(kafkaClusterTestEnvMetadata);
             LOG.info("Created Kafka cluster with configuration: {}", kafkaClusterTestEnvMetadata);
         }
     }
@@ -210,11 +216,11 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
             pscTestEnvWithKafka.shutdown();
         }
 
-        if (kafkaClusters != null && !kafkaClusters.isEmpty()) {
-            for (ClusterTestEnvMetadata value : kafkaClusters) {
+        if (pubsubClusters != null && !pubsubClusters.isEmpty()) {
+            for (ClusterTestEnvMetadata value : pubsubClusters) {
                 value.getPscTestEnvironmentWithKafkaAsPubSub().shutdown();
             }
-            kafkaClusters.clear();
+            pubsubClusters.clear();
         }
     }
 
@@ -257,7 +263,7 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
         props.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, keySerializerClass.getName());
         props.setProperty(
                 PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, valueSerializerClass.getName());
-        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
         AtomicReference<Throwable> sendingError = new AtomicReference<>();
         Callback callback =
@@ -388,22 +394,29 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
         private final Properties standardProperties;
         private final String brokerConnectionStrings;
         private final Properties secureProperties;
+        private final String clusterUriStr;
 
         private ClusterTestEnvMetadata(
                 int clusterIdx,
+                String clusterUriStr,
                 PscTestEnvironmentWithKafkaAsPubSub pscTestEnvironmentWithKafkaAsPubSub,
                 Properties standardProperties,
                 String brokerConnectionStrings,
                 Properties secureProperties) {
             this.clusterId = "pubsub-cluster-" + clusterIdx;
+            this.clusterUriStr = clusterUriStr;
             this.pscTestEnvironmentWithKafkaAsPubSub = pscTestEnvironmentWithKafkaAsPubSub;
             this.standardProperties = standardProperties;
             this.brokerConnectionStrings = brokerConnectionStrings;
             this.secureProperties = secureProperties;
         }
 
-        public String getKafkaClusterId() {
+        public String getPubSubClusterId() {
             return clusterId;
+        }
+
+        public String getClusterUriStr() {
+            return clusterUriStr;
         }
 
         public PscTestEnvironmentWithKafkaAsPubSub getPscTestEnvironmentWithKafkaAsPubSub() {

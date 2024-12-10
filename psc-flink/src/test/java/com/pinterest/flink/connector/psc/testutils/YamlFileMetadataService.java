@@ -24,6 +24,7 @@ import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscMetadataService;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -163,37 +164,6 @@ public class YamlFileMetadataService implements PscMetadataService {
         fileWriter.close();
     }
 
-    /**
-     * A utility method for writing metadata in the expected yaml format.
-     *
-     * @param pscStreams list of {@link PscStream}
-     * @param metadataFile the metadata {@link File}
-     */
-    public static void saveToYamlFromKafkaStreams(List<PscStream> pscStreams, File metadataFile)
-            throws IOException {
-        saveToYaml(
-                pscStreams.stream()
-                        .map(YamlFileMetadataService::convertToStreamMetadata)
-                        .collect(Collectors.toList()),
-                metadataFile);
-    }
-
-    private static StreamMetadata convertToStreamMetadata(PscStream pscStream) {
-        return new StreamMetadata(
-                pscStream.getStreamId(),
-                pscStream.getClusterMetadataMap().entrySet().stream()
-                        .map(
-                                entry ->
-                                        new StreamMetadata.ClusterMetadata(
-                                                entry.getKey(),
-                                                entry.getValue()
-                                                        .getProperties()
-                                                        .getProperty(
-                                                                PscFlinkConfiguration.CLUSTER_URI_CONFIG),
-                                                new ArrayList<>(entry.getValue().getTopicUris())))
-                        .collect(Collectors.toList()));
-    }
-
     private void refreshIfNeeded() {
         Instant now = Instant.now();
         try {
@@ -237,6 +207,8 @@ public class YamlFileMetadataService implements PscMetadataService {
                 properties.setProperty(
                         PscFlinkConfiguration.CLUSTER_URI_CONFIG,
                         clusterMetadata.getClusterUriString());
+                PscTestUtils.putDiscoveryProperties(properties, clusterMetadata.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+                System.out.println("properties: " + properties);
                 clusterMetadataMap.put(
                         kafkaClusterId,
                         new ClusterMetadata(
@@ -328,13 +300,15 @@ public class YamlFileMetadataService implements PscMetadataService {
             private String clusterId;
             private String clusterUriString;
             private List<String> topics;
+            private String bootstrapServers;
 
             public ClusterMetadata() {}
 
-            public ClusterMetadata(String clusterId, String clusterUriString, List<String> topics) {
+            public ClusterMetadata(String clusterId, String clusterUriString, List<String> topics, String bootstrapServers) {
                 this.clusterId = clusterId;
                 this.clusterUriString = clusterUriString;
                 this.topics = topics;
+                this.bootstrapServers = bootstrapServers;
             }
 
             public String getClusterId() {
@@ -359,6 +333,14 @@ public class YamlFileMetadataService implements PscMetadataService {
 
             public void setTopics(List<String> topics) {
                 this.topics = topics;
+            }
+
+            public String getBootstrapServers() {
+                return bootstrapServers;
+            }
+
+            public void setBootstrapServers(String bootstrapServers) {
+                this.bootstrapServers = bootstrapServers;
             }
         }
     }

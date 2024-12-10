@@ -19,12 +19,15 @@
 package com.pinterest.flink.connector.psc.dynamic.metadata;
 
 import com.google.common.base.MoreObjects;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.flink.annotation.Experimental;
 
 import java.io.Serializable;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * {@link ClusterMetadata} provides readers information about a cluster on what topics to read and
@@ -32,18 +35,27 @@ import java.util.Set;
  */
 @Experimental
 public class ClusterMetadata implements Serializable {
+    private final Set<String> topics;
     private final Set<String> topicUris;
     private final Properties properties;
+    private final String clusterUriStr;
 
     /**
      * Constructs the {@link ClusterMetadata} with the required properties.
      *
-     * @param topicUris the topics belonging to a cluster.
+     * @param topics the topics belonging to a cluster.
      * @param properties the properties to access a cluster.
      */
-    public ClusterMetadata(Set<String> topicUris, Properties properties) {
-        this.topicUris = topicUris;
+    public ClusterMetadata(Set<String> topics, Properties properties) {
+        this.topics = topics;
         this.properties = properties;
+        try {
+            this.clusterUriStr = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties).getTopicUriAsString();
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Invalid cluster.uri", e);
+        }
+        this.topicUris = topics.stream().map(t -> clusterUriStr + t).collect(Collectors.toSet());
+
     }
 
     /**
@@ -51,6 +63,10 @@ public class ClusterMetadata implements Serializable {
      *
      * @return the topics.
      */
+    public Set<String> getTopics() {
+        return topics;
+    }
+
     public Set<String> getTopicUris() {
         return topicUris;
     }
@@ -64,10 +80,19 @@ public class ClusterMetadata implements Serializable {
         return properties;
     }
 
+    /**
+     * Get the cluster URI string.
+     *
+     * @return the cluster URI string.
+     */
+    public String getClusterUriStr() {
+        return clusterUriStr;
+    }
+
     @Override
     public String toString() {
         return MoreObjects.toStringHelper(this)
-                .add("topics", topicUris)
+                .add("topics", topics)
                 .add("properties", properties)
                 .toString();
     }
@@ -81,11 +106,11 @@ public class ClusterMetadata implements Serializable {
             return false;
         }
         ClusterMetadata that = (ClusterMetadata) o;
-        return Objects.equals(topicUris, that.topicUris) && Objects.equals(properties, that.properties);
+        return Objects.equals(topics, that.topics) && Objects.equals(properties, that.properties);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(topicUris, properties);
+        return Objects.hash(topics, properties);
     }
 }

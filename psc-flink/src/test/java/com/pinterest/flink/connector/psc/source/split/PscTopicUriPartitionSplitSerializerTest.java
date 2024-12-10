@@ -33,7 +33,7 @@ public class PscTopicUriPartitionSplitSerializerTest {
     @Test
     public void testSerializer() throws IOException {
         String topic = "topic";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         Long offsetZero = 0L;
         Long normalOffset = 1L;
         TopicUriPartition topicUriPartition = new TopicUriPartition(topicUri, 1);

@@ -78,11 +78,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class PscTopicUriPartitionSplitReaderTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String TOPIC1 = "topic1";
-    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
+    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "topic2";
-    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC2;
     private static final String TOPIC3 = "topic3";
-    private static final String TOPIC_URI3 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC3;
+    private static final String TOPIC_URI3 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC3;
 
     private static Map<Integer, Map<String, PscTopicUriPartitionSplit>> splitsByOwners;
     private static Map<TopicUriPartition, Long> earliestOffsets;
@@ -117,7 +117,7 @@ public class PscTopicUriPartitionSplitReaderTest {
     @Test
     public void testWakeUp() throws Exception {
         PscTopicUriPartitionSplitReader reader = createReader();
-        TopicUriPartition nonExistingTopicPartition = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "NotExist", 0);
+        TopicUriPartition nonExistingTopicPartition = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "NotExist", 0);
         assignSplits(
                 reader,
                 Collections.singletonMap(

@@ -19,6 +19,7 @@
 package com.pinterest.flink.connector.psc.dynamic.source.enumerator;
 
 import com.google.common.collect.ImmutableSet;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscMetadataService;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
@@ -31,6 +32,7 @@ import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppin
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.testutils.MockPscMetadataService;
 import com.pinterest.flink.streaming.connectors.psc.DynamicPscSourceTestHelperWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.exception.PscException;
 import org.apache.flink.api.connector.source.Boundedness;
@@ -67,6 +69,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class DynamicPscSourceEnumeratorTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String TOPIC = "DynamicPscSourceEnumeratorTest";
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
     private static final int NUM_SPLITS_PER_CLUSTER = 3;
     private static final int NUM_RECORDS_PER_SPLIT = 5;
 
@@ -75,7 +78,7 @@ public class DynamicPscSourceEnumeratorTest {
         DynamicPscSourceTestHelperWithKafkaAsPubSub.setup();
         DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(TOPIC, NUM_SPLITS_PER_CLUSTER, 1);
         DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                TOPIC, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
+                TOPIC_URI, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
     }
 
     @AfterAll
@@ -677,8 +680,8 @@ public class DynamicPscSourceEnumeratorTest {
     @Test
     public void testInitExceptionNonexistingPubSubCluster() {
         Properties fakeProperties = new Properties();
-//        fakeProperties.setProperty(
-//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "fake-cluster:8080");
+        fakeProperties.setProperty(
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
         MockPscMetadataService mockPscMetadataServiceWithUnavailableCluster =
                 new MockPscMetadataService(
                         ImmutableSet.of(
@@ -705,8 +708,8 @@ public class DynamicPscSourceEnumeratorTest {
     @Test
     public void testEnumeratorErrorPropagation() {
         Properties fakeProperties = new Properties();
-//        fakeProperties.setProperty(
-//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "fake-cluster:8080");
+        fakeProperties.setProperty(
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
         PscStream fakeStream =
                 new PscStream(
                         "fake-stream",
@@ -795,7 +798,7 @@ public class DynamicPscSourceEnumeratorTest {
                 kafkaStream.getClusterMetadataMap().entrySet()) {
             clusterTopicMap
                     .computeIfAbsent(entry.getKey(), unused -> new HashSet<>())
-                    .addAll(entry.getValue().getTopicUris());
+                    .addAll(entry.getValue().getTopics());
         }
 
         Set<DynamicPscSourceSplit> splitsAssigned =
@@ -839,7 +842,7 @@ public class DynamicPscSourceEnumeratorTest {
             for (String topic : topics) {
                 Set<TopicUriPartition> expectedTopicPartitions = new HashSet<>();
                 for (int i = 0; i < NUM_SPLITS_PER_CLUSTER; i++) {
-                    expectedTopicPartitions.add(new TopicUriPartition(topic, i));
+                    expectedTopicPartitions.add(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic, i));
                 }
                 assertThat(assignedTopicPartitionSet)
                         .as("splits must contain all topics and 2 partitions per topic")

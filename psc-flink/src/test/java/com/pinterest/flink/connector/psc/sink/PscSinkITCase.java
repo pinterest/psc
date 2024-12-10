@@ -23,8 +23,6 @@ import com.pinterest.flink.connector.psc.testutils.DockerImageVersions;
 import com.pinterest.flink.connector.psc.testutils.PscUtil;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
-import com.pinterest.psc.config.PscConfigurationUtils;
-import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
@@ -73,7 +71,6 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.DeleteTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -165,7 +162,7 @@ public class PscSinkITCase extends TestLogger {
         lastCheckpointedRecord = sharedObjects.add(new AtomicLong(0));
         topic = UUID.randomUUID().toString();
         createTestTopic(topic, 1, TOPIC_REPLICATION_FACTOR);
-        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
     }
 
     @After
@@ -385,8 +382,8 @@ public class PscSinkITCase extends TestLogger {
                                 emittedRecordsCount, emittedRecordsWithCheckpoint));
         Properties producerProperties = new Properties();
         producerProperties.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-client");
-        producerProperties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG,PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
-        injectDiscoveryConfigs(producerProperties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        producerProperties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG,PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        injectDiscoveryConfigs(producerProperties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
         source.sinkTo(
                 new PscSinkBuilder<Long>()
                         .setPscProducerConfig(producerProperties)
@@ -432,8 +429,8 @@ public class PscSinkITCase extends TestLogger {
         properties.setProperty(PscConfiguration.PSC_PRODUCER_RETRIES, "2147483647");
         properties.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "PscSinkITCase");
         properties.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "PscSinkITCase");
-        properties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
-        injectDiscoveryConfigs(properties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        properties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        injectDiscoveryConfigs(properties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
         return properties;
     }
 

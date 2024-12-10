@@ -20,11 +20,13 @@ package com.pinterest.flink.connector.psc.dynamic.source.enumerator;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
 import com.pinterest.flink.connector.psc.source.enumerator.AssignmentStatus;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
 import com.pinterest.flink.connector.psc.source.enumerator.TopicUriPartitionAndAssignmentStatus;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import org.junit.jupiter.api.Test;
 
@@ -44,13 +46,13 @@ public class DynamicPscSourceEnumStateSerializerTest {
                 new DynamicPscSourceEnumStateSerializer();
 
         Properties propertiesForCluster0 = new Properties();
-//        propertiesForCluster0.setProperty(
-//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "cluster0:9092");
+        propertiesForCluster0.setProperty(
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
         Properties propertiesForCluster1 = new Properties();
-//        propertiesForCluster1.setProperty(
-//                CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, "cluster1:9092");
+        propertiesForCluster1.setProperty(
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
-        Set<PscStream> kafkaStreams =
+        Set<PscStream> pscStreams =
                 ImmutableSet.of(
                         new PscStream(
                                 "stream0",
@@ -73,7 +75,7 @@ public class DynamicPscSourceEnumStateSerializerTest {
 
         DynamicPscSourceEnumState dynamicPscSourceEnumState =
                 new DynamicPscSourceEnumState(
-                        kafkaStreams,
+                        pscStreams,
                         ImmutableMap.of(
                                 "cluster0",
                                 new PscSourceEnumState(

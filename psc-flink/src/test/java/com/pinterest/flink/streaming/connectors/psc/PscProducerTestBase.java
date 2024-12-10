@@ -22,7 +22,6 @@ import com.pinterest.flink.streaming.connectors.psc.internals.KeyedSerialization
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.flink.streaming.connectors.psc.testutils.FailingIdentityMapper;
 import com.pinterest.flink.streaming.connectors.psc.testutils.IntegerSource;
-import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
@@ -32,12 +31,6 @@ import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.client.JobExecutionException;
-import org.apache.flink.runtime.state.CheckpointListener;
-import org.apache.flink.runtime.state.FunctionInitializationContext;
-import org.apache.flink.runtime.state.FunctionSnapshotContext;
-import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
@@ -50,9 +43,7 @@ import org.junit.Test;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -103,11 +94,11 @@ public abstract class PscProducerTestBase extends PscTestBaseWithFlinkWithKafkaA
             LOG.info("Starting PscProducerITCase.testCustomPartitioning()");
 
             final String defaultTopic = "defaultTopic";
-            final String defaultTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + defaultTopic;
+            final String defaultTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + defaultTopic;
             final int defaultTopicPartitions = 2;
 
             final String dynamicTopic = "dynamicTopic";
-            final String dynamicTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + dynamicTopic;
+            final String dynamicTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + dynamicTopic;
             final int dynamicTopicPartitions = 3;
 
             createTestTopic(defaultTopic, defaultTopicPartitions, 1);
@@ -223,7 +214,7 @@ public abstract class PscProducerTestBase extends PscTestBaseWithFlinkWithKafkaA
      */
     protected void testExactlyOnce(boolean regularSink, int sinksCount) throws Exception {
         final String topic = (regularSink ? "exactlyOnceTopicRegularSink" : "exactlyTopicCustomOperator") + sinksCount;
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
         final int partition = 0;
         final int numElements = 1000;
         final int failAfterElements = 333;

@@ -19,6 +19,7 @@
 package com.pinterest.flink.connector.psc.dynamic.source.split;
 
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import org.junit.jupiter.api.Test;
 
@@ -37,7 +38,7 @@ public class DynamicPscSourceSplitSerializerTest {
         DynamicPscSourceSplit dynamicPscSourceSplit =
                 new DynamicPscSourceSplit(
                         "test-cluster",
-                        new PscTopicUriPartitionSplit(new TopicUriPartition("test-topic", 3), 1));
+                        new PscTopicUriPartitionSplit(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "test-topic", 3), 1));
         DynamicPscSourceSplit dynamicPscSourceSplitAfterSerde =
                 serializer.deserialize(1, serializer.serialize(dynamicPscSourceSplit));
         assertEquals(dynamicPscSourceSplit, dynamicPscSourceSplitAfterSerde);

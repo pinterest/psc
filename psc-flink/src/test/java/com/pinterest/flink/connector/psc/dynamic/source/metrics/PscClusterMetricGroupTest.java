@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A test for {@link
- * org.apache.flink.connector.kafka.dynamic.source.metrics.KafkaClusterMetricGroup}.
+ * PscClusterMetricGroup}.
  */
 public class PscClusterMetricGroupTest {
 
@@ -74,13 +74,13 @@ public class PscClusterMetricGroupTest {
     public void testSetPendingRecordsGauge() {
         pscClusterMetricGroup.setPendingRecordsGauge(() -> 5L);
 
-        // these identifiers should be attached to distinguish distinguish multiple sub
+        // these identifiers should be attached to distinguish multiple sub
         // KafkaSourceReaders
         Optional<Gauge<Long>> pendingRecordsGauge =
                 metricListener.getGauge(
                         DYNAMIC_PSC_SOURCE_METRIC_GROUP,
                         "pscCluster",
-//                        "broker-bootstrap-server:443",
+                        "broker-bootstrap-server:443",
                         "pendingRecords");
 
         assertThat(pendingRecordsGauge.get().getValue()).isEqualTo(5L);
