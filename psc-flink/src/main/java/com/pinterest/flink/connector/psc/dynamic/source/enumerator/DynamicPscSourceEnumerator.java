@@ -385,9 +385,6 @@ public class DynamicPscSourceEnumerator
         PscPropertiesUtil.copyProperties(properties, consumerProps);
         PscPropertiesUtil.setClientIdPrefix(consumerProps, clusterId);
 
-        System.out.println("fetchedProperties: " + fetchedProperties);
-        Thread.dumpStack();
-
         PscSourceEnumerator enumerator =
                 new PscSourceEnumerator(
                         PscSubscriber.getTopicUriListSubscriber(new ArrayList<>(topicUris)),

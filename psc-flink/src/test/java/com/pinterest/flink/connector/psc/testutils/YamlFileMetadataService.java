@@ -206,7 +206,6 @@ public class YamlFileMetadataService implements PscMetadataService {
                         PscFlinkConfiguration.CLUSTER_URI_CONFIG,
                         clusterMetadata.getClusterUriString());
                 PscTestUtils.putDiscoveryProperties(properties, clusterMetadata.getBootstrapServers(), clusterMetadata.getClusterUriString());
-                System.out.println("properties: " + properties);
                 clusterMetadataMap.put(
                         kafkaClusterId,
                         new ClusterMetadata(

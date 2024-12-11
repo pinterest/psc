@@ -46,8 +46,6 @@ public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartition
             PscSourceReaderMetrics pscSourceReaderMetrics,
             String kafkaClusterId) throws ConfigurationException, ClientException {
         super(props, context, pscSourceReaderMetrics);
-        System.out.println("props: " + props);
-        System.out.println("kafkaClusterId: " + kafkaClusterId);
         this.kafkaClusterId = kafkaClusterId;
     }
 

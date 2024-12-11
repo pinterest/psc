@@ -33,7 +33,6 @@ import com.pinterest.flink.connector.psc.testutils.TwoKafkaContainers;
 import com.pinterest.flink.connector.psc.testutils.YamlFileMetadataService;
 import com.pinterest.flink.streaming.connectors.psc.DynamicPscSourceTestHelperWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.PscTestBaseWithKafkaAsPubSub;
-import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.IntegerDeserializer;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -406,8 +405,6 @@ public class DynamicPscSourceITTest extends TestLogger {
                             kafkaClusterTestEnvMetadata0.getStandardProperties(),
                             ImmutableSet.of("stream-pattern-test-1", "stream-pattern-test-2"));
 
-            System.out.println("testEnvMetadata0: " + kafkaClusterTestEnvMetadata0.getBrokerConnectionStrings());
-
             writeClusterMetadataToFile(metadataFile, pscStreams);
 
             // Flink job config and env
@@ -457,7 +454,6 @@ public class DynamicPscSourceITTest extends TestLogger {
                                                     kafkaClusterTestEnvMetadata1
                                                             .getStandardProperties(),
                                                     "stream-pattern-test-3"));
-                                    System.out.println("testEnvMetadata1: " + kafkaClusterTestEnvMetadata1.getBrokerConnectionStrings());
                                     writeClusterMetadataToFile(metadataFile, pscStreams);
                                 }
                             } catch (NoSuchElementException e) {

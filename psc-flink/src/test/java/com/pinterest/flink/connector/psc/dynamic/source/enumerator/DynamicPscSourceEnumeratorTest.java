@@ -69,7 +69,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class DynamicPscSourceEnumeratorTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String TOPIC = "DynamicPscSourceEnumeratorTest";
-    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC;
     private static final int NUM_SPLITS_PER_CLUSTER = 3;
     private static final int NUM_RECORDS_PER_SPLIT = 5;
 
@@ -78,7 +77,7 @@ public class DynamicPscSourceEnumeratorTest {
         DynamicPscSourceTestHelperWithKafkaAsPubSub.setup();
         DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(TOPIC, NUM_SPLITS_PER_CLUSTER, 1);
         DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                TOPIC_URI, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
+                TOPIC, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
     }
 
     @AfterAll

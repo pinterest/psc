@@ -93,8 +93,8 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
         propertiesForCluster1.setProperty(
                 PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
-        PscTestUtils.putDiscoveryProperties(propertiesForCluster0, bootstrapServerList.get(0), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
-        PscTestUtils.putDiscoveryProperties(propertiesForCluster1, bootstrapServerList.get(1), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        PscTestUtils.injectDiscoveryConfigs(propertiesForCluster0, bootstrapServerList.get(0), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        PscTestUtils.injectDiscoveryConfigs(propertiesForCluster1, bootstrapServerList.get(1), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
         this.clusterPropertiesMap =
                 ImmutableMap.of(

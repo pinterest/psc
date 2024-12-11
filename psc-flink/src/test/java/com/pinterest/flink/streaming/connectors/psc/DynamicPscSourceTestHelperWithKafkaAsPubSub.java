@@ -203,7 +203,6 @@ public class DynamicPscSourceTestHelperWithKafkaAsPubSub extends PscTestBaseWith
         props.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, keySerializerClass.getName());
         props.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, valueSerializerClass.getName());
         props.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
-        System.out.println("props: " + props);
 
         AtomicReference<Throwable> sendingError = new AtomicReference<>();
         Callback callback =

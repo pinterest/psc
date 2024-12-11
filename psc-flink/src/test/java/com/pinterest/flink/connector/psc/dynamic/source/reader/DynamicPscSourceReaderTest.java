@@ -74,7 +74,7 @@ public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscS
 
         DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(TOPIC, NUM_SPLITS_PER_CLUSTER, 1);
         DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                TOPIC_URI, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
+                TOPIC, NUM_SPLITS_PER_CLUSTER, NUM_RECORDS_PER_SPLIT);
         clusterId0 = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPubSubClusterId(0);
         clusterId1 = DynamicPscSourceTestHelperWithKafkaAsPubSub.getPubSubClusterId(1);
     }
