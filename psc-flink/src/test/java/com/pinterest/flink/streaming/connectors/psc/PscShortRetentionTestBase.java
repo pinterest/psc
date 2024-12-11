@@ -126,7 +126,7 @@ public class PscShortRetentionTestBase implements Serializable {
 
     public void runAutoOffsetResetTest() throws Exception {
         final String topic = "auto-offset-reset-test";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         final int parallelism = 1;
         final int elementsPerPartition = 50000;

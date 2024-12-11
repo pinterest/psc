@@ -20,6 +20,7 @@ package com.pinterest.flink.connector.psc.dynamic.source.reader;
 
 import com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics;
 import com.pinterest.flink.connector.psc.source.reader.PscTopicUriPartitionSplitReader;
+import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
@@ -45,12 +46,14 @@ public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartition
             PscSourceReaderMetrics pscSourceReaderMetrics,
             String kafkaClusterId) throws ConfigurationException, ClientException {
         super(props, context, pscSourceReaderMetrics);
+        System.out.println("props: " + props);
+        System.out.println("kafkaClusterId: " + kafkaClusterId);
         this.kafkaClusterId = kafkaClusterId;
     }
 
     @Override
     public RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> fetch() throws IOException {
-        return new WrappedRecordsWithSplitIds(super.fetch(), kafkaClusterId);
+        return new WrappedRecordsWithSplitIds(super.fetch(), super.getConsumer(), kafkaClusterId);
     }
 
     private static final class WrappedRecordsWithSplitIds
@@ -58,12 +61,15 @@ public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartition
 
         private final RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> delegate;
         private final String kafkaClusterId;
+        private final PscConsumer<byte[], byte[]> consumer;
 
         public WrappedRecordsWithSplitIds(
                 RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> delegate,
+                PscConsumer<byte[], byte[]> consumer,
                 String kafkaClusterId) {
             this.delegate = delegate;
             this.kafkaClusterId = kafkaClusterId;
+            this.consumer = consumer;
         }
 
         @Nullable

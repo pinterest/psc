@@ -49,7 +49,7 @@ import static org.apache.flink.util.Preconditions.checkState;
 public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub {
 
     protected static final Logger LOG = LoggerFactory.getLogger(PscMigrationTestBase.class);
-    protected static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX +
+    protected static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX +
             "flink-psc-producer-migration-test";
 
     protected final FlinkVersion testMigrateVersion;

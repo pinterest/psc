@@ -85,16 +85,16 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
         propertiesForCluster0.setProperty(
                 CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServerList.get(0));
         propertiesForCluster0.setProperty(
-                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         Properties propertiesForCluster1 = new Properties();
         propertiesForCluster1.setProperty(
                 CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, bootstrapServerList.get(1));
         propertiesForCluster1.setProperty(
-                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER2_URI_PREFIX);
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
-        PscTestUtils.putDiscoveryProperties(propertiesForCluster0, bootstrapServerList.get(0), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
-        PscTestUtils.putDiscoveryProperties(propertiesForCluster1, bootstrapServerList.get(1), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER2_URI_PREFIX);
+        PscTestUtils.putDiscoveryProperties(propertiesForCluster0, bootstrapServerList.get(0), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        PscTestUtils.putDiscoveryProperties(propertiesForCluster1, bootstrapServerList.get(1), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
 
         this.clusterPropertiesMap =
                 ImmutableMap.of(
@@ -138,7 +138,7 @@ public class DynamicPscSourceExternalContext implements DataStreamSourceExternal
                         .flatMap(
                                 entry ->
                                         entry.getValue().getTopics().stream()
-                                                .map(topic -> Tuple3.of(entry.getKey(), topic, entry.getValue().getClusterUriStr() + topic)))
+                                                .map(topic -> Tuple3.of(entry.getKey(), topic, entry.getValue().getClusterUriString() + topic)))
                         .collect(Collectors.toList());
 
         for (Tuple3<String, String, String> clusterTopic : clusterTopicsTopicUris) {

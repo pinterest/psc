@@ -94,11 +94,11 @@ public abstract class PscProducerTestBase extends PscTestBaseWithFlinkWithKafkaA
             LOG.info("Starting PscProducerITCase.testCustomPartitioning()");
 
             final String defaultTopic = "defaultTopic";
-            final String defaultTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + defaultTopic;
+            final String defaultTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + defaultTopic;
             final int defaultTopicPartitions = 2;
 
             final String dynamicTopic = "dynamicTopic";
-            final String dynamicTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + dynamicTopic;
+            final String dynamicTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + dynamicTopic;
             final int dynamicTopicPartitions = 3;
 
             createTestTopic(defaultTopic, defaultTopicPartitions, 1);
@@ -214,7 +214,7 @@ public abstract class PscProducerTestBase extends PscTestBaseWithFlinkWithKafkaA
      */
     protected void testExactlyOnce(boolean regularSink, int sinksCount) throws Exception {
         final String topic = (regularSink ? "exactlyOnceTopicRegularSink" : "exactlyTopicCustomOperator") + sinksCount;
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int partition = 0;
         final int numElements = 1000;
         final int failAfterElements = 333;

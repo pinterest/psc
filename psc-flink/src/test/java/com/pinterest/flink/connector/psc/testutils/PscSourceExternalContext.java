@@ -81,7 +81,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
         this.connectorJarPaths = connectorJarPaths;
         this.bootstrapServers = bootstrapServers;
         this.topicName = randomize(TOPIC_NAME_PREFIX);
-        this.topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + this.topicName;
+        this.topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + this.topicName;
         this.splitMappingMode = splitMappingMode;
         this.adminClient = createAdminClient();
     }
@@ -97,11 +97,11 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
 
         Properties props = new Properties();
         props.setProperty(PscConfiguration.PSC_AUTO_RESOLUTION_ENABLED, "false");
-        injectDiscoveryConfigs(props, bootstrapServers, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        injectDiscoveryConfigs(props, bootstrapServers, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         builder
 //                .setBootstrapServers(bootstrapServers)
-                .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX)
+                .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                 .setProperties(props)
                 .setTopicUriPattern(TOPIC_NAME_PATTERN)
                 .setGroupId(randomize(GROUP_ID_PREFIX))
@@ -203,7 +203,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
     }
 
     private PscTopicUriPartitionDataWriter scaleOutTopic(String topicName) throws Exception {
-        final String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topicName;
+        final String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topicName;
         final Set<String> topics = adminClient.listTopics().names().get();
         if (topics.contains(topicName)) {
             final Map<String, TopicDescription> topicDescriptions =
@@ -243,7 +243,7 @@ public class PscSourceExternalContext implements DataStreamSourceExternalContext
                 PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
         pscProducerProperties.setProperty(
                 PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
-        injectDiscoveryConfigs(pscProducerProperties, bootstrapServers, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        injectDiscoveryConfigs(pscProducerProperties, bootstrapServers, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         return pscProducerProperties;
     }
 

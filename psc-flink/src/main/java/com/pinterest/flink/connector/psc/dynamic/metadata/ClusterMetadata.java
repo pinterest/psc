@@ -38,7 +38,7 @@ public class ClusterMetadata implements Serializable {
     private final Set<String> topics;
     private final Set<String> topicUris;
     private final Properties properties;
-    private final String clusterUriStr;
+    private final String clusterUriString;
 
     /**
      * Constructs the {@link ClusterMetadata} with the required properties.
@@ -50,11 +50,11 @@ public class ClusterMetadata implements Serializable {
         this.topics = topics;
         this.properties = properties;
         try {
-            this.clusterUriStr = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties).getTopicUriAsString();
+            this.clusterUriString = PscFlinkConfiguration.validateAndGetBaseClusterUri(properties).getTopicUriAsString();
         } catch (TopicUriSyntaxException e) {
             throw new RuntimeException("Invalid cluster.uri", e);
         }
-        this.topicUris = topics.stream().map(t -> clusterUriStr + t).collect(Collectors.toSet());
+        this.topicUris = topics.stream().map(t -> clusterUriString + t).collect(Collectors.toSet());
 
     }
 
@@ -85,8 +85,8 @@ public class ClusterMetadata implements Serializable {
      *
      * @return the cluster URI string.
      */
-    public String getClusterUriStr() {
-        return clusterUriStr;
+    public String getClusterUriString() {
+        return clusterUriString;
     }
 
     @Override

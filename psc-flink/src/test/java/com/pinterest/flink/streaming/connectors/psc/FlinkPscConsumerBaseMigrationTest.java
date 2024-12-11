@@ -88,13 +88,13 @@ public class FlinkPscConsumerBaseMigrationTest {
     static {
         TOPIC_URI_PARTITION_STATE.put(
                 new PscTopicUriPartition(
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "abc",
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "abc",
                         13),
                 16768L
         );
         TOPIC_URI_PARTITION_STATE.put(
                 new PscTopicUriPartition(
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "def",
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "def",
                         7),
                 987654321L
         );

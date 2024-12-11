@@ -65,13 +65,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class PscEnumeratorTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String DYNAMIC_TOPIC_NAME = "dynamic_topic";
-    private static final String DYNAMIC_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DYNAMIC_TOPIC_NAME;
+    private static final String DYNAMIC_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DYNAMIC_TOPIC_NAME;
     private static final int NUM_PARTITIONS_DYNAMIC_TOPIC = 4;
 
     private static final String TOPIC1 = "topic";
-    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC1;
+    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "pattern-topic";
-    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC2;
 
     private static final int READER0 = 0;
     private static final int READER1 = 1;
@@ -642,7 +642,7 @@ public class PscEnumeratorTest {
         Properties props =
                 new Properties(PscSourceTestEnv.getConsumerProperties(StringDeserializer.class));
         PscSourceEnumerator.deepCopyProperties(overrideProperties, props);
-        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         return new PscSourceEnumerator(
                 subscriber,

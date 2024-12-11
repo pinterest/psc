@@ -187,7 +187,7 @@ class FlinkPscInternalProducerITCase {
         String brokerConnectionString = KAFKA_CONTAINER.getBootstrapServers().split("://")[1];
         int bootstrapCount = brokerConnectionString.split(",").length;
         properties.setProperty("psc.discovery.topic.uri.prefixes",
-                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, ",", bootstrapCount));
+                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, ",", bootstrapCount));
         properties.setProperty("psc.discovery.connection.urls", brokerConnectionString);
         properties.setProperty("psc.discovery.security.protocols",
                 StringUtils.repeat("plaintext", ",", bootstrapCount));

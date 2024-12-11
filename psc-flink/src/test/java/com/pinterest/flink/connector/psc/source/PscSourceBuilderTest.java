@@ -144,7 +144,7 @@ public class PscSourceBuilderTest {
                         "Property psc.consumer.group.id is required when using committed offset for offsets initializer");
 
         // Using OffsetsInitializer#offsets to manually specify committed offset as starting offset
-        TopicUriPartition tup = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic", 0);
+        TopicUriPartition tup = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic", 0);
         assertThatThrownBy(
                         () -> {
                             final Map<TopicUriPartition, Long> offsetMap = new HashMap<>();
@@ -172,7 +172,7 @@ public class PscSourceBuilderTest {
         assertThat(customPscSubscriberBuilder.build().getPscSubscriber())
                 .isEqualTo(exampleCustomSubscriber);
 
-        assertThatThrownBy(() -> customPscSubscriberBuilder.setTopicUris(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic"))
+        assertThatThrownBy(() -> customPscSubscriberBuilder.setTopicUris(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(
                         "Cannot use topics for consumption because a ExampleCustomSubscriber is already set for consumption.");
@@ -186,7 +186,7 @@ public class PscSourceBuilderTest {
         assertThatThrownBy(
                 () ->
                         customPscSubscriberBuilder.setPartitions(
-                                Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic", 0))))
+                                Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic", 0))))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(
                         "Cannot use partitions for consumption because a ExampleCustomSubscriber is already set for consumption.");
@@ -194,8 +194,8 @@ public class PscSourceBuilderTest {
 
     private PscSourceBuilder<String> getBasicBuilder() {
         return new PscSourceBuilder<String>()
-                .setTopicUris(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic")
-                .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX)
+                .setTopicUris(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic")
+                .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                 .setDeserializer(
                         PscRecordDeserializationSchema.valueOnly(StringDeserializer.class));
     }
@@ -204,7 +204,7 @@ public class PscSourceBuilderTest {
 
         @Override
         public Set<TopicUriPartition> getSubscribedTopicUriPartitions(PscMetadataClient pscMetadataClient, TopicUri topicUri) {
-            return Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic", 0));
+            return Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic", 0));
         }
     }
 }

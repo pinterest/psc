@@ -162,7 +162,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         pscDiscoveryConfiguration = new Properties();
         int bootstrapCount = brokerConnectionString.split(",").length;
         pscDiscoveryConfiguration.setProperty("psc.discovery.topic.uri.prefixes",
-                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, ",", bootstrapCount));
+                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, ",", bootstrapCount));
         pscDiscoveryConfiguration.setProperty("psc.discovery.connection.urls", brokerConnectionString);
         pscDiscoveryConfiguration.setProperty("psc.discovery.security.protocols",
                 StringUtils.repeat("plaintext", ",", bootstrapCount));

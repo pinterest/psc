@@ -15,6 +15,7 @@ public class PscConsumerMessagesIterable<K, V> implements Iterable<PscConsumerMe
 
     List<PscConsumerMessage<K, V>> messages;
     Map<TopicUriPartition, List<PscConsumerMessage<K, V>>> messagesByTopicUriPartition;
+    PscConsumer<K, V> consumer;
 
     public PscConsumerMessagesIterable(PscConsumerPollMessageIterator<K, V> iterator) {
         this.messages = iterator.asList();
@@ -26,6 +27,11 @@ public class PscConsumerMessagesIterable<K, V> implements Iterable<PscConsumerMe
             }
             messagesByTopicUriPartition.get(topicUriPartition).add(message);
         }
+    }
+
+    public PscConsumerMessagesIterable(PscConsumerPollMessageIterator<K, V> iterator, PscConsumer<K, V> consumer) {
+        this(iterator);
+        this.consumer = consumer;
     }
 
     @Override

@@ -47,7 +47,6 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,7 +54,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Reads metadata from yaml file and lazily refreshes periodically. This implementation assumes that
@@ -207,7 +205,7 @@ public class YamlFileMetadataService implements PscMetadataService {
                 properties.setProperty(
                         PscFlinkConfiguration.CLUSTER_URI_CONFIG,
                         clusterMetadata.getClusterUriString());
-                PscTestUtils.putDiscoveryProperties(properties, clusterMetadata.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+                PscTestUtils.putDiscoveryProperties(properties, clusterMetadata.getBootstrapServers(), clusterMetadata.getClusterUriString());
                 System.out.println("properties: " + properties);
                 clusterMetadataMap.put(
                         kafkaClusterId,

@@ -78,7 +78,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
     @Test
     public void testAggregate() throws Exception {
         String topic = WORD_COUNT_TOPIC + "_" + format;
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 4, 1);
         // -------------   test   ---------------
         wordCountToUpsertPsc(topicUri, topic);
@@ -90,7 +90,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
     @Test
     public void testTemporalJoin() throws Exception {
         String topic = USERS_TOPIC + "_" + format;
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 2, 1);
         // -------------   test   ---------------
         // Kafka DefaultPartitioner's hash strategy is slightly different from Flink
@@ -114,7 +114,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
     @Test
     public void testBufferedUpsertSink() throws Exception {
         final String topic = "buffered_upsert_topic_" + format;
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
         String bootstraps = getBootstrapServers();
         env.setParallelism(1);
@@ -175,7 +175,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'\n"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -277,7 +277,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_partial_value_topic_" + format;
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1); // use single partition to guarantee orders in tests
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -310,7 +310,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'\n"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -382,7 +382,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_full_value_topic_" + format;
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1); // use single partition to guarantee orders in tests
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -417,7 +417,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'sink.parallelism' = '4'" // enable different parallelism to
                                 // check ordering
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -716,7 +716,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s'"
                                 + ")",
-                        wordCountTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps, format, format);
+                        wordCountTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, format, format);
         tEnv.executeSql(createSinkTable);
         String initialValues =
                 "INSERT INTO "
@@ -780,7 +780,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'"
                                 + ")",
-                        rawWordCountTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps, format, format));
+                        rawWordCountTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, format, format));
 
         final List<Row> result2 =
                 collectRows(tEnv.sqlQuery("SELECT * FROM " + rawWordCountTable), 8);
@@ -961,7 +961,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s'"
                                 + ")",
-                        userTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps, format, format);
+                        userTable, topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, format, format);
         tEnv.executeSql(createSinkTable);
         String initialValues =
                 "INSERT INTO " + userTable + " " + "SELECT * " + "FROM users_changelog_" + format;

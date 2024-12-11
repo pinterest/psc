@@ -47,10 +47,10 @@ public class DynamicPscSourceEnumStateSerializerTest {
 
         Properties propertiesForCluster0 = new Properties();
         propertiesForCluster0.setProperty(
-                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         Properties propertiesForCluster1 = new Properties();
         propertiesForCluster1.setProperty(
-                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         Set<PscStream> pscStreams =
                 ImmutableSet.of(

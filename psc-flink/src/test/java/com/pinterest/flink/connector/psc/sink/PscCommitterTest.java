@@ -138,7 +138,7 @@ public class PscCommitterTest {
         properties.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "PscCommitterTest");
         properties.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, CLUSTER_URI);
         properties.setProperty("psc.discovery.topic.uri.prefixes",
-                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, ",", 1));
+                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, ",", 1));
         properties.setProperty("psc.discovery.connection.urls", "http://localhost:1");
         properties.setProperty("psc.discovery.security.protocols",
                 StringUtils.repeat("plaintext", ",", 1));

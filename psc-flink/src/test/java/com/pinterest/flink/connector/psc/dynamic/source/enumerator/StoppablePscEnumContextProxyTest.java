@@ -142,7 +142,7 @@ public class StoppablePscEnumContextProxyTest {
             SplitEnumeratorContext enumContext, String contextKafkaCluster) {
 
         Properties props = new Properties();
-        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         PscStream mockStream =
                 new PscStream(

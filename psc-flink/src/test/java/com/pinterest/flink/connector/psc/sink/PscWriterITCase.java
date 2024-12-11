@@ -117,7 +117,7 @@ public class PscWriterITCase {
         metricListener = new MetricListener();
         timeService = new TriggerTimeService();
         topic = testInfo.getDisplayName().replaceAll("\\W", "");
-        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
     }
 
     @ParameterizedTest
@@ -564,8 +564,8 @@ public class PscWriterITCase {
         standardProps.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "pscWriter-tests");
         standardProps.put(PscConfiguration.PSC_AUTO_RESOLUTION_ENABLED, false);
         standardProps.put(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
-        standardProps.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
-        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        standardProps.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         return standardProps;
     }
 

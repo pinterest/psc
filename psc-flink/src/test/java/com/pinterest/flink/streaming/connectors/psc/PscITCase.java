@@ -191,7 +191,7 @@ public class PscITCase extends PscConsumerTestBaseWithKafkaAsPubSub {
     public void testTimestamps() throws Exception {
 
         final String topic = "tstopic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 3, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------

@@ -38,7 +38,7 @@ public class DynamicPscSourceSplitSerializerTest {
         DynamicPscSourceSplit dynamicPscSourceSplit =
                 new DynamicPscSourceSplit(
                         "test-cluster",
-                        new PscTopicUriPartitionSplit(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "test-topic", 3), 1));
+                        new PscTopicUriPartitionSplit(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "test-topic", 3), 1));
         DynamicPscSourceSplit dynamicPscSourceSplitAfterSerde =
                 serializer.deserialize(1, serializer.serialize(dynamicPscSourceSplit));
         assertEquals(dynamicPscSourceSplit, dynamicPscSourceSplitAfterSerde);

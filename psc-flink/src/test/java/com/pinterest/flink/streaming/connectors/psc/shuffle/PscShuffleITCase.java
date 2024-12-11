@@ -205,7 +205,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         Map<Integer, Collection<PscConsumerMessage<byte[], byte[]>>> results = testPscShuffleProducer(
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic("test_watermark_broadcast", EventTime),
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic("test_watermark_broadcast", EventTime),
                 env, numberOfPartitions, producerParallelism, numElementsPerProducer, EventTime
         );
         TypeSerializer<Tuple3<Integer, Long, Integer>> typeSerializer = createTypeSerializer(env);
@@ -272,7 +272,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testKafkaShuffle(int numElementsPerProducer,
                                   TimeCharacteristic timeCharacteristic) throws Exception {
         String topic = topic("test_simple", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 1;
         final int producerParallelism = 1;
 
@@ -303,7 +303,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testAssignedToPartition(int numElementsPerProducer,
                                          TimeCharacteristic timeCharacteristic) throws Exception {
         String topic = topic("test_assigned_to_partition", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 3;
         final int producerParallelism = 2;
 
@@ -338,7 +338,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testWatermarkIncremental(int numElementsPerProducer) throws Exception {
         TimeCharacteristic timeCharacteristic = EventTime;
         String topic = topic("test_watermark_incremental", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 3;
         final int producerParallelism = 2;
 

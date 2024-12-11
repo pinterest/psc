@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class PscSourceEnumStateSerializerTest {
 
     private static final int NUM_READERS = 10;
-    private static final String TOPIC_PREFIX = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "topic-";
+    private static final String TOPIC_PREFIX = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic-";
     private static final int NUM_PARTITIONS_PER_TOPIC = 10;
     private static final long STARTING_OFFSET = PscTopicUriPartitionSplit.EARLIEST_OFFSET;
 

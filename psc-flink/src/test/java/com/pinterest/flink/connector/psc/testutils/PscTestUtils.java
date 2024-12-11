@@ -13,7 +13,7 @@ public class PscTestUtils {
 
     public static TopicUri getClusterUri() {
         try {
-            return new KafkaTopicUri(BaseTopicUri.validate(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX));
+            return new KafkaTopicUri(BaseTopicUri.validate(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX));
         } catch (TopicUriSyntaxException e) {
             throw new RuntimeException(e);
         }

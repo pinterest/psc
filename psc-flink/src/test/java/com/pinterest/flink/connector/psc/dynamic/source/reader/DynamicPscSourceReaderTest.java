@@ -60,7 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscSourceSplit> {
     private static final String TOPIC = "DynamicPscSourceReaderTest";
-    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC;
 
     // we are testing two clusters and SourceReaderTestBase expects there to be a total of 10 splits
     private static final int NUM_SPLITS_PER_CLUSTER = 5;

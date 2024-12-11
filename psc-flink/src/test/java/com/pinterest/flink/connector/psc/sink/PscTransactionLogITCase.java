@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class PscTransactionLogITCase extends TestLogger {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSinkITCase.class);
-    private static final String TOPIC_URI_STR = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI.getTopicUriAsString() + "pscTransactionLogTest";
+    private static final String TOPIC_URI_STR = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI.getTopicUriAsString() + "pscTransactionLogTest";
     private static final String TRANSACTIONAL_ID_PREFIX = "psc-log";
 
     @ClassRule
@@ -84,7 +84,7 @@ public class PscTransactionLogITCase extends TestLogger {
         lingeringTransaction(4);
 
         final PscTransactionLog transactionLog =
-                new PscTransactionLog(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI.getTopicUriAsString(), getPscClientConfiguration());
+                new PscTransactionLog(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI.getTopicUriAsString(), getPscClientConfiguration());
         final List<PscTransactionLog.TransactionRecord> transactions = transactionLog.getTransactions();
         assertThat(transactions)
                 .containsExactlyInAnyOrder(
@@ -166,7 +166,7 @@ public class PscTransactionLogITCase extends TestLogger {
         producerProperties.put(
                 PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, IntegerSerializer.class.getName());
         producerProperties.put(PscConfiguration.PSC_PRODUCER_TRANSACTIONAL_ID, transactionalId);
-        producerProperties.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI.getTopicUriAsString());
+        producerProperties.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI.getTopicUriAsString());
         return new PscProducer<>(PscConfigurationUtils.propertiesToPscConfiguration(producerProperties));
     }
 
@@ -177,7 +177,7 @@ public class PscTransactionLogITCase extends TestLogger {
         standardProps.put(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         standardProps.put(PscConfiguration.PSC_CONSUMER_PARTITION_FETCH_MAX_BYTES, 256);
         standardProps.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "flink-tests");
-        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI.getTopicUriAsString());
+        injectDiscoveryConfigs(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI.getTopicUriAsString());
         return standardProps;
     }
 }

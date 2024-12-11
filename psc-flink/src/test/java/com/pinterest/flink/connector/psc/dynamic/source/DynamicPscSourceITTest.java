@@ -92,7 +92,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class DynamicPscSourceITTest extends TestLogger {
 
     private static final String TOPIC = "DynamicPscSourceITTest";
-    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
     private static final int NUM_PARTITIONS = 3;
     private static final int NUM_RECORDS_PER_SPLIT = 5;
 
@@ -111,7 +110,7 @@ public class DynamicPscSourceITTest extends TestLogger {
             DynamicPscSourceTestHelperWithKafkaAsPubSub.setup();
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(TOPIC, NUM_PARTITIONS, 1);
             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                    TOPIC_URI, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT);
+                    TOPIC, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT);
 
             kafkaClusterTestEnvMetadata0 =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.getClusterTestEnvMetadata(0);
@@ -158,7 +157,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                             Collections.singleton(
                                     DynamicPscSourceTestHelperWithKafkaAsPubSub.getPscStream(TOPIC)));
 
-            DynamicPscSource<Integer> dynamicKafkaSource =
+            DynamicPscSource<Integer> dynamicPscSource =
                     DynamicPscSource.<Integer>builder()
                             .setStreamIds(
                                     mockPscMetadataService.getAllStreams().stream()
@@ -174,9 +173,9 @@ public class DynamicPscSourceITTest extends TestLogger {
 
             DataStreamSource<Integer> stream =
                     env.fromSource(
-                            dynamicKafkaSource,
+                            dynamicPscSource,
                             WatermarkStrategy.noWatermarks(),
-                            "dynamic-kafka-src");
+                            "dynamic-psc-src");
             CloseableIterator<Integer> iterator = stream.executeAndCollect();
             List<Integer> results = new ArrayList<>();
             while (results.size()
@@ -254,7 +253,6 @@ public class DynamicPscSourceITTest extends TestLogger {
         void testMigrationUsingFileMetadataService() throws Throwable {
             // setup topics on two clusters
             String fixedTopic = "test-file-metadata-service";
-            String fixedTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + fixedTopic;
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(fixedTopic, NUM_PARTITIONS);
 
             // Flink job config and env
@@ -304,7 +302,7 @@ public class DynamicPscSourceITTest extends TestLogger {
             AtomicInteger latestValueOffset =
                     new AtomicInteger(
                             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                                    0, fixedTopicUri, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0));
+                                    0, fixedTopic, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0));
 
             try (CloseableIterator<Integer> iterator = stream.executeAndCollect()) {
                 CommonTestUtils.waitUtil(
@@ -317,7 +315,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                                     latestValueOffset.set(
                                             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                                                     0,
-                                                    fixedTopicUri,
+                                                    fixedTopic,
                                                     NUM_PARTITIONS,
                                                     NUM_RECORDS_PER_SPLIT,
                                                     latestValueOffset.get()));
@@ -337,7 +335,7 @@ public class DynamicPscSourceITTest extends TestLogger {
                                     latestValueOffset.set(
                                             DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                                                     1,
-                                                    fixedTopicUri,
+                                                    fixedTopic,
                                                     NUM_PARTITIONS,
                                                     NUM_RECORDS_PER_SPLIT,
                                                     latestValueOffset.get()));
@@ -379,12 +377,12 @@ public class DynamicPscSourceITTest extends TestLogger {
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(0, "stream-pattern-test-1", NUM_PARTITIONS);
             int lastValueOffset =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                            0, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "stream-pattern-test-1", NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
+                            0, "stream-pattern-test-1", NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(0, "stream-pattern-test-2", NUM_PARTITIONS);
             lastValueOffset =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                             0,
-                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "stream-pattern-test-2",
+                            "stream-pattern-test-2",
                             NUM_PARTITIONS,
                             NUM_RECORDS_PER_SPLIT,
                             lastValueOffset);
@@ -392,7 +390,7 @@ public class DynamicPscSourceITTest extends TestLogger {
             final int totalRecords =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
                             1,
-                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "stream-pattern-test-3",
+                            "stream-pattern-test-3",
                             NUM_PARTITIONS,
                             NUM_RECORDS_PER_SPLIT,
                             lastValueOffset);
@@ -408,7 +406,9 @@ public class DynamicPscSourceITTest extends TestLogger {
                             kafkaClusterTestEnvMetadata0.getStandardProperties(),
                             ImmutableSet.of("stream-pattern-test-1", "stream-pattern-test-2"));
 
-            writeClusterMetadataToFile(metadataFile, pscStreams, kafkaClusterTestEnvMetadata0.getBrokerConnectionStrings());
+            System.out.println("testEnvMetadata0: " + kafkaClusterTestEnvMetadata0.getBrokerConnectionStrings());
+
+            writeClusterMetadataToFile(metadataFile, pscStreams);
 
             // Flink job config and env
             StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -457,7 +457,8 @@ public class DynamicPscSourceITTest extends TestLogger {
                                                     kafkaClusterTestEnvMetadata1
                                                             .getStandardProperties(),
                                                     "stream-pattern-test-3"));
-                                    writeClusterMetadataToFile(metadataFile, pscStreams, kafkaClusterTestEnvMetadata1.getBrokerConnectionStrings());
+                                    System.out.println("testEnvMetadata1: " + kafkaClusterTestEnvMetadata1.getBrokerConnectionStrings());
+                                    writeClusterMetadataToFile(metadataFile, pscStreams);
                                 }
                             } catch (NoSuchElementException e) {
                                 // swallow
@@ -480,7 +481,6 @@ public class DynamicPscSourceITTest extends TestLogger {
         void testMetricsLifecycleManagement() throws Throwable {
             // setup topics on two clusters
             String fixedTopic = "test-metrics-lifecycle-mgmt";
-            String fixedTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + fixedTopic;
             DynamicPscSourceTestHelperWithKafkaAsPubSub.createTopic(fixedTopic, NUM_PARTITIONS);
 
             // Flink job config and env
@@ -529,7 +529,7 @@ public class DynamicPscSourceITTest extends TestLogger {
 
             int latestValueOffset =
                     DynamicPscSourceTestHelperWithKafkaAsPubSub.produceToKafka(
-                            0, fixedTopicUri, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
+                            0, fixedTopic, NUM_PARTITIONS, NUM_RECORDS_PER_SPLIT, 0);
             List<Integer> results = new ArrayList<>();
             try (CloseableIterator<Integer> iterator = stream.executeAndCollect()) {
                 while (results.size() < latestValueOffset && iterator.hasNext()) {
@@ -591,7 +591,7 @@ public class DynamicPscSourceITTest extends TestLogger {
             }
         }
 
-        private void writeClusterMetadataToFile(File metadataFile, Set<PscStream> pscStreams, String bootstrapServers)
+        private void writeClusterMetadataToFile(File metadataFile, Set<PscStream> pscStreams)
                 throws IOException {
             List<YamlFileMetadataService.StreamMetadata> streamMetadataList = new ArrayList<>();
             for (PscStream pscStream : pscStreams) {
@@ -603,9 +603,9 @@ public class DynamicPscSourceITTest extends TestLogger {
                     YamlFileMetadataService.StreamMetadata.ClusterMetadata clusterMetadata =
                             new YamlFileMetadataService.StreamMetadata.ClusterMetadata();
                     clusterMetadata.setClusterId(entry.getKey());
-
-                    clusterMetadata.setBootstrapServers(bootstrapServers);
+                    clusterMetadata.setBootstrapServers(entry.getValue().getProperties().getProperty("psc.discovery.connection.urls"));
                     clusterMetadata.setTopics(new ArrayList<>(entry.getValue().getTopics()));
+                    clusterMetadata.setClusterUriString(entry.getValue().getClusterUriString());
                     clusterMetadataList.add(clusterMetadata);
                 }
 

@@ -56,7 +56,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     @Test
     public void testPscDebeziumChangelogSource() throws Exception {
         final String topic = "changelog_topic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // enables MiniBatch processing to verify MiniBatch + FLIP-95, see FLINK-18769
@@ -102,8 +102,8 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'debezium-json'"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps);
         String sinkDDL =
                 "CREATE TABLE sink ("
                         + " origin_topic STRING,"
@@ -190,7 +190,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     @Test
     public void testPscCanalChangelogSource() throws Exception {
         final String topic = "changelog_canal";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // configure time zone of  the Canal Json metadata "ingestion-timestamp"
@@ -243,8 +243,8 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'canal-json'"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps);
         String sinkDDL =
                 "CREATE TABLE sink ("
                         + " origin_topic STRING,"
@@ -338,7 +338,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     @Test
     public void testPscMaxwellChangelogSource() throws Exception {
         final String topic = "changelog_maxwell";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // configure time zone of  the Maxwell Json metadata "ingestion-timestamp"
@@ -388,8 +388,8 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'maxwell-json'"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX, bootstraps);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps);
         String sinkDDL =
                 "CREATE TABLE sink ("
                         + " origin_topic STRING,"

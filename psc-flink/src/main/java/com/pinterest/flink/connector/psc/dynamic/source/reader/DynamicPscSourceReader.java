@@ -182,6 +182,7 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
         // at startup, don't add splits until we get confirmation from enumerator of the current
         // metadata
         if (!isActivelyConsumingSplits) {
+            System.out.println("here");
             pendingSplits.addAll(splits);
             return;
         }
@@ -191,6 +192,8 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
         for (DynamicPscSourceSplit split : splits) {
             clusterSplitsMap.put(split.getPubSubClusterId(), split);
         }
+
+        System.out.println("clusterSplitsMap: " + clusterSplitsMap);
 
         Set<String> clusterIds = clusterSplitsMap.keySet();
 

@@ -111,13 +111,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class PscDynamicTableFactoryTest {
 
     private static final String TOPIC = "myTopic";
-    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC;
     private static final String TOPICS = "myTopic-1;myTopic-2;myTopic-3";
-    private static final String TOPIC_URIS = Arrays.stream(TOPICS.split(";")).map(topic -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic).reduce((a, b) -> a + ";" + b).get();
+    private static final String TOPIC_URIS = Arrays.stream(TOPICS.split(";")).map(topic -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic).reduce((a, b) -> a + ";" + b).get();
     private static final String TOPIC_REGEX = "myTopic-\\d+";
     private static final List<String> TOPIC_LIST =
             Arrays.asList("myTopic-1", "myTopic-2", "myTopic-3");
-    private static final List<String> TOPIC_URI_LIST = TOPIC_LIST.stream().map(topic -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic).collect(Collectors.toList());
+    private static final List<String> TOPIC_URI_LIST = TOPIC_LIST.stream().map(topic -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic).collect(Collectors.toList());
     private static final String TEST_REGISTRY_URL = "http://localhost:8081";
     private static final String DEFAULT_VALUE_SUBJECT = TOPIC + "-value";
     private static final String DEFAULT_KEY_SUBJECT = TOPIC + "-key";
@@ -143,11 +143,11 @@ public class PscDynamicTableFactoryTest {
 
     static {
         PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         PSC_SOURCE_PROPERTIES.setProperty("partition.discovery.interval.ms", "1000");
 
         PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         PSC_FINAL_SINK_PROPERTIES.putAll(PSC_SINK_PROPERTIES);
         PSC_FINAL_SOURCE_PROPERTIES.putAll(PSC_SOURCE_PROPERTIES);
@@ -736,7 +736,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("format", "debezium-avro-confluent");
                     options.put("debezium-avro-confluent.url", TEST_REGISTRY_URL);
                 },
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "N/A");
 
         // only value.format
@@ -745,7 +745,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("value.format", "avro-confluent");
                     options.put("value.avro-confluent.url", TEST_REGISTRY_URL);
                 },
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "N/A");
 
         // value.format + key.format
@@ -757,8 +757,8 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.avro-confluent.url", TEST_REGISTRY_URL);
                     options.put("key.fields", NAME);
                 },
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DEFAULT_KEY_SUBJECT
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DEFAULT_KEY_SUBJECT
                 );
 
         // value.format + non-avro key.format
@@ -769,7 +769,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.format", "csv");
                     options.put("key.fields", NAME);
                 },
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "N/A");
 
         // non-avro value.format + key.format
@@ -781,7 +781,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.fields", NAME);
                 },
                 "N/A",
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DEFAULT_KEY_SUBJECT);
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DEFAULT_KEY_SUBJECT);
 
         // not override for 'format'
         verifyEncoderSubject(
@@ -803,7 +803,7 @@ public class PscDynamicTableFactoryTest {
                     options.put("key.avro-confluent.subject", "sub2");
                     options.put("key.fields", NAME);
                 },
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DEFAULT_VALUE_SUBJECT,
                 "sub2");
     }
 
@@ -816,7 +816,7 @@ public class PscDynamicTableFactoryTest {
         options.put("connector", PscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         optionModifier.accept(options);
 
         final RowType rowType = (RowType) SCHEMA_DATA_TYPE.getLogicalType();
@@ -1260,7 +1260,7 @@ public class PscDynamicTableFactoryTest {
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties.psc.consumer.group.id", "dummy");
-        tableOptions.put("properties.psc.cluster.uri", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        tableOptions.put("properties.psc.cluster.uri", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         tableOptions.put("scan.startup.mode", "specific-offsets");
         tableOptions.put("scan.startup.specific-offsets", PROPS_SCAN_OFFSETS);
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
@@ -1284,7 +1284,7 @@ public class PscDynamicTableFactoryTest {
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         tableOptions.put(
                 "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);
         tableOptions.put("sink.delivery-guarantee", DeliveryGuarantee.EXACTLY_ONCE.toString());
@@ -1304,7 +1304,7 @@ public class PscDynamicTableFactoryTest {
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
         tableOptions.put(
                 "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);

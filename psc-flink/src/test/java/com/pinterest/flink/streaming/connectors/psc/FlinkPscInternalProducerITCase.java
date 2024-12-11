@@ -89,7 +89,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
     @Test(timeout = 30000L)
     public void testHappyPath() throws IOException, ProducerException, ConfigurationException, ConsumerException {
         String topic = "flink-kafka-producer-happy-path";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         PscProducer<String, String> pscProducer = new FlinkPscInternalProducer<>(extraProducerProperties);
         try {
@@ -107,7 +107,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
     @Test(timeout = 30000L)
     public void testResumeTransaction() throws ProducerException, ConfigurationException, ConsumerException, IOException {
         String topic = "flink-kafka-producer-resume-transaction";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         FlinkPscInternalProducer<String, String> pscProducer = new FlinkPscInternalProducer<>(extraProducerProperties);
         try {
             PscProducerMessage<String, String> pscProducerMessage = new PscProducerMessage<>(topicUri, "42", "42");
@@ -159,21 +159,21 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
 
     @Test(timeout = 30000L, expected = IllegalStateException.class)
     public void testCommitTransactionAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "testCommitTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testCommitTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.commitTransaction();
     }
 
     @Test(timeout = 30000L, expected = ProducerException.class)
     public void testResumeTransactionAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "testAbortTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testAbortTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.resumeTransaction(pscProducer);
     }
 
     @Test(timeout = 30000L, expected = IllegalStateException.class)
     public void testAbortTransactionAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "testAbortTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testAbortTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.abortTransaction();
         pscProducer.resumeTransaction(pscProducer);
@@ -181,7 +181,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
 
     @Test(timeout = 30000L, expected = ProducerException.class)
     public void testFlushAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "testCommitTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testCommitTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.flush();
     }
@@ -189,7 +189,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
     @Test(timeout = 30000L)
     public void testProducerWhenCommitEmptyPartitionsToOutdatedTxnCoordinator() throws Exception {
         String topic = "flink-kafka-producer-txn-coordinator-changed";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topicUri, 1, 2);
         PscProducer<String, String> pscProducer = new FlinkPscInternalProducer<>(extraProducerProperties);
         try {

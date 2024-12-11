@@ -91,7 +91,7 @@ import static org.mockito.Mockito.verify;
 /** Unit tests for {@link PscSourceReader}. */
 public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartitionSplit> {
     private static final String TOPIC = "PscSourceReaderTest";
-    private static final String TOPIC_URI_STR = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + TOPIC;
+    private static final String TOPIC_URI_STR = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC;
 
     @BeforeAll
     public static void setup() throws Throwable {
@@ -614,20 +614,20 @@ public class PscSourceReaderTest extends SourceReaderTestBase<PscTopicUriPartiti
             Properties props,
             SerializableSupplier<String> rackIdSupplier)
             throws Exception {
-        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         props.setProperty(PscConfiguration.PSC_METRICS_FREQUENCY_MS, "100");
         props.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         if (!props.containsKey(PscConfiguration.PSC_CONSUMER_GROUP_ID)) {
             props.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "test-group-id");
         }
-        putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         PscSourceBuilder<Integer> builder =
                 PscSource.<Integer>builder()
                         .setClientIdPrefix("PscSourceReaderTest")
                         .setDeserializer(
                                 PscRecordDeserializationSchema.valueOnly(
                                         IntegerDeserializer.class))
-                        .setPartitions(Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "AnyTopic", 0)))
+                        .setPartitions(Collections.singleton(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "AnyTopic", 0)))
                         .setProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false")
                         .setProperties(props);
         if (boundedness == Boundedness.BOUNDED) {

@@ -48,7 +48,7 @@ public class FlinkPscProducerTest {
         properties.put(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         properties.put(PscConfiguration.PSC_METRIC_REPORTING_ENABLED, "false");
         FlinkPscProducer<Integer> pscProducer = new FlinkPscProducer<>(
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "test-topic",
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "test-topic",
                 schema,
                 properties
         );
@@ -74,7 +74,7 @@ public class FlinkPscProducerTest {
         properties.put(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         properties.put(PscConfiguration.PSC_METRIC_REPORTING_ENABLED, "false");
         FlinkPscProducer<Integer> pscProducer = new FlinkPscProducer<>(
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "test-topic",
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "test-topic",
                 schema,
                 properties,
                 FlinkPscProducer.Semantic.AT_LEAST_ONCE
@@ -101,7 +101,7 @@ public class FlinkPscProducerTest {
         properties.put(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         properties.put(PscConfiguration.PSC_METRIC_REPORTING_ENABLED, "false");
         FlinkPscProducer<Integer> pscProducer = new FlinkPscProducer<>(
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX + "test-topic",
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "test-topic",
                 new OpenTestingSerializationSchema(),
                 properties,
                 Optional.of(partitioner)
