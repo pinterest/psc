@@ -53,7 +53,7 @@ public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartition
 
     @Override
     public RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> fetch() throws IOException {
-        return new WrappedRecordsWithSplitIds(super.fetch(), super.getConsumer(), kafkaClusterId);
+        return new WrappedRecordsWithSplitIds(super.fetch(), kafkaClusterId);
     }
 
     private static final class WrappedRecordsWithSplitIds
@@ -61,15 +61,12 @@ public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartition
 
         private final RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> delegate;
         private final String kafkaClusterId;
-        private final PscConsumer<byte[], byte[]> consumer;
 
         public WrappedRecordsWithSplitIds(
                 RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> delegate,
-                PscConsumer<byte[], byte[]> consumer,
                 String kafkaClusterId) {
             this.delegate = delegate;
             this.kafkaClusterId = kafkaClusterId;
-            this.consumer = consumer;
         }
 
         @Nullable

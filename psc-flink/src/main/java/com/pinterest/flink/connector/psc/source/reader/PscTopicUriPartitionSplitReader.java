@@ -107,7 +107,7 @@ public class PscTopicUriPartitionSplitReader
     public RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> fetch() throws IOException {
         PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable;
         try {
-            consumerMessagesIterable = new PscConsumerMessagesIterable<>(consumer.poll(Duration.ofMillis(POLL_TIMEOUT)), consumer);
+            consumerMessagesIterable = new PscConsumerMessagesIterable<>(consumer.poll(Duration.ofMillis(POLL_TIMEOUT)));
         } catch (ConsumerException e) {
             // IllegalStateException will be thrown if the consumer is not assigned any partitions.
             // This happens if all assigned partitions are invalid or empty (starting offset >=
@@ -613,10 +613,5 @@ public class PscTopicUriPartitionSplitReader
         public Set<String> finishedSplits() {
             return finishedSplits;
         }
-    }
-
-    @VisibleForTesting
-    protected PscConsumer<byte[], byte[]> getConsumer() {
-        return consumer;
     }
 }
