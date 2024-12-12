@@ -368,7 +368,8 @@ public class PscShuffleITCase extends PscShuffleTestBase {
 
         // Records in a single partition are kept in order
         Collection<PscConsumerMessage<byte[], byte[]>> records = testPscShuffleProducer(
-                topic("test_serde-" + UUID.randomUUID(), timeCharacteristic),
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX
+                        + topic("test_serde-" + UUID.randomUUID(), timeCharacteristic),
                 env,
                 1,
                 1,

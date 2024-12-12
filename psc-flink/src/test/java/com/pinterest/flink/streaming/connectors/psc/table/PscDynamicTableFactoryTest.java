@@ -524,7 +524,7 @@ public class PscDynamicTableFactoryTest {
                     assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
                     OffsetsInitializer offsetsInitializer =
                             PscSourceTestUtils.getStoppingOffsetsInitializer(source);
-                    TopicUriPartition partition = new TopicUriPartition(TOPIC, 0);
+                    TopicUriPartition partition = new TopicUriPartition(TOPIC_URI, 0);
                     long offsetForTimestamp = 123L;
                     Map<TopicUriPartition, Long> partitionOffsets =
                             offsetsInitializer.getPartitionOffsets(
@@ -538,7 +538,7 @@ public class PscDynamicTableFactoryTest {
                                                         new HashMap<>();
                                                 result.put(
                                                         partition,
-                                                        1L);
+                                                        123L);
                                                 return result;
                                             },
                                             partitions -> {
@@ -895,7 +895,7 @@ public class PscDynamicTableFactoryTest {
                 .satisfies(
                         anyCauseMatches(
                                 ValidationException.class,
-                                "Option 'topic' and 'topic-pattern' shouldn't be set together."));
+                                "Option 'topic-uri' and 'topic-pattern' shouldn't be set together."));
     }
 
     @Test
@@ -1125,7 +1125,7 @@ public class PscDynamicTableFactoryTest {
                         new int[0],
                         new int[] {0, 1, 2},
                         null,
-                        Collections.singletonList(TOPIC),
+                        Collections.singletonList(TOPIC_URI),
                         null,
                         props,
                         StartupMode.SPECIFIC_OFFSETS,
@@ -1163,7 +1163,7 @@ public class PscDynamicTableFactoryTest {
                         new int[0],
                         new int[] {0, 1, 2},
                         null,
-                        Collections.singletonList(TOPIC),
+                        Collections.singletonList(TOPIC_URI),
                         null,
                         props,
                         StartupMode.SPECIFIC_OFFSETS,

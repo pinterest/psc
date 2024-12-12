@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc.internals.metrics;
 
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumer;
@@ -47,6 +48,7 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static com.pinterest.flink.connector.psc.testutils.DockerImageVersions.KAFKA;
+import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
 
 @Testcontainers
@@ -100,8 +102,11 @@ class PscMetricMutableWrapperTest {
         standardProps.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, ByteArrayDeserializer.class.getName());
         standardProps.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
         standardProps.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
+        standardProps.put(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "psc-metric-mutable-wrapper-test");
+        standardProps.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "psc-metric-mutable-wrapper-test");
         standardProps.put(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, "earliest");
         standardProps.put(PscConfiguration.PSC_CONSUMER_PARTITION_FETCH_MAX_BYTES, 256);
+        putDiscoveryProperties(standardProps, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         return PscConfigurationUtils.propertiesToPscConfiguration(standardProps);
     }
 }

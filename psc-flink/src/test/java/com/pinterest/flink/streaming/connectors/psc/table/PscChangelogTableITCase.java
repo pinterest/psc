@@ -171,13 +171,13 @@ public class PscChangelogTableITCase extends PscTableTestBase {
          */
         List<String> expected =
                 Arrays.asList(
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, scooter, 3.140]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, car battery, 8.100]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, 12-pack drill bits, 0.800]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, hammer, 2.625]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, rocks, 5.100]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, jacket, 0.600]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, spare tire, 22.200]");
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, scooter, 3.140]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, car battery, 8.100]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, 12-pack drill bits, 0.800]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, hammer, 2.625]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, rocks, 5.100]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, jacket, 0.600]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, spare tire, 22.200]");
 
         waitingExpectedResults("sink", expected, Duration.ofSeconds(10));
 
@@ -319,13 +319,13 @@ public class PscChangelogTableITCase extends PscTableTestBase {
 
         List<String> expected =
                 Arrays.asList(
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, 12-pack drill bits]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, spare tire]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:06.301, 2020-05-13T12:39:06, hammer]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:09.489, 2020-05-13T12:39:09, rocks]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:18.230, 2020-05-13T12:39:18, jacket]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, car battery]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, scooter]");
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, 12-pack drill bits]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, spare tire]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:06.301, 2020-05-13T12:39:06, hammer]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:09.489, 2020-05-13T12:39:09, rocks]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:18.230, 2020-05-13T12:39:18, jacket]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, car battery]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, scooter]");
 
         waitingExpectedResults("sink", expected, Duration.ofSeconds(10));
 
@@ -462,13 +462,13 @@ public class PscChangelogTableITCase extends PscTableTestBase {
 
         List<String> expected =
                 Arrays.asList(
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, 12-pack drill bits]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, spare tire]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:53, hammer]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:57, rocks]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:35:06, jacket]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, car battery]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, scooter]");
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, 12-pack drill bits]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, spare tire]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:53, hammer]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:57, rocks]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:35:06, jacket]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, car battery]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, scooter]");
 
         waitingExpectedResults("sink", expected, Duration.ofSeconds(10));
 

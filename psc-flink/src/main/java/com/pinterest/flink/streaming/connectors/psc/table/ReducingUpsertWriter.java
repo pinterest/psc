@@ -178,7 +178,6 @@ class ReducingUpsertWriter<WriterState, Comm>
 
         @Override
         public Long timestamp() {
-            checkNotNull(timestamp, "timestamp must to be set before retrieving it.");
             return timestamp;
         }
 

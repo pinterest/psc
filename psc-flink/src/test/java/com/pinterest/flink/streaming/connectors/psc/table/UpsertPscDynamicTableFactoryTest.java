@@ -185,7 +185,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         getFullSinkOptions(),
                         options -> {
                             options.put("sink.delivery-guarantee", "exactly-once");
-                            options.put("sink.transactional-id-prefix", "kafka-sink");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
                         });
         final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, modifiedOptions);
 
@@ -486,7 +486,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         testBoundedOffsets(
                 PscConnectorOptions.ScanBoundedMode.GROUP_OFFSETS,
                 options -> {
-                    options.put("properties.group.id", "dummy");
+                    options.put("properties.psc.consumer.group.id", "dummy");
                 },
                 source -> {
                     assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
@@ -526,7 +526,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                                                         .containsEntry(partition, 1L);
                                                 Map<TopicUriPartition, Long> result =
                                                         new HashMap<>();
-                                                result.put(partition, 1L);
+                                                result.put(partition, 123L);
                                                 return result;
                                             },
                                             partitions -> {

@@ -24,6 +24,7 @@ import com.google.common.io.Resources;
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -45,13 +46,18 @@ public class YamlFileMetadataServiceTest {
 
         Properties propertiesForCluster0 = new Properties();
         propertiesForCluster0.setProperty(
-                PscFlinkConfiguration.CLUSTER_URI_CONFIG, "bootstrap-server-0:443");
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        PscTestUtils.putDiscoveryProperties(propertiesForCluster0, "bootstrap-server-0:443", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         Properties propertiesForCluster1 = new Properties();
         propertiesForCluster1.setProperty(
-                PscFlinkConfiguration.CLUSTER_URI_CONFIG, "bootstrap-server-1:443");
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+        PscTestUtils.putDiscoveryProperties(propertiesForCluster1, "bootstrap-server-1:443", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+
         Properties propertiesForCluster2 = new Properties();
+        String cluster2Uri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX.replace("cluster1", "cluster2");
         propertiesForCluster2.setProperty(
-                PscFlinkConfiguration.CLUSTER_URI_CONFIG, "bootstrap-server-2:443");
+                PscFlinkConfiguration.CLUSTER_URI_CONFIG, cluster2Uri);
+        PscTestUtils.putDiscoveryProperties(propertiesForCluster2, "bootstrap-server-2:443", cluster2Uri);
 
         assertThat(kafkaStreams)
                 .containsExactlyInAnyOrderElementsOf(
