@@ -45,22 +45,20 @@ public class PscSerializerUpgradeTest extends TypeSerializerUpgradeTestBase<Obje
     public Collection<TestSpecification<?, ?>> createTestSpecifications() throws Exception {
 
         ArrayList<TestSpecification<?, ?>> testSpecifications = new ArrayList<>();
-		/*
-		for (MigrationVersion migrationVersion : MIGRATION_VERSIONS) {
-			testSpecifications.add(
-				new TestSpecification<>(
-					"transaction-state-serializer",
-					migrationVersion,
-					TransactionStateSerializerSetup.class,
-					TransactionStateSerializerVerifier.class));
-			testSpecifications.add(
-				new TestSpecification<>(
-					"context-state-serializer",
-					migrationVersion,
-					ContextStateSerializerSetup.class,
-					ContextStateSerializerVerifier.class));
-		}
-		 */
+        for (FlinkVersion flinkVersion : MIGRATION_VERSIONS) {
+            testSpecifications.add(
+                    new TestSpecification<>(
+                            "transaction-state-serializer",
+                            flinkVersion,
+                            TransactionStateSerializerSetup.class,
+                            TransactionStateSerializerVerifier.class));
+            testSpecifications.add(
+                    new TestSpecification<>(
+                            "context-state-serializer",
+                            flinkVersion,
+                            ContextStateSerializerSetup.class,
+                            ContextStateSerializerVerifier.class));
+        }
         return testSpecifications;
     }
 

@@ -19,6 +19,7 @@
 package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
+import com.pinterest.flink.connector.psc.testutils.PscTestUtils;
 import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -81,11 +82,14 @@ public class FlinkPscConsumerITCase {
         env.setParallelism(1);
 
         Properties properties = new Properties();
-//        properties.setProperty(
-//                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,
-//                KafkaSourceTestEnv.brokerConnectionStrings);
         properties.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "testStopWithSavepoint");
+        properties.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "testStopWithSavepoint");
         properties.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, "earliest");
+        PscTestUtils.putDiscoveryProperties(
+                properties,
+                PscSourceTestEnv.getBrokerConnectionStrings(),
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX
+        );
 
         FlinkPscConsumer<Integer> kafkaConsumer =
                 new FlinkPscConsumer<>(
