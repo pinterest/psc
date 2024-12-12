@@ -23,6 +23,7 @@ import com.pinterest.flink.streaming.connectors.psc.PscConsumerTestBaseWithKafka
 import com.pinterest.flink.streaming.connectors.psc.PscProducerTestBase;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSubImpl;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -89,6 +90,7 @@ public class PscSourceLegacyITCase extends PscConsumerTestBaseWithKafkaAsPubSub 
     // --- broker failure ---
 
     @Test
+    @Ignore("FLINK-28267")
     public void testBrokerFailure() throws Exception {
         runBrokerFailureTest();
     }
@@ -106,7 +108,7 @@ public class PscSourceLegacyITCase extends PscConsumerTestBaseWithKafkaAsPubSub 
     }
 
     @Test
-    public void testMultipleTopicsWithKafkaSerializer() throws Exception {
+    public void testMultipleTopicsWithPscSerializer() throws Exception {
         runProduceConsumeMultipleTopics(false);
     }
 

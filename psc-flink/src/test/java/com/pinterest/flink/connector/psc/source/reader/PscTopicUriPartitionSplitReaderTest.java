@@ -313,7 +313,7 @@ public class PscTopicUriPartitionSplitReaderTest {
                                                                 new TopicUriPartition(TOPIC_URI1, 0),
                                                                 PscTopicUriPartitionSplit
                                                                         .COMMITTED_OFFSET)))))
-                .isInstanceOf(RuntimeException.class)
+                .cause()
                 .hasCauseInstanceOf(NoOffsetForPartitionException.class)
                 .hasMessageContaining("Undefined offset with no reset policy for partition");
     }
@@ -352,7 +352,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         // Here we call the helper function directly, because the KafkaPartitionSplitReader
         // doesn't allow us to examine the final ConsumerConfig object
         reader.setConsumerClientRack(properties, rackId);
-        assertThat(properties.get(ConsumerConfig.CLIENT_RACK_CONFIG)).isEqualTo(rackId);
+        assertThat(properties.get(PscConfiguration.PSC_CONSUMER_CLIENT_RACK)).isEqualTo(rackId);
     }
 
     @ParameterizedTest
@@ -368,7 +368,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         // Here we call the helper function directly, because the KafkaPartitionSplitReader
         // doesn't allow us to examine the final ConsumerConfig object
         reader.setConsumerClientRack(properties, rackId);
-        assertThat(properties.containsKey(ConsumerConfig.CLIENT_RACK_CONFIG)).isFalse();
+        assertThat(properties.containsKey(PscConfiguration.PSC_CONSUMER_CLIENT_RACK)).isFalse();
     }
 
     // ------------------

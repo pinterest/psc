@@ -639,7 +639,9 @@ public class PscSourceEnumerator
         @Override
         public Map<TopicUriPartition, Long> offsetsForTimes(
                 Map<TopicUriPartition, Long> timestampsToSearch) {
-            return listOffsetsForTimestamps(timestampsToSearch);
+            return listOffsetsForTimestamps(timestampsToSearch).entrySet().stream()
+                    .filter(entry -> entry.getValue() >= 0)
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         }
 
         @Override

@@ -90,7 +90,7 @@ public class OffsetsInitializerTest {
         assertThat(offsets).hasSameSizeAs(partitions);
         assertThat(offsets.keySet()).containsAll(partitions);
         for (long offset : offsets.values()) {
-            assertThat(offset).isEqualTo(PscTopicUriPartitionSplit.LATEST_OFFSET);
+            assertThat(offset).isEqualTo(PscSourceTestEnv.NUM_RECORDS_PER_PARTITION);
         }
         assertThat(initializer.getAutoOffsetResetStrategy())
                 .isEqualTo(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST);
@@ -123,7 +123,7 @@ public class OffsetsInitializerTest {
     @Test
     public void testTimestampOffsetsInitializerForEmptyPartitions() {
         OffsetsInitializer initializer = OffsetsInitializer.timestamp(2001);
-        List<TopicUriPartition> partitions = PscSourceTestEnv.getPartitionsForTopic(EMPTY_TOPIC3);
+        List<TopicUriPartition> partitions = PscSourceTestEnv.getPartitionsForTopic(EMPTY_TOPIC_URI3);
         Map<TopicUriPartition, Long> expectedOffsets =
                 partitions.stream().collect(Collectors.toMap(tp -> tp, tp -> 0L));
         assertThat(initializer.getPartitionOffsets(partitions, retriever))

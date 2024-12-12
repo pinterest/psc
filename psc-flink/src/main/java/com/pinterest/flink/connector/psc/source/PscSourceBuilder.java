@@ -148,7 +148,7 @@ public class PscSourceBuilder<OUT> {
      * @see com.pinterest.psc.consumer.PscConsumer#subscribe(Collection)
      */
     public PscSourceBuilder<OUT> setTopicUris(List<String> topicUris) {
-        ensureSubscriberIsNull("topics");
+        ensureSubscriberIsNull("topicUris");
         subscriber = PscSubscriber.getTopicUriListSubscriber(topicUris);
         return this;
     }

@@ -160,14 +160,15 @@ public class PscSourceBuilderTest {
     }
 
     @Test
-    public void testSettingCustomKafkaSubscriber() {
+    public void testSettingCustomPscSubscriber() {
         ExampleCustomSubscriber exampleCustomSubscriber = new ExampleCustomSubscriber();
         PscSourceBuilder<String> customPscSubscriberBuilder =
                 new PscSourceBuilder<String>()
                         .setPscSubscriber(exampleCustomSubscriber)
                         .setDeserializer(
                                 PscRecordDeserializationSchema.valueOnly(
-                                        StringDeserializer.class));
+                                        StringDeserializer.class))
+                        .setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         assertThat(customPscSubscriberBuilder.build().getPscSubscriber())
                 .isEqualTo(exampleCustomSubscriber);
@@ -175,13 +176,13 @@ public class PscSourceBuilderTest {
         assertThatThrownBy(() -> customPscSubscriberBuilder.setTopicUris(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(
-                        "Cannot use topics for consumption because a ExampleCustomSubscriber is already set for consumption.");
+                        "Cannot use topicUris for consumption because a ExampleCustomSubscriber is already set for consumption.");
 
         assertThatThrownBy(
                 () -> customPscSubscriberBuilder.setTopicUriPattern(Pattern.compile(".+")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(
-                        "Cannot use topic pattern for consumption because a ExampleCustomSubscriber is already set for consumption.");
+                        "Cannot use topicUri pattern for consumption because a ExampleCustomSubscriber is already set for consumption.");
 
         assertThatThrownBy(
                 () ->

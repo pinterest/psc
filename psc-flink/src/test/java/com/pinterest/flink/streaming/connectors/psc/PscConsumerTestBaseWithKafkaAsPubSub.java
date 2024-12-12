@@ -784,16 +784,16 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
      */
     @RetryOnException(times = 2, exception = org.apache.kafka.common.errors.NotLeaderForPartitionException.class)
     public void runSimpleConcurrentProducerConsumerTopology() throws Exception {
-        final String topic = "concurrentProducerConsumerTopic_" + UUID.randomUUID().toString();
+        final String topic = "concurrentProducerConsumerTopic_" + UUID.randomUUID();
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
-        final String additionalEmptyTopic = "additionalEmptyTopic_" + UUID.randomUUID().toString();
+        final String additionalEmptyTopic = "additionalEmptyTopic_" + UUID.randomUUID();
         final String additionalEmptyTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + additionalEmptyTopic;
 
         final int parallelism = 3;
         final int elementsPerPartition = 100;
         final int totalElements = parallelism * elementsPerPartition;
 
-        createTestTopic(topicUri, parallelism, 2);
+        createTestTopic(topicUri, parallelism, 1);
         createTestTopic(additionalEmptyTopic, parallelism, 1); // create an empty topic which will
         // remain empty all the time
 
@@ -1211,7 +1211,7 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
             final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
             topicUris.add(topicUri);
             // create topic
-            createTestTopic(topic, i + 1 /* partitions */, 1);
+            createTestTopic(topicUri, i + 1 /* partitions */, 1);
         }
 
         // before FLINK-6078 the RemoteExecutionEnvironment set the parallelism to 1 as
@@ -1433,19 +1433,26 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final String topic = "brokerFailureTestTopic";
         final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
+        // Start a temporary multi-broker cluster.
+        // This test case relies on stopping a broker and switching partition leader to another
+        // during the test, so single-broker cluster (kafkaServer) could not fulfill the
+        // requirement.
+        PscTestEnvironmentWithKafkaAsPubSub multiBrokerCluster = constructKafkaTestEnvionment();
+        multiBrokerCluster.prepare(PscTestEnvironmentWithKafkaAsPubSub.createConfig().setKafkaServersNumber(3));
+
         final int parallelism = 2;
         final int numElementsPerPartition = 1000;
         final int totalElements = parallelism * numElementsPerPartition;
         final int failAfterElements = numElementsPerPartition / 3;
 
-        createTestTopic(topic, parallelism, 2);
+        multiBrokerCluster.createTestTopic(topicUri, parallelism, 2);
 
         DataGenerators.generateRandomizedIntegerSequence(
-                StreamExecutionEnvironment.getExecutionEnvironment(), pscTestEnvWithKafka, topicUri, parallelism,
+                StreamExecutionEnvironment.getExecutionEnvironment(), multiBrokerCluster, topicUri, parallelism,
                 numElementsPerPartition, true);
 
         // find leader to shut down
-        int leaderId = pscTestEnvWithKafka.getLeaderToShutDown(topic);
+        int leaderId = multiBrokerCluster.getLeaderToShutDown(topic);
 
         LOG.info("Leader to shutdown {}", leaderId);
 
@@ -1460,21 +1467,22 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         env.setRestartStrategy(RestartStrategies.noRestart());
 
         Properties pscConsumerConfiguration = new Properties();
-        pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
-        pscConsumerConfiguration.putAll(securePscConsumerConfiguration);
-        pscConsumerConfiguration.putAll(pscDiscoveryConfiguration);
+        pscConsumerConfiguration.putAll(multiBrokerCluster.getStandardPscConsumerConfiguration());
+        pscConsumerConfiguration.putAll(multiBrokerCluster.getSecurePscConsumerConfiguration());
+        pscConsumerConfiguration.putAll(multiBrokerCluster.getPscDiscoveryConfiguration());
 
         getStream(env, topicUri, schema, pscConsumerConfiguration)
                 .map(new PartitionValidatingMapper(parallelism, 1))
                 .map(new BrokerKillingMapper<Integer>(leaderId, failAfterElements))
                 .addSink(new ValidatingExactlyOnceSink(totalElements)).setParallelism(1);
 
-        BrokerKillingMapper.killedLeaderBefore = false;
-        tryExecute(env, "Broker failure once test");
-
-        // start a new broker:
-        pscTestEnvWithKafka.restartBroker(leaderId);
-        //deleteTestTopic(topic);
+        try {
+            BrokerKillingMapper.killedLeaderBefore = false;
+            tryExecute(env, "Broker failure once test");
+        } finally {
+            // Tear down the temporary cluster anyway
+            multiBrokerCluster.shutdown();
+        }
     }
 
     public void runKeyValueTest() throws Exception {

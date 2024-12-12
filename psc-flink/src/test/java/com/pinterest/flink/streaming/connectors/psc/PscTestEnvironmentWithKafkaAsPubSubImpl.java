@@ -23,6 +23,7 @@ import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDes
 import com.pinterest.flink.connector.psc.testutils.DockerImageVersions;
 import com.pinterest.flink.connector.psc.testutils.PscUtil;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -47,7 +48,6 @@ import org.apache.flink.core.testutils.CommonTestUtils;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.operators.StreamSink;
-import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
@@ -78,7 +78,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -494,7 +493,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
             brokers.put(brokerID, broker);
         }
         new ArrayList<>(brokers.values()).parallelStream().forEach(GenericContainer::start);
-        LOG.info("{} brokers started", numBrokers);
+        LOG.info("{} brokers started: {}", numBrokers, brokers.keySet());
         brokerConnectionString =
                 brokers.values().stream()
                         .map(KafkaContainer::getBootstrapServers)

@@ -308,12 +308,12 @@ public class PscEnumeratorTest {
 
             // new partitions use EARLIEST_OFFSET, while initial partitions use LATEST_OFFSET
             List<PscTopicUriPartitionSplit> initialPartitionAssign =
-                    getAllAssignSplits(context, PRE_EXISTING_TOPICS);
+                    getAllAssignSplits(context, PRE_EXISTING_TOPIC_URIS);
             assertThat(initialPartitionAssign)
                     .extracting(PscTopicUriPartitionSplit::getStartingOffset)
                     .containsOnly((long) PscSourceTestEnv.NUM_RECORDS_PER_PARTITION);
             List<PscTopicUriPartitionSplit> newPartitionAssign =
-                    getAllAssignSplits(context, Collections.singleton(DYNAMIC_TOPIC_NAME));
+                    getAllAssignSplits(context, Collections.singleton(DYNAMIC_TOPIC_URI));
             assertThat(newPartitionAssign)
                     .extracting(PscTopicUriPartitionSplit::getStartingOffset)
                     .containsOnly(PscTopicUriPartitionSplit.EARLIEST_OFFSET);
@@ -729,9 +729,9 @@ public class PscEnumeratorTest {
     }
 
 
-    /** get all assigned partition splits of topics. */
+    /** get all assigned partition splits of topicUris. */
     private List<PscTopicUriPartitionSplit> getAllAssignSplits(
-            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context, Set<String> topics) {
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context, Set<String> topicUris) {
 
         List<PscTopicUriPartitionSplit> allSplits = new ArrayList<>();
         List<SplitsAssignment<PscTopicUriPartitionSplit>> splitsAssignmentSequence =
@@ -740,7 +740,7 @@ public class PscEnumeratorTest {
             List<PscTopicUriPartitionSplit> splitsOfOnceAssignment =
                     splitsAssignment.assignment().values().stream()
                             .flatMap(splits -> splits.stream())
-                            .filter(split -> topics.contains(split.getTopicUri()))
+                            .filter(split -> topicUris.contains(split.getTopicUri()))
                             .collect(Collectors.toList());
             allSplits.addAll(splitsOfOnceAssignment);
         }
