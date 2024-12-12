@@ -297,7 +297,7 @@ public class PscSinkITCase extends TestLogger {
             assertThat(e.getCause().getCause().getMessage())
                     .contains("Exceeded checkpoint tolerable failure");
         }
-        assertThat(deserializeValues(drainAllRecordsFromTopic(topic, true))).isEmpty();
+        assertThat(deserializeValues(drainAllRecordsFromTopic(topicUriStr, true))).isEmpty();
 
         // Second job aborts all transactions from previous runs with higher parallelism
         config.set(CoreOptions.DEFAULT_PARALLELISM, 1);

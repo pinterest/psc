@@ -125,7 +125,10 @@ public class PscWriterITCase {
     public void testRegisterMetrics(DeliveryGuarantee guarantee) throws Exception {
         try (final PscWriter<Integer> ignored =
                 createWriterWithConfiguration(getPscClientConfiguration(), guarantee)) {
-            ignored.write(1, SINK_WRITER_CONTEXT);  // write one record to trigger backendProducer creation
+            if (guarantee != DeliveryGuarantee.EXACTLY_ONCE) {
+                // write one record to trigger backend producer creation
+                ignored.write(1, SINK_WRITER_CONTEXT);
+            }
             assertThat(metricListener.getGauge(PSC_METRIC_WITH_GROUP_NAME).isPresent()).isTrue();
         }
     }
