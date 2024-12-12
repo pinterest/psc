@@ -837,17 +837,17 @@ public class DynamicPscSourceEnumeratorTest {
                 clusterToTopicPartition.values().stream()
                         .flatMap(Collection::stream)
                         .collect(Collectors.toSet());
-        for (Set<String> topics : clusterTopicMap.values()) {
-            for (String topic : topics) {
-                Set<TopicUriPartition> expectedTopicPartitions = new HashSet<>();
+        Set<TopicUriPartition> expectedTopicPartitions = new HashSet<>();
+        for (Map.Entry<String, Set<String>> entry : clusterTopicMap.entrySet()) {
+            for (String topic : entry.getValue()) {
                 for (int i = 0; i < NUM_SPLITS_PER_CLUSTER; i++) {
-                    expectedTopicPartitions.add(new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic, i));
+                    expectedTopicPartitions.add(new TopicUriPartition(kafkaStream.getClusterMetadataMap().get(entry.getKey()).getClusterUriString() + topic, i));
                 }
-                assertThat(assignedTopicPartitionSet)
-                        .as("splits must contain all topics and 2 partitions per topic")
-                        .containsExactlyInAnyOrderElementsOf(expectedTopicPartitions);
             }
         }
+        assertThat(assignedTopicPartitionSet)
+                .as("splits must contain all topics and 2 partitions per topic")
+                .containsExactlyInAnyOrderElementsOf(expectedTopicPartitions);
     }
 
     private Map<Integer, Set<DynamicPscSourceSplit>> getReaderAssignments(

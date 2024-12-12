@@ -25,6 +25,7 @@ import com.pinterest.flink.connector.psc.dynamic.source.split.DynamicPscSourceSp
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.streaming.connectors.psc.DynamicPscSourceTestHelperWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.PscTestBaseWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
@@ -60,7 +61,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscSourceSplit> {
     private static final String TOPIC = "DynamicPscSourceReaderTest";
-    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC;
 
     // we are testing two clusters and SourceReaderTestBase expects there to be a total of 10 splits
     private static final int NUM_SPLITS_PER_CLUSTER = 5;
@@ -316,16 +316,19 @@ public class DynamicPscSourceReaderTest extends SourceReaderTestBase<DynamicPscS
 
         String kafkaClusterId;
         int splitIdForCluster = splitId % NUM_SPLITS_PER_CLUSTER;
+        int clusterIdx;
         if (splitId < NUM_SPLITS_PER_CLUSTER) {
-            kafkaClusterId = "pubsub-cluster-0";
+            clusterIdx = 0;
         } else {
-            kafkaClusterId = "pubsub-cluster-1";
+            clusterIdx = 1;
         }
+
+        kafkaClusterId = "pubsub-cluster-" + clusterIdx;
 
         return new DynamicPscSourceSplit(
                 kafkaClusterId,
                 new PscTopicUriPartitionSplit(
-                        new TopicUriPartition(TOPIC_URI, splitIdForCluster), 0L, stoppingOffset));
+                        new TopicUriPartition(PscTestBaseWithKafkaAsPubSub.clusterUris.get(clusterIdx) + TOPIC, splitIdForCluster), 0L, stoppingOffset));
     }
 
     @Override
