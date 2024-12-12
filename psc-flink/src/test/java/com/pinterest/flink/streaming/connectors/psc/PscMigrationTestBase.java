@@ -59,7 +59,7 @@ public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub 
             new KeyedSerializationSchemaWrapper<>(integerSerializationSchema);
 
     /**
-     * Instructions: change this to the corresponding savepoint version to be written (e.g. {@link MigrationVersion#v1_3} for 1.3)
+     * Instructions: change this to the corresponding savepoint version to be written (e.g. {@link FlinkVersion#v1_3} for 1.3)
      * and remove all @Ignore annotations on writeSnapshot() methods to generate savepoints
      * Note: You should generate the savepoint based on the release branch instead of the master.
      */

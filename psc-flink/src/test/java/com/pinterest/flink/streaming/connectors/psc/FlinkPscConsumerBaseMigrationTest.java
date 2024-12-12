@@ -117,7 +117,9 @@ public class FlinkPscConsumerBaseMigrationTest {
                 FlinkVersion.v1_13,
                 FlinkVersion.v1_14,
                 FlinkVersion.v1_15,
-                FlinkVersion.v1_16
+                FlinkVersion.v1_16,
+                FlinkVersion.v1_17,
+                FlinkVersion.v1_18
         );
     }
 
