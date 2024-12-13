@@ -56,6 +56,8 @@ public class KafkaToPscMessageIteratorConverter<K, V> extends ToPscMessageIterat
 
     @Override
     public PscConsumerPollMessageIterator<K, V> iteratorFor(TopicUriPartition topicUriPartition) {
+        if (!kafkaTopicToTopicUri.containsKey(topicUriPartition.getTopicUri().getTopic()))
+            return null;
         TopicPartition topicPartition = new TopicPartition(topicUriPartition.getTopicUri().getTopic(), topicUriPartition.getPartition());
         return new KafkaToPscMessageIteratorConverter<>(
                 perTopicPartitionKafkaConsumerRecordIterator == null ?

@@ -2199,7 +2199,7 @@ public class TestOneKafkaBackend {
         PscConsumer<byte[], byte[]> pscConsumer = new PscConsumer<>(pscConfiguration);
         String topicUriStr = String.format("%s:%s%s:kafka:env:cloud_%s::%s:%s",
                 kafkaCluster.getTransport(), TopicUri.SEPARATOR, TopicUri.STANDARD, kafkaCluster.getRegion(), kafkaCluster.getCluster(), "not_there");
-        assertNull(pscConsumer.getPartitions(topicUriStr));
+        assertTrue(pscConsumer.getPartitions(topicUriStr).isEmpty());
         pscConsumer.close();
     }
 
