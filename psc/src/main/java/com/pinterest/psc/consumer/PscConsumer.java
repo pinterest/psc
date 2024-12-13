@@ -1902,7 +1902,9 @@ public class PscConsumer<K, V> implements AutoCloseable {
         ensureOpen();
         Map<MetricName, Metric> metrics = new ConcurrentHashMap<>();
         for (PscBackendConsumer<K, V> backendConsumer : backendConsumers) {
-            metrics.putAll(backendConsumer.metrics());
+            synchronized (backendConsumer.metrics()) {
+                metrics.putAll(backendConsumer.metrics());
+            }
         }
         return metrics;
     }
