@@ -205,6 +205,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
 
         assertExactlyOnceForTopicUri(createProperties(), topicUri, 0, Arrays.asList(42, 43));
 
+        Thread.sleep(5000); // wait for broker to start up before deleting topic
         deleteTestTopic(topic);
         checkProducerLeak();
     }
