@@ -1,4 +1,4 @@
-name: PSC-Java Build
+name: ITCase Tests
 
 on: [pull_request]
 
