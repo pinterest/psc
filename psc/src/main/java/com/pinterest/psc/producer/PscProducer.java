@@ -772,7 +772,7 @@ public class PscProducer<K, V> implements Closeable {
      */
     @Override
     public void close() throws IOException {
-        close(Duration.ofMillis(0L));
+        close(Duration.ofMillis(Long.MAX_VALUE));
     }
 
     /**

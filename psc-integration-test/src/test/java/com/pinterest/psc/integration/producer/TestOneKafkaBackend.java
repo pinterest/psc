@@ -412,7 +412,7 @@ public class TestOneKafkaBackend {
         PscProducerMessage<Integer, Integer> producerMessage = new PscProducerMessage<>(topicUriStr1, 0);
         Exception e = assertThrows(ProducerException.class, () -> pscProducer.send(producerMessage));
         assertEquals(IllegalStateException.class, e.getCause().getClass());
-        pscProducer.close();
+        pscProducer.close(Duration.ofSeconds(1));
     }
 
     /**
