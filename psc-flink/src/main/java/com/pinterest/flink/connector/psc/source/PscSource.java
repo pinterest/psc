@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.connector.psc.source;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumStateSerializer;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumerator;
@@ -34,6 +35,7 @@ import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplitS
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -229,7 +231,13 @@ public class PscSource<OUT>
     @Internal
     @Override
     public SimpleVersionedSerializer<PscTopicUriPartitionSplit> getSplitSerializer() {
-        return new PscTopicUriPartitionSplitSerializer();
+        PscTopicUriPartitionSplitSerializer serializer = new PscTopicUriPartitionSplitSerializer();
+        try {
+            serializer.setClusterUri(PscFlinkConfiguration.validateAndGetBaseClusterUri(props).getTopicUriAsString());
+            return serializer;
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Failed to set clusterUri for splitSerializer", e);
+        }
     }
 
     @Internal

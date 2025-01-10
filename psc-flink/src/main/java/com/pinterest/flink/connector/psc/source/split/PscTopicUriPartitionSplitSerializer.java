@@ -18,9 +18,13 @@
 
 package com.pinterest.flink.connector.psc.source.split;
 
+import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -36,11 +40,21 @@ import java.io.IOException;
 public class PscTopicUriPartitionSplitSerializer
         implements SimpleVersionedSerializer<PscTopicUriPartitionSplit> {
 
+    private static final Logger LOG = LoggerFactory.getLogger(PscTopicUriPartitionSplitSerializer.class);
     private static final int CURRENT_VERSION = 0;
+    private String clusterUri = null;
 
     @Override
     public int getVersion() {
         return CURRENT_VERSION;
+    }
+
+    public void setClusterUri(String clusterUri) {
+        LOG.info("Setting cluster URI: " + clusterUri);
+        if (clusterUri != null) {
+            throw new IllegalArgumentException("Cluster URI can only be set once.");
+        }
+        this.clusterUri = clusterUri;
     }
 
     @Override
@@ -58,9 +72,24 @@ public class PscTopicUriPartitionSplitSerializer
 
     @Override
     public PscTopicUriPartitionSplit deserialize(int version, byte[] serialized) throws IOException {
+        LOG.info("Deserializing split with version: " + version);
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serialized);
                 DataInputStream in = new DataInputStream(bais)) {
             String topicUri = in.readUTF();
+            try {
+                // try to validate topicUri
+                BaseTopicUri.validate(topicUri);
+            } catch (TopicUriSyntaxException e) {
+                LOG.info("Detected a possible Flink-Kafka checkpoint with topic: " + topicUri);
+                // we are likely reading from a Flink-Kafka checkpoint here. To support recovering from Flink-Kafka
+                // checkpoints, we will assume that topicUri here is actually just the topic name, and prepend the
+                // cluster URI to it.
+                if (clusterUri == null) {
+                    throw new IllegalStateException("Cluster URI not set. Cannot deserialize split.");
+                }
+                topicUri = clusterUri + topicUri;
+                LOG.info("Prepending cluster URI to topic so that topicUri is now: " + topicUri);
+            }
             int partition = in.readInt();
             long offset = in.readLong();
             long stoppingOffset = in.readLong();
