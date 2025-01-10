@@ -644,6 +644,10 @@ public class PscConfigurationInternal {
         return getSubsetConfiguration(PscConfiguration.PSC_PRODUCER);
     }
 
+    public PscConfiguration getMetadataClientConfiguration() {
+        return getSubsetConfiguration(PscConfiguration.PSC_METADATA);
+    }
+
     public PscConfiguration getMetricsConfiguration() {
         return getSubsetConfiguration(PscConfiguration.PSC_METRICS);
     }
