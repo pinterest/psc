@@ -51,9 +51,6 @@ public class PscTopicUriPartitionSplitSerializer
 
     public void setClusterUri(String clusterUri) {
         LOG.info("Setting cluster URI: " + clusterUri);
-        if (clusterUri != null) {
-            throw new IllegalArgumentException("Cluster URI can only be set once.");
-        }
         this.clusterUri = clusterUri;
     }
 
