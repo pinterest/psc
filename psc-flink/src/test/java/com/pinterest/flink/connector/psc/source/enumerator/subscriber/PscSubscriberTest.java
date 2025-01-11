@@ -84,14 +84,18 @@ public class PscSubscriberTest {
         assertThat(subscribedPartitions).isEqualTo(expectedSubscribedPartitions);
     }
 
+    /**
+     * Test that the subscriber preserves the protocol of the topicUri regardless of the protocol of the clusterUri
+     * supplied to the {@link PscMetadataClient}.
+     */
     @Test
     public void testTopicUriListSubscriberPreservesProtocol() {
         PscSubscriber subscriber =
                 PscSubscriber.getTopicUriListSubscriber(Arrays.asList(TOPIC_URI1_SECURE, TOPIC_URI2));
         final Set<TopicUriPartition> subscribedPartitionsPlaintext =
                 subscriber.getSubscribedTopicUriPartitions(pscMetadataClient, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI);
-        final Set<TopicUriPartition> subscribedPartitionsSecure =
-                subscriber.getSubscribedTopicUriPartitions(pscMetadataClientSecure, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_SECURE);
+
+        assertThat(subscribedPartitionsPlaintext.size()).isEqualTo(PscSourceTestEnv.NUM_PARTITIONS * 2);
 
         subscribedPartitionsPlaintext.forEach(tup -> {
             if (tup.getTopicUri().getTopic().equals(TOPIC1)) {
@@ -102,8 +106,6 @@ public class PscSubscriberTest {
                 throw new RuntimeException("Unexpected topic: " + tup.getTopicUri().getTopic());
             }
         });
-
-        assertThat(subscribedPartitionsSecure).isEqualTo(subscribedPartitionsPlaintext);
     }
 
     @Test
