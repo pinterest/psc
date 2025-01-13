@@ -63,6 +63,7 @@ public class PscTopicUriPartitionSplitSerializer
             out.writeLong(split.getStartingOffset());
             out.writeLong(split.getStoppingOffset().orElse(PscTopicUriPartitionSplit.NO_STOPPING_OFFSET));
             out.flush();
+            LOG.info("Serializing split with version: " + getVersion() + " for topicUri-partition: " + split.getTopicUri() + "-" + split.getPartition());
             return baos.toByteArray();
         }
     }
@@ -70,6 +71,7 @@ public class PscTopicUriPartitionSplitSerializer
     @Override
     public PscTopicUriPartitionSplit deserialize(int version, byte[] serialized) throws IOException {
         LOG.info("Deserializing split with version: " + version);
+        Thread.dumpStack();
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serialized);
                 DataInputStream in = new DataInputStream(bais)) {
             String topicUri = in.readUTF();
@@ -90,6 +92,7 @@ public class PscTopicUriPartitionSplitSerializer
             int partition = in.readInt();
             long offset = in.readLong();
             long stoppingOffset = in.readLong();
+            LOG.info("Deserialized split for topicUri-partition: " + topicUri + "-" + partition + " for offset=" + offset + " and stopping offset=" + stoppingOffset);
             return new PscTopicUriPartitionSplit(
                     new TopicUriPartition(topicUri, partition), offset, stoppingOffset);
         }
