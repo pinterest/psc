@@ -356,6 +356,8 @@ public class PscSourceEnumerator
             pendingPartitionSplitAssignment
                     .computeIfAbsent(ownerReader, r -> new HashSet<>())
                     .add(split);
+            LOG.info("Adding split {} to reader {}", split, ownerReader);
+            Thread.dumpStack();
         }
         LOG.debug(
                 "Assigned {} to {} readers of consumer group {}.",
@@ -425,6 +427,7 @@ public class PscSourceEnumerator
                         removedPartitions.add(tp);
                     }
                 };
+        LOG.info("Assigned partitions: {}", assignedPartitions);
         assignedPartitions.forEach(dedupOrMarkAsRemoved);
         pendingPartitionSplitAssignment.forEach(
                 (reader, splits) ->
