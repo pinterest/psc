@@ -18,14 +18,12 @@
 
 package com.pinterest.flink.connector.psc.dynamic.source.enumerator;
 
-import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.dynamic.metadata.ClusterMetadata;
 import com.pinterest.flink.connector.psc.dynamic.metadata.PscStream;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumStateSerializer;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
-import org.apache.flink.util.Preconditions;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -43,7 +41,17 @@ import java.util.Set;
 public class DynamicPscSourceEnumStateSerializer
         implements SimpleVersionedSerializer<DynamicPscSourceEnumState> {
 
-    private static final int VERSION_1 = 1;
+    /**
+     * We set 100,000 as the base version for PSC serializer. This is set to a large number to avoid
+     * conflicts with native Flink-Kafka serializer versions which start from 0. DO NOT CHANGE THIS VALUE.
+     */
+    private static final int BASE_PSC_VERSION = 100_000;
+
+    /**
+     * The current version for PSC serializer. This can be incremented by 1 every time the
+     * serialization format changes.
+     */
+    private static final int CURRENT_VERSION = BASE_PSC_VERSION;
 
     private final PscSourceEnumStateSerializer pscSourceEnumStateSerializer;
 
@@ -53,7 +61,7 @@ public class DynamicPscSourceEnumStateSerializer
 
     @Override
     public int getVersion() {
-        return VERSION_1;
+        return CURRENT_VERSION;
     }
 
     @Override
@@ -90,7 +98,7 @@ public class DynamicPscSourceEnumStateSerializer
     @Override
     public DynamicPscSourceEnumState deserialize(int version, byte[] serialized)
             throws IOException {
-        if (version == VERSION_1) {
+        if (version == CURRENT_VERSION) {
             try (ByteArrayInputStream bais = new ByteArrayInputStream(serialized);
                     DataInputStream in = new DataInputStream(bais)) {
                 Set<PscStream> pscStreams = deserialize(in);
@@ -116,7 +124,7 @@ public class DynamicPscSourceEnumStateSerializer
         throw new IOException(
                 String.format(
                         "The bytes are serialized with version %d, "
-                                + "while this deserializer only supports version up to %d",
+                                + "while this deserializer only supports version %d",
                         version, getVersion()));
     }
 

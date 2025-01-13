@@ -25,6 +25,8 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connector.base.source.utils.SerdeUtils;
 import org.apache.flink.core.io.SimpleVersionedSerializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -44,6 +46,8 @@ import java.util.Set;
 public class PscSourceEnumStateSerializer
         implements SimpleVersionedSerializer<PscSourceEnumState> {
 
+    private static final Logger LOG = LoggerFactory.getLogger(PscSourceEnumStateSerializer.class);
+
     /**
      * state of VERSION_0 contains splitAssignments, which is a mapping from subtask ids to lists of
      * assigned splits.
@@ -56,8 +60,17 @@ public class PscSourceEnumStateSerializer
      * status.
      */
     private static final int VERSION_2 = 2;
-
-    private static final int CURRENT_VERSION = VERSION_2;
+    /**
+     * We set 100,000 as the base version for PSC serializer. This is set to a large number to avoid
+     * conflicts with native Flink-Kafka serializer versions which start from 0. DO NOT CHANGE THIS VALUE.
+     */
+    private static final int BASE_PSC_VERSION = 100_000;
+    /**
+     * The current version for PSC serializer. This can be incremented by 1 every time the serialization
+     * format changes.
+     */
+    private static final int CURRENT_VERSION = BASE_PSC_VERSION;
+    private String clusterUri = null;
 
     @Override
     public int getVersion() {
@@ -84,35 +97,16 @@ public class PscSourceEnumStateSerializer
 
     @Override
     public PscSourceEnumState deserialize(int version, byte[] serialized) throws IOException {
-        switch (version) {
-            case CURRENT_VERSION:
-                return deserializeTopicPartitionAndAssignmentStatus(serialized);
-            case VERSION_1:
-                final Set<TopicUriPartition> assignedPartitions =
-                        deserializeTopicPartitions(serialized);
-                return new PscSourceEnumState(assignedPartitions, new HashSet<>(), true);
-            case VERSION_0:
-                Map<Integer, Set<PscTopicUriPartitionSplit>> currentPartitionAssignment =
-                        SerdeUtils.deserializeSplitAssignments(
-                                serialized, new PscTopicUriPartitionSplitSerializer(), HashSet::new);
-                Set<TopicUriPartition> currentAssignedSplits = new HashSet<>();
-                currentPartitionAssignment.forEach(
-                        (reader, splits) ->
-                                splits.forEach(
-                                        split ->
-                                                currentAssignedSplits.add(
-                                                        split.getTopicUriPartition())));
-                return new PscSourceEnumState(currentAssignedSplits, new HashSet<>(), true);
-            default:
-                throw new IOException(
-                        String.format(
-                                "The bytes are serialized with version %d, "
-                                        + "while this deserializer only supports version up to %d",
-                                version, CURRENT_VERSION));
+        LOG.info("Deserializing PscSourceEnumState with version: " + version);
+        if (!isPscVersion(version)) {
+            LOG.info("Detected non-PSC version in serialized state. Deserializing as Flink-Kafka state.");
+            return deserializeFromFlinkKafka(version, serialized);
         }
+        LOG.info("Detected PSC version in serialized state. Deserializing as PSC state.");
+        return deserializeTopicPartitionAndAssignmentStatus(serialized, true);
     }
 
-    private static Set<TopicUriPartition> deserializeTopicPartitions(byte[] serializedTopicPartitions)
+    private Set<TopicUriPartition> deserializeTopicPartitions(byte[] serializedTopicPartitions, boolean isPscVersion)
             throws IOException {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serializedTopicPartitions);
              DataInputStream in = new DataInputStream(bais)) {
@@ -120,7 +114,13 @@ public class PscSourceEnumStateSerializer
             final int numPartitions = in.readInt();
             Set<TopicUriPartition> topicPartitions = new HashSet<>(numPartitions);
             for (int i = 0; i < numPartitions; i++) {
-                final String topicUriString = in.readUTF();
+                String topicUriString = in.readUTF();
+
+                if (!isPscVersion) {
+                    // prepend cluster URI to topic name since this is likely a Flink-Kafka state
+                    topicUriString = prependClusterUriToTopicName(topicUriString);
+                }
+
                 final int partition = in.readInt();
                 topicPartitions.add(new TopicUriPartition(topicUriString, partition));
             }
@@ -132,8 +132,8 @@ public class PscSourceEnumStateSerializer
         }
     }
 
-    private static PscSourceEnumState deserializeTopicPartitionAndAssignmentStatus(
-            byte[] serialized) throws IOException {
+    private PscSourceEnumState deserializeTopicPartitionAndAssignmentStatus(
+            byte[] serialized, boolean isPscVersion) throws IOException {
 
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serialized);
              DataInputStream in = new DataInputStream(bais)) {
@@ -142,7 +142,13 @@ public class PscSourceEnumStateSerializer
             Set<TopicUriPartitionAndAssignmentStatus> partitions = new HashSet<>(numPartitions);
 
             for (int i = 0; i < numPartitions; i++) {
-                final String topicUriString = in.readUTF();
+                String topicUriString = in.readUTF();
+
+                if (!isPscVersion) {
+                    // prepend cluster URI to topic name since this is likely a Flink-Kafka state
+                    topicUriString = prependClusterUriToTopicName(topicUriString);
+                }
+
                 final int partition = in.readInt();
                 final int statusCode = in.readInt();
                 partitions.add(
@@ -159,6 +165,18 @@ public class PscSourceEnumStateSerializer
         }
     }
 
+    private String prependClusterUriToTopicName(String topicName) {
+        // we are likely dealing with a Flink-Kafka state here. To support recovering from
+        // Flink-Kafka checkpoints, we will assume that topicUri here is actually just the topic
+        // name, and prepend the cluster URI to it.
+        if (clusterUri == null) {
+            throw new IllegalStateException("Cluster URI not set. Cannot deserialize split.");
+        }
+        String prependedTopicUriString = clusterUri + topicName;
+        LOG.info("Prepended cluster URI to deserialized topicName {} so that topicUri is now: {}", topicName, prependedTopicUriString);
+        return prependedTopicUriString;
+    }
+
     @VisibleForTesting
     public static byte[] serializeTopicPartitions(Collection<TopicUriPartition> topicUriPartitions)
             throws IOException {
@@ -173,6 +191,47 @@ public class PscSourceEnumStateSerializer
             out.flush();
 
             return baos.toByteArray();
+        }
+    }
+
+    public void setClusterUri(String clusterUri) {
+        LOG.info("Setting cluster URI: " + clusterUri);
+        this.clusterUri = clusterUri;
+    }
+
+    private boolean isPscVersion(int version) {
+        return version >= BASE_PSC_VERSION;
+    }
+
+    private PscSourceEnumState deserializeFromFlinkKafka(int version, byte[] serialized) throws IOException {
+        switch (version) {
+            case VERSION_2:
+                return deserializeTopicPartitionAndAssignmentStatus(serialized, false);
+            case VERSION_1:
+                final Set<TopicUriPartition> assignedPartitions =
+                        deserializeTopicPartitions(serialized, false);
+                return new PscSourceEnumState(assignedPartitions, new HashSet<>(), true);
+            case VERSION_0:
+                PscTopicUriPartitionSplitSerializer splitSerializer =
+                        new PscTopicUriPartitionSplitSerializer();
+                splitSerializer.setClusterUri(clusterUri);
+                Map<Integer, Set<PscTopicUriPartitionSplit>> currentPartitionAssignment =
+                        SerdeUtils.deserializeSplitAssignments(
+                                serialized, splitSerializer, HashSet::new);
+                Set<TopicUriPartition> currentAssignedSplits = new HashSet<>();
+                currentPartitionAssignment.forEach(
+                        (reader, splits) ->
+                                splits.forEach(
+                                        split ->
+                                                currentAssignedSplits.add(
+                                                        split.getTopicUriPartition())));
+                return new PscSourceEnumState(currentAssignedSplits, new HashSet<>(), true);
+            default:
+                throw new IOException(
+                        String.format(
+                                "The bytes are serialized with version %d, "
+                                        + "while this deserializer only supports version up to %d",
+                                version, CURRENT_VERSION));
         }
     }
 }

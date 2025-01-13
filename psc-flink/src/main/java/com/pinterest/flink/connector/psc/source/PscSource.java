@@ -243,7 +243,13 @@ public class PscSource<OUT>
     @Internal
     @Override
     public SimpleVersionedSerializer<PscSourceEnumState> getEnumeratorCheckpointSerializer() {
-        return new PscSourceEnumStateSerializer();
+        PscSourceEnumStateSerializer serializer = new PscSourceEnumStateSerializer();
+        try {
+            serializer.setClusterUri(PscFlinkConfiguration.validateAndGetBaseClusterUri(props).getTopicUriAsString());
+            return serializer;
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Failed to set clusterUri for enumStateSerializer", e);
+        }
     }
 
     @Override

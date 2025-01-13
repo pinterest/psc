@@ -24,6 +24,10 @@ import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaA
 import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.connector.base.source.utils.SerdeUtils;
 
+import org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumStateSerializer;
+import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplit;
+import org.apache.flink.connector.kafka.source.split.KafkaPartitionSplitSerializer;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -32,6 +36,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,15 +44,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class PscSourceEnumStateSerializerTest {
 
     private static final int NUM_READERS = 10;
-    private static final String TOPIC_PREFIX = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topic-";
+    private static final String TOPIC_PREFIX = "topic-";
+    private static final String TOPIC_URI_PREFIX = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC_PREFIX;
     private static final int NUM_PARTITIONS_PER_TOPIC = 10;
     private static final long STARTING_OFFSET = PscTopicUriPartitionSplit.EARLIEST_OFFSET;
 
     @Test
     public void testEnumStateSerde() throws IOException {
         final PscSourceEnumState state = new PscSourceEnumState(
-                constructTopicPartitions(0),
-                constructTopicPartitions(NUM_PARTITIONS_PER_TOPIC),
+                constructPscTopicUriPartitions(0),
+                constructPscTopicUriPartitions(NUM_PARTITIONS_PER_TOPIC),
                 true
         );
         final PscSourceEnumStateSerializer serializer = new PscSourceEnumStateSerializer();
@@ -64,37 +70,43 @@ public class PscSourceEnumStateSerializerTest {
     }
 
     @Test
-    public void testBackwardCompatibility() throws IOException {
+    public void testBackwardCompatibilityWithFlinkKafka() throws IOException {
 
-        final Set<TopicUriPartition> topicPartitions = constructTopicPartitions(0);
-        final Map<Integer, Set<PscTopicUriPartitionSplit>> splitAssignments =
-                toSplitAssignments(topicPartitions);
+        final Set<TopicPartition> kafkaTopicPartitions = constructKafkaTopicPartitions(0);
+        final Map<Integer, Set<KafkaPartitionSplit>> splitAssignments =
+                toKafkaSplitAssignments(kafkaTopicPartitions);
 
-        // Create bytes in the way of PscEnumStateSerializer version 0 doing serialization
+        // Create bytes in the way of KafkaEnumStateSerializer version 0 doing serialization
         final byte[] bytesV0 =
                 SerdeUtils.serializeSplitAssignments(
-                        splitAssignments, new PscTopicUriPartitionSplitSerializer());
+                        splitAssignments, new KafkaPartitionSplitSerializer());
         // Create bytes in the way of KafkaEnumStateSerializer version 1 doing serialization
         final byte[] bytesV1 =
-                PscSourceEnumStateSerializer.serializeTopicPartitions(topicPartitions);
+                KafkaSourceEnumStateSerializer.serializeTopicPartitions(kafkaTopicPartitions);
 
-        // Deserialize above bytes with PscEnumStateSerializer version 2 to check backward
-        // compatibility
+        // Deserialize above bytes with PscEnumStateSerializer version 100,000 to check backward
+        // compatibility and recoverability from state serialized by KafkaEnumStateSerializer
+        PscSourceEnumStateSerializer pscSourceEnumStateSerializer = new PscSourceEnumStateSerializer();
+        pscSourceEnumStateSerializer.setClusterUri(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         final PscSourceEnumState pscSourceEnumStateV0 =
-                new PscSourceEnumStateSerializer().deserialize(0, bytesV0);
+                pscSourceEnumStateSerializer.deserialize(0, bytesV0);
         final PscSourceEnumState pscSourceEnumStateV1 =
-                new PscSourceEnumStateSerializer().deserialize(1, bytesV1);
+                pscSourceEnumStateSerializer.deserialize(1, bytesV1);
 
-        assertThat(pscSourceEnumStateV0.assignedPartitions()).isEqualTo(topicPartitions);
+        Set<TopicPartition> convertedTopicPartitionsV0 = pscSourceEnumStateV0.assignedPartitions().stream().map(tup -> new TopicPartition(tup.getTopicUri().getTopic(), tup.getPartition())).collect(Collectors.toSet());
+        Set<TopicPartition> convertedTopicPartitionsV1 = pscSourceEnumStateV1.assignedPartitions().stream().map(tup -> new TopicPartition(tup.getTopicUri().getTopic(), tup.getPartition())).collect(Collectors.toSet());
+
+        assertThat(convertedTopicPartitionsV0).isEqualTo(kafkaTopicPartitions);
         assertThat(pscSourceEnumStateV0.unassignedInitialPartitions()).isEmpty();
         assertThat(pscSourceEnumStateV0.initialDiscoveryFinished()).isTrue();
 
-        assertThat(pscSourceEnumStateV1.assignedPartitions()).isEqualTo(topicPartitions);
+        assertThat(convertedTopicPartitionsV1).isEqualTo(kafkaTopicPartitions);
         assertThat(pscSourceEnumStateV1.unassignedInitialPartitions()).isEmpty();
         assertThat(pscSourceEnumStateV1.initialDiscoveryFinished()).isTrue();
+
     }
 
-    private Set<TopicUriPartition> constructTopicPartitions(int startPartition) {
+    private Set<TopicUriPartition> constructPscTopicUriPartitions(int startPartition) {
         // Create topic partitions for readers.
         // Reader i will be assigned with NUM_PARTITIONS_PER_TOPIC splits, with topic name
         // "topic-{i}" and
@@ -104,6 +116,23 @@ public class PscSourceEnumStateSerializerTest {
         for (int readerId = 0; readerId < NUM_READERS; readerId++) {
             for (int partition = startPartition; partition < startPartition + NUM_PARTITIONS_PER_TOPIC; partition++) {
                 topicPartitions.add(new TopicUriPartition(TOPIC_PREFIX + readerId, partition));
+            }
+        }
+        return topicPartitions;
+    }
+
+    private Set<TopicPartition> constructKafkaTopicPartitions(int startPartition) {
+        // Create topic partitions for readers.
+        // Reader i will be assigned with NUM_PARTITIONS_PER_TOPIC splits, with topic name
+        // "topic-{i}" and
+        // NUM_PARTITIONS_PER_TOPIC partitions. The starting partition number is startPartition
+        // Totally NUM_READERS * NUM_PARTITIONS_PER_TOPIC partitions will be created.
+        Set<TopicPartition> topicPartitions = new HashSet<>();
+        for (int readerId = 0; readerId < NUM_READERS; readerId++) {
+            for (int partition = startPartition;
+                 partition < startPartition + NUM_PARTITIONS_PER_TOPIC;
+                 partition++) {
+                topicPartitions.add(new TopicPartition(TOPIC_PREFIX + readerId, partition));
             }
         }
         return topicPartitions;
@@ -119,9 +148,25 @@ public class PscSourceEnumStateSerializerTest {
                         splitAssignments
                                 .computeIfAbsent(
                                         Integer.valueOf(
-                                                tp.getTopicUriAsString().substring(TOPIC_PREFIX.length())),
+                                                tp.getTopicUriAsString().substring(TOPIC_URI_PREFIX.length())),
                                         HashSet::new)
                                 .add(new PscTopicUriPartitionSplit(tp, STARTING_OFFSET)));
+        return splitAssignments;
+    }
+
+    private Map<Integer, Set<KafkaPartitionSplit>> toKafkaSplitAssignments(
+            Collection<TopicPartition> topicPartitions) {
+        // Assign splits to readers according to topic name. For example, topic "topic-5" will be
+        // assigned to reader with ID=5
+        Map<Integer, Set<KafkaPartitionSplit>> splitAssignments = new HashMap<>();
+        topicPartitions.forEach(
+                (tp) ->
+                        splitAssignments
+                                .computeIfAbsent(
+                                        Integer.valueOf(
+                                                tp.topic().substring(TOPIC_PREFIX.length())),
+                                        HashSet::new)
+                                .add(new KafkaPartitionSplit(tp, STARTING_OFFSET)));
         return splitAssignments;
     }
 }

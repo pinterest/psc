@@ -357,7 +357,6 @@ public class PscSourceEnumerator
                     .computeIfAbsent(ownerReader, r -> new HashSet<>())
                     .add(split);
             LOG.info("Adding split {} to reader {}", split, ownerReader);
-            Thread.dumpStack();
         }
         LOG.debug(
                 "Assigned {} to {} readers of consumer group {}.",

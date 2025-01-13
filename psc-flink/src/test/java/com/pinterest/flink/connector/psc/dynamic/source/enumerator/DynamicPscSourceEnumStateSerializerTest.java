@@ -106,7 +106,7 @@ public class DynamicPscSourceEnumStateSerializerTest {
 
         DynamicPscSourceEnumState dynamicPscSourceEnumStateAfterSerde =
                 dynamicPscSourceEnumStateSerializer.deserialize(
-                        1,
+                        dynamicPscSourceEnumStateSerializer.getVersion(),
                         dynamicPscSourceEnumStateSerializer.serialize(
                                 dynamicPscSourceEnumState));
 
