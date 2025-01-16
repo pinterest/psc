@@ -19,6 +19,7 @@ package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.flink.streaming.connectors.psc.internals.FlinkPscInternalProducer;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscSerializationSchemaWrapper;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscSimpleTypeSerializerSnapshot;
 import com.pinterest.flink.streaming.connectors.psc.internals.TransactionalIdsGenerator;
 import com.pinterest.flink.streaming.connectors.psc.internals.metrics.FlinkPscStateRecoveryMetricConstants;
 import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscMetricMutableWrapper;
@@ -54,7 +55,6 @@ import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.base.TypeSerializerSingleton;
 import org.apache.flink.api.java.ClosureCleaner;
@@ -2142,7 +2142,7 @@ public class FlinkPscProducer<IN>
          */
         @SuppressWarnings("WeakerAccess")
         public static final class TransactionStateSerializerSnapshot extends
-                SimpleTypeSerializerSnapshot<PscTransactionState> {
+                PscSimpleTypeSerializerSnapshot<PscTransactionState> {
 
             public TransactionStateSerializerSnapshot() {
                 super(TransactionStateSerializer::new);
@@ -2237,7 +2237,7 @@ public class FlinkPscProducer<IN>
          * Serializer configuration snapshot for compatibility and format evolution.
          */
         @SuppressWarnings("WeakerAccess")
-        public static final class ContextStateSerializerSnapshot extends SimpleTypeSerializerSnapshot<PscTransactionContext> {
+        public static final class ContextStateSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<PscTransactionContext> {
 
             public ContextStateSerializerSnapshot() {
                 super(ContextStateSerializer::new);
@@ -2362,7 +2362,7 @@ public class FlinkPscProducer<IN>
          * Serializer configuration snapshot for compatibility and format evolution.
          */
         @SuppressWarnings("WeakerAccess")
-        public static final class NextTransactionalIdHintSerializerSnapshot extends SimpleTypeSerializerSnapshot<NextTransactionalIdHint> {
+        public static final class NextTransactionalIdHintSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<NextTransactionalIdHint> {
 
             public NextTransactionalIdHintSerializerSnapshot() {
                 super(NextTransactionalIdHintSerializer::new);
