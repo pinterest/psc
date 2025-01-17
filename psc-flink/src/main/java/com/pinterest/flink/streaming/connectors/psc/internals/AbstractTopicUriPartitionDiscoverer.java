@@ -18,6 +18,8 @@
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
 import org.apache.flink.annotation.Internal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.Iterator;
@@ -42,6 +44,8 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  */
 @Internal
 public abstract class AbstractTopicUriPartitionDiscoverer {
+
+    private static final Logger LOG = LoggerFactory.getLogger(AbstractTopicUriPartitionDiscoverer.class);
 
     /**
      * Describes whether we are discovering partitions for fixed topics or a topic pattern.
@@ -131,11 +135,13 @@ public abstract class AbstractTopicUriPartitionDiscoverer {
      */
     public List<PscTopicUriPartition> discoverPartitions() throws WakeupException, ClosedException {
         if (!closed && !wakeup) {
+            LOG.info("Discovering new partitions");
             try {
                 List<PscTopicUriPartition> newDiscoveredPartitions;
 
                 // (1) get all possible partitions, based on whether we are subscribed to fixed topics or a topic pattern
                 if (topicUrisDescriptor.isFixedTopicUris()) {
+                    LOG.info("Discovering partitions for fixed topics: {}", topicUrisDescriptor.getFixedTopicUris());
                     newDiscoveredPartitions = getAllPartitionsForTopicUris(topicUrisDescriptor.getFixedTopicUris());
                 } else {
                     // TODO: getAllTopicUris() currently returns empty list in PscTopicUriPartitionDiscoverer due to backend consumer initialization process
