@@ -135,13 +135,11 @@ public abstract class AbstractTopicUriPartitionDiscoverer {
      */
     public List<PscTopicUriPartition> discoverPartitions() throws WakeupException, ClosedException {
         if (!closed && !wakeup) {
-            LOG.info("Discovering new partitions");
             try {
                 List<PscTopicUriPartition> newDiscoveredPartitions;
 
                 // (1) get all possible partitions, based on whether we are subscribed to fixed topics or a topic pattern
                 if (topicUrisDescriptor.isFixedTopicUris()) {
-                    LOG.info("Discovering partitions for fixed topics: {}", topicUrisDescriptor.getFixedTopicUris());
                     newDiscoveredPartitions = getAllPartitionsForTopicUris(topicUrisDescriptor.getFixedTopicUris());
                 } else {
                     // TODO: getAllTopicUris() currently returns empty list in PscTopicUriPartitionDiscoverer due to backend consumer initialization process
