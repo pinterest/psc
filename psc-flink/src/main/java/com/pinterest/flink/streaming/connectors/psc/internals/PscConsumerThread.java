@@ -194,7 +194,7 @@ public class PscConsumerThread<T> extends Thread {
         this.nextOffsetsToCommit = new AtomicReference<>();
         this.running = true;
         this.hasInitializedMetrics = false;
-        this.pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(pscProperties, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        this.pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(pscProperties, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
 
         initializeInterceptor();
     }

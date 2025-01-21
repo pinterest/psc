@@ -59,7 +59,7 @@ public class TestPscConsumerInterceptor extends TestPscConsumerBase {
 
     @BeforeEach
     void init() {
-        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         when(pscConfigurationInternal.getMetricsReporterConfiguration()).thenReturn(new MetricsReporterConfiguration(
                 true, NullMetricsReporter.class.getName(), 1, "localhost",-1, 10));
     }

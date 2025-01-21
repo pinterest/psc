@@ -965,7 +965,7 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
 
     protected void initializePscConfigurationInternal() {
         if (pscConfigurationInternal == null) {
-            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(properties, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(properties, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         }
     }
 

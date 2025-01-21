@@ -110,7 +110,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(String customPscConfigurationFilePath) throws ConfigurationException, ConsumerException {
         if (customPscConfigurationFilePath == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(String)");
-        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -128,7 +128,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(Configuration configuration) throws ConfigurationException, ConsumerException {
         if (configuration == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(Configuration)");
-        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -143,7 +143,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(PscConfiguration pscConfiguration) throws ConfigurationException, ConsumerException {
         if (pscConfiguration == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(PscConfiguration)");
-        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 

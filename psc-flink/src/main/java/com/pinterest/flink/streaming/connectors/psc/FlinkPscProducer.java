@@ -733,7 +733,7 @@ public class FlinkPscProducer<IN>
             );
             try {
                 PscMetricRegistryManager.getInstance().initialize(
-                        new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER, true)
+                        new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER, true)
                 );
             } catch (ConfigurationException configurationException) {
                 throw new IllegalArgumentException(configurationException);
@@ -984,7 +984,7 @@ public class FlinkPscProducer<IN>
             });
 
             if (pscConfigurationInternal == null) {
-                pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+                pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
             }
 
             if (pscMetricsInitialized != null && pscMetricsInitialized.compareAndSet(true, false))
@@ -1287,7 +1287,7 @@ public class FlinkPscProducer<IN>
         }
 
         if (pscConfigurationInternal == null) {
-            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         }
 
         if (context.getOperatorStateStore()

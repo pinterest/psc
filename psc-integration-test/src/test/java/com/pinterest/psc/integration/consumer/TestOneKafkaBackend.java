@@ -2510,7 +2510,7 @@ public class TestOneKafkaBackend {
         TopicUri topicUri = TopicUri.validate("plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region::cluster:");
         TopicUri kafkaTopicUri = KafkaTopicUri.validate(topicUri);
 
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
 
         Set<PscBackendConsumer<String, String>> consumers = creator.getConsumers(
                 pscConfigurationInternal.getEnvironment(),
