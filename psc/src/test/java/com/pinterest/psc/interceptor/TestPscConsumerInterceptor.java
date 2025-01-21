@@ -6,6 +6,7 @@ import com.pinterest.psc.common.TestTopicUri;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.MetricsReporterConfiguration;
 import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.consumer.PscConsumerUtils;
