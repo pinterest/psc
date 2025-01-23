@@ -89,11 +89,14 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         kafkaPollTimeoutMs = pscConfigurationInternal.getPscConsumerPollTimeoutMs();
 
         // if using secure protocol (SSL), calculate cert expiry time
-        if (topicUri.getProtocol().equals(KafkaTopicUri.SECURE_PROTOCOL)) {
+        if (pscConfigurationInternal.isProactiveSslResetEnabled() &&
+                topicUri.getProtocol().equals(KafkaTopicUri.SECURE_PROTOCOL)) {
             isSslEnabledInAnyActiveSusbcriptionOrAssignment = true;
             sslCertificateExpiryTimeInMillis = KafkaSslUtils.calculateSslCertExpiryTime(
                     properties, pscConfigurationInternal, Collections.singleton(topicUri));
-            logger.info("Initialized PscKafkaConsumer with SSL cert expiry time at " + sslCertificateExpiryTimeInMillis);
+            logger.info("Initialized PscKafkaConsumer with proactive SSL certificate reset. Expiry time at " + sslCertificateExpiryTimeInMillis);
+        } else {
+            logger.info("Initialized PscKafkaConsumer without proactive SSL certificate reset.");
         }
         logger.info("Proactive SSL reset enabled: {}", pscConfigurationInternal.isProactiveSslResetEnabled());
     }
@@ -1090,13 +1093,9 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     protected void maybeResetBackendClient() throws ConsumerException {
         // reset if SSL enabled && cert is expired
-        if (isSslEnabledInAnyActiveSusbcriptionOrAssignment &&
+        if (pscConfigurationInternal.isProactiveSslResetEnabled() &&
+                isSslEnabledInAnyActiveSusbcriptionOrAssignment &&
                 (System.currentTimeMillis() >= sslCertificateExpiryTimeInMillis)) {
-            if (!pscConfigurationInternal.isProactiveSslResetEnabled()) {
-                logger.info("Skipping reset of client even though SSL certificate is approaching expiry at {}" +
-                        " because proactive reset is disabled", sslCertificateExpiryTimeInMillis);
-                return;
-            }
             if (KafkaSslUtils.keyStoresExist(properties)) {
                 logger.info("Resetting backend Kafka client due to cert expiry at " +
                         sslCertificateExpiryTimeInMillis);
