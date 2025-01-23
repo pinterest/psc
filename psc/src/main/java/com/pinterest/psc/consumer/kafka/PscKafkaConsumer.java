@@ -29,6 +29,8 @@ import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
 import com.pinterest.psc.metrics.kafka.KafkaMetricsHandler;
 import com.pinterest.psc.metrics.kafka.KafkaUtils;
+
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -40,6 +42,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
+import java.lang.reflect.InvocationTargetException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
@@ -56,7 +59,8 @@ import java.util.stream.Collectors;
 
 public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
     private static final PscLogger logger = PscLogger.getLogger(PscKafkaConsumer.class);
-    private KafkaConsumer<byte[], byte[]> kafkaConsumer;
+    private static final String PSC_CONSUMER_KAFKA_CONSUMER_CLASS = "psc.consumer.kafka.consumer.class";
+    private Consumer<byte[], byte[]> kafkaConsumer;
     private final Set<TopicUri> currentSubscription = new HashSet<>();
     private final Set<TopicUriPartition> currentAssignment = new HashSet<>();
     private long kafkaPollTimeoutMs;
@@ -85,7 +89,19 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                 pscConfigurationInternal.getPscConsumerClientId() + "-" + UUID.randomUUID()
         );
 
-        kafkaConsumer = new KafkaConsumer<>(properties);
+        String kafkaConsumerClassName = pscConfigurationInternal.getConfiguration().getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS);
+        try {
+            if (kafkaConsumerClassName != null) {
+                Class<?> kafkaConsumerClass = Class.forName(kafkaConsumerClassName).asSubclass(Consumer.class);
+                kafkaConsumer = (Consumer) kafkaConsumerClass.getDeclaredConstructor(Properties.class).newInstance(properties);
+            } else {
+                kafkaConsumer = new KafkaConsumer<>(properties);
+            }
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
+            logger.error("Error initializing consumer class: " + kafkaConsumerClassName, e);
+            logger.info("Defaulting to native KafkaConsumer class", e);
+            kafkaConsumer = new KafkaConsumer<>(properties);
+        }
         kafkaPollTimeoutMs = pscConfigurationInternal.getPscConsumerPollTimeoutMs();
 
         // if using secure protocol (SSL), calculate cert expiry time
