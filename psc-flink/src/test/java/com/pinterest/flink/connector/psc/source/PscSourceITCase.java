@@ -21,6 +21,7 @@ package com.pinterest.flink.connector.psc.source;
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.connector.psc.testutils.DockerImageVersions;
 import com.pinterest.flink.connector.psc.testutils.PscSourceExternalContextFactory;
 import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
@@ -56,7 +57,6 @@ import org.apache.flink.streaming.api.operators.StreamMap;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.util.CloseableIterator;
 import org.apache.flink.util.Collector;
-import org.apache.flink.util.DockerImageVersions;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -87,14 +87,13 @@ import static com.pinterest.flink.connector.psc.testutils.PscSourceExternalConte
 import static com.pinterest.flink.connector.psc.testutils.PscSourceExternalContext.SplitMappingMode.TOPIC;
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Unite test class for {@link PscSource}. */
 public class PscSourceITCase {
     private static final String TOPIC1 = "topic1";
-    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
+    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "topic2";
-    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC2;
 
     @Nested
     @TestInstance(Lifecycle.PER_CLASS)
@@ -117,7 +116,7 @@ public class PscSourceITCase {
         @ValueSource(booleans = {false, true})
         public void testTimestamp(boolean enableObjectReuse) throws Throwable {
             final String topicUri =
-                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+                    PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX +
                             "testTimestamp-" + ThreadLocalRandom.current().nextLong(0, Long.MAX_VALUE);
             final long currentTimestamp = System.currentTimeMillis();
             PscSourceTestEnv.createTestTopic(topicUri, 1, 1);
@@ -127,12 +126,12 @@ public class PscSourceITCase {
                             new PscProducerMessage<>(topicUri, 0, "key1", 1, currentTimestamp + 2L),
                             new PscProducerMessage<>(topicUri, 0, "key2", 2, currentTimestamp + 3L)));
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
                             .setGroupId("testTimestampAndWatermark")
                             .setTopicUris(topicUri)
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(
                                     new TestingPscRecordDeserializationSchema(enableObjectReuse))
@@ -153,23 +152,22 @@ public class PscSourceITCase {
             stream.addSink(new DiscardingSink<>());
             JobExecutionResult result = env.execute();
 
-            assertEquals(
-                    Arrays.asList(
-                            currentTimestamp + 1L, currentTimestamp + 2L, currentTimestamp + 3L),
-                    result.getAccumulatorResult("timestamp"));
+            assertThat(result.<List<Long>>getAccumulatorResult("timestamp"))
+                    .containsExactly(
+                            currentTimestamp + 1L, currentTimestamp + 2L, currentTimestamp + 3L);
         }
 
         @ParameterizedTest(name = "Object reuse in deserializer = {arguments}")
         @ValueSource(booleans = {false, true})
         public void testBasicRead(boolean enableObjectReuse) throws Exception {
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
 //                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testBasicRead")
                             .setTopicUris(Arrays.asList(TOPIC_URI1, TOPIC_URI2))
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(
                                     new TestingPscRecordDeserializationSchema(enableObjectReuse))
@@ -187,13 +185,13 @@ public class PscSourceITCase {
         @Test
         public void testValueOnlyDeserializer() throws Exception {
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
             PscSource<Integer> source =
                     PscSource.<Integer>builder()
 //                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testValueOnlyDeserializer")
                             .setTopicUris(Arrays.asList(TOPIC_URI1, TOPIC_URI2))
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(
                                     PscRecordDeserializationSchema.valueOnly(
@@ -232,7 +230,7 @@ public class PscSourceITCase {
                 // Since we have two topics, the expected sum value should be doubled
                 expectedSum *= 2;
 
-                assertEquals(expectedSum, actualSum.get());
+                assertThat(actualSum.get()).isEqualTo(expectedSum);
             }
         }
 
@@ -240,13 +238,13 @@ public class PscSourceITCase {
         @ValueSource(booleans = {false, true})
         public void testRedundantParallelism(boolean enableObjectReuse) throws Exception {
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
 //                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setGroupId("testRedundantParallelism")
                             .setTopicUris(Collections.singletonList(TOPIC_URI1))
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(
                                     new TestingPscRecordDeserializationSchema(enableObjectReuse))
@@ -271,12 +269,12 @@ public class PscSourceITCase {
         @Disabled("Disabled because PscConsumer does not support instantiation without group id")
         public void testBasicReadWithoutGroupId(boolean enableObjectReuse) throws Exception {
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
 //                            .setBootstrapServers(PscSourceTestEnv.brokerConnectionStrings)
                             .setTopicUris(Arrays.asList(TOPIC_URI1, TOPIC_URI2))
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(
                                     new TestingPscRecordDeserializationSchema(enableObjectReuse))
@@ -296,7 +294,7 @@ public class PscSourceITCase {
 
         @Test
         public void testPerPartitionWatermark() throws Throwable {
-            String watermarkTopic = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "watermarkTestTopic-" + UUID.randomUUID();
+            String watermarkTopic = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "watermarkTestTopic-" + UUID.randomUUID();
             PscSourceTestEnv.createTestTopic(watermarkTopic, 2, 1);
             List<PscProducerMessage<String, Integer>> records =
                     Arrays.asList(
@@ -308,12 +306,12 @@ public class PscSourceITCase {
                             new PscProducerMessage<>(watermarkTopic, 1, null, 350, 350L));
             PscSourceTestEnv.produceMessages(records);
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
                             .setTopicUris(watermarkTopic)
                             .setGroupId("watermark-test")
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(new TestingPscRecordDeserializationSchema(false))
                             .setStartingOffsets(OffsetsInitializer.earliest())
@@ -346,15 +344,15 @@ public class PscSourceITCase {
 
         @Test
         public void testConsumingEmptyTopic() throws Throwable {
-            String emptyTopic = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "emptyTopic-" + UUID.randomUUID();
+            String emptyTopic = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "emptyTopic-" + UUID.randomUUID();
             PscSourceTestEnv.createTestTopic(emptyTopic, 3, 1);
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
                             .setTopicUris(emptyTopic)
                             .setGroupId("empty-topic-test")
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(new TestingPscRecordDeserializationSchema(false))
                             .setStartingOffsets(OffsetsInitializer.earliest())
@@ -374,7 +372,7 @@ public class PscSourceITCase {
 
         @Test
         public void testConsumingTopicWithEmptyPartitions() throws Throwable {
-            String topicWithEmptyPartitions = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "topicWithEmptyPartitions-" + UUID.randomUUID();
+            String topicWithEmptyPartitions = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "topicWithEmptyPartitions-" + UUID.randomUUID();
             PscSourceTestEnv.createTestTopic(
                     topicWithEmptyPartitions, PscSourceTestEnv.NUM_PARTITIONS, 1);
             List<PscProducerMessage<String, Integer>> records =
@@ -388,13 +386,13 @@ public class PscSourceITCase {
                             new TopicUriPartition(topicWithEmptyPartitions, partitionWithRecords)));
 
             Properties props = new Properties();
-            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+            putDiscoveryProperties(props, PscSourceTestEnv.getBrokerConnectionStrings(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
             PscSource<PartitionAndValue> source =
                     PscSource.<PartitionAndValue>builder()
                             .setTopicUris(topicWithEmptyPartitions)
                             .setGroupId("topic-with-empty-partition-test")
-                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX)
+                            .setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX)
                             .setProperties(props)
                             .setDeserializer(new TestingPscRecordDeserializationSchema(false))
                             .setStartingOffsets(OffsetsInitializer.earliest())
@@ -550,12 +548,12 @@ public class PscSourceITCase {
                     int firstExpectedValue =
                             Integer.parseInt(tp.substring(tp.lastIndexOf('-') + 1));
                     for (int i = 0; i < values.size(); i++) {
-                        assertEquals(
-                                firstExpectedValue + i,
-                                (int) values.get(i),
-                                String.format(
-                                        "The %d-th value for partition %s should be %d",
-                                        i, tp, firstExpectedValue + i));
+                        assertThat((int) values.get(i))
+                                .as(
+                                        String.format(
+                                                "The %d-th value for partition %s should be %d",
+                                                i, tp, firstExpectedValue + i))
+                                .isEqualTo(firstExpectedValue + i);
                     }
                 });
     }

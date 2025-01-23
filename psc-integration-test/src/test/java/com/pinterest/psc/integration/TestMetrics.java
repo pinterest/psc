@@ -103,7 +103,7 @@ public class TestMetrics {
         producerConfiguration.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, baseProducerClientId + "-" + UUID.randomUUID());
         producerConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
-        producerInternalConfiguration = new PscConfigurationInternal(producerConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        producerInternalConfiguration = new PscConfigurationInternal(producerConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
 
         baseConsumerClientId = this.getClass().getSimpleName() + "-psc-consumer-client";
         consumerConfiguration.clear();

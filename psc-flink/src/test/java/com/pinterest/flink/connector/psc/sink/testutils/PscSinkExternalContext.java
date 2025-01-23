@@ -145,7 +145,7 @@ public class PscSinkExternalContext implements DataStreamSinkV2ExternalContext<S
         injectDiscoveryConfigs(properties, bootstrapServers, clusterUri.getTopicUriAsString());
         properties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, clusterUri.getTopicUriAsString());
         builder // TODO: might need to set cluster URI
-                .setDeliverGuarantee(toDeliveryGuarantee(sinkSettings.getCheckpointingMode()))
+                .setDeliveryGuarantee(toDeliveryGuarantee(sinkSettings.getCheckpointingMode()))
                 .setTransactionalIdPrefix("testingFramework")
                 .setPscProducerConfig(properties)
                 .setRecordSerializer(

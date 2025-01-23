@@ -5,7 +5,7 @@ import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
-import org.testcontainers.shaded.org.apache.commons.lang.StringUtils;
+import org.testcontainers.shaded.org.apache.commons.lang3.StringUtils;
 
 import java.util.Properties;
 
@@ -13,7 +13,7 @@ public class PscTestUtils {
 
     public static TopicUri getClusterUri() {
         try {
-            return new KafkaTopicUri(BaseTopicUri.validate(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX));
+            return new KafkaTopicUri(BaseTopicUri.validate(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX));
         } catch (TopicUriSyntaxException e) {
             throw new RuntimeException(e);
         }

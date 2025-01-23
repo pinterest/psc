@@ -19,6 +19,7 @@
 package com.pinterest.flink.streaming.connectors.psc.table;
 
 import com.pinterest.flink.connector.psc.source.PscSourceOptions;
+import com.pinterest.flink.streaming.connectors.psc.config.BoundedMode;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
@@ -66,6 +67,9 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FORMAT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.PROPS_GROUP_ID;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
@@ -81,6 +85,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.autoCompleteSchemaRegistrySubject;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createKeyFormatProjection;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createValueFormatProjection;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getBoundedOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getFlinkPscPartitioner;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getPscProperties;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUriPattern;
@@ -139,6 +144,9 @@ public class PscDynamicTableFactory
         options.add(DELIVERY_GUARANTEE);
         options.add(TRANSACTIONAL_ID_PREFIX);
         options.add(SINK_SEMANTIC);
+        options.add(SCAN_BOUNDED_MODE);
+        options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
+        options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
         return options;
     }
 
@@ -182,14 +190,16 @@ public class PscDynamicTableFactory
 
         final PscConnectorOptionsUtil.StartupOptions startupOptions = getStartupOptions(tableOptions);
 
+        final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
+
         final Properties properties = getPscProperties(context.getCatalogTable().getOptions());
 
         // add topic-partition discovery
-        final Optional<Long> partitionDiscoveryInterval =
-                tableOptions.getOptional(SCAN_TOPIC_PARTITION_DISCOVERY).map(Duration::toMillis);
+        final Duration partitionDiscoveryInterval =
+                tableOptions.get(SCAN_TOPIC_PARTITION_DISCOVERY);
         properties.setProperty(
                 PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
-                partitionDiscoveryInterval.orElse(-1L).toString());
+                Long.toString(partitionDiscoveryInterval.toMillis()));
 
         final DataType physicalDataType = context.getPhysicalRowDataType();
 
@@ -212,6 +222,9 @@ public class PscDynamicTableFactory
                 startupOptions.startupMode,
                 startupOptions.specificOffsets,
                 startupOptions.startupTimestampMillis,
+                boundedOptions.boundedMode,
+                boundedOptions.specificOffsets,
+                boundedOptions.boundedTimestampMillis,
                 context.getObjectIdentifier().asSummaryString());
     }
 
@@ -373,6 +386,9 @@ public class PscDynamicTableFactory
             StartupMode startupMode,
             Map<PscTopicUriPartition, Long> specificStartupOffsets,
             long startupTimestampMillis,
+            BoundedMode boundedMode,
+            Map<PscTopicUriPartition, Long> specificEndOffsets,
+            long endTimestampMillis,
             String tableIdentifier) {
         return new PscDynamicSource(
                 physicalDataType,
@@ -387,6 +403,9 @@ public class PscDynamicTableFactory
                 startupMode,
                 specificStartupOffsets,
                 startupTimestampMillis,
+                boundedMode,
+                specificEndOffsets,
+                endTimestampMillis,
                 false,
                 tableIdentifier);
     }

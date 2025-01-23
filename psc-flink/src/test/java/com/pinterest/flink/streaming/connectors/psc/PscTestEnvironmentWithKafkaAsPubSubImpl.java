@@ -20,7 +20,10 @@ package com.pinterest.flink.streaming.connectors.psc;
 import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.connector.psc.testutils.DockerImageVersions;
+import com.pinterest.flink.connector.psc.testutils.PscUtil;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -37,48 +40,44 @@ import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.ByteArrayDeserializer;
 import com.pinterest.psc.serde.ByteArraySerializer;
-import kafka.server.KafkaConfig;
 import kafka.server.KafkaServer;
 import org.apache.commons.collections.list.UnmodifiableList;
-import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.curator.test.TestingServer;
 import org.apache.flink.api.common.serialization.SerializationSchema;
+import org.apache.flink.core.testutils.CommonTestUtils;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.operators.StreamSink;
-import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
-import org.apache.flink.util.NetUtils;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.TopicDescription;
-import org.apache.kafka.common.KafkaException;
-import org.apache.kafka.common.network.ListenerName;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
-import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.testcontainers.DockerClientFactory;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.containers.Network;
+import org.testcontainers.utility.DockerImageName;
 
-import java.io.File;
+import javax.annotation.Nullable;
 import java.io.IOException;
-import java.net.BindException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
-import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
-import static org.apache.flink.util.NetUtils.hostAndPortToUrlString;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -87,12 +86,13 @@ import static org.junit.Assert.fail;
 public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentWithKafkaAsPubSub {
 
     protected static final Logger LOG = LoggerFactory.getLogger(PscTestEnvironmentWithKafkaAsPubSubImpl.class);
-    private final List<KafkaServer> brokers = new ArrayList<>();
-    private File tmpZkDir;
-    private File tmpKafkaParent;
-    private List<File> tmpKafkaDirs;
-    private TestingServer zookeeper;
-    private String zookeeperConnectionString;
+
+    private static final String ZOOKEEPER_HOSTNAME = "zookeeper";
+    private static final int ZOOKEEPER_PORT = 2181;
+    private final Map<Integer, KafkaContainer> brokers = new HashMap<>();
+    private final Set<Integer> pausedBroker = new HashSet<>();
+    private @Nullable GenericContainer<?> zookeeper;
+    private @Nullable Network network;
     private String brokerConnectionString = "";
     private Properties standardKafkaProperties;
     private Properties secureKafkaProperties;
@@ -103,6 +103,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
     // 6 seconds is default. Seems to be too small for travis. 30 seconds
     private int zkTimeout = 30000;
     private Config config;
+    private static final int REQUEST_TIMEOUT_SECONDS = 30;
     private static final int DELETE_TIMEOUT_SECONDS = 30;
 
     public void setProducerSemantic(FlinkPscProducer.Semantic producerSemantic) {
@@ -120,40 +121,11 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
             zkTimeout = zkTimeout * 15;
         }
         this.config = config;
-
-        File tempDir = new File(System.getProperty("java.io.tmpdir"));
-        tmpZkDir = new File(tempDir, "kafkaITcase-zk-dir-" + (UUID.randomUUID().toString()));
-        assertTrue("cannot create zookeeper temp dir", tmpZkDir.mkdirs());
-
-        tmpKafkaParent = new File(tempDir, "kafkaITcase-kafka-dir-" + (UUID.randomUUID().toString()));
-        assertTrue("cannot create kafka temp dir", tmpKafkaParent.mkdirs());
-
-        tmpKafkaDirs = new ArrayList<>(config.getKafkaServersNumber());
-        for (int i = 0; i < config.getKafkaServersNumber(); i++) {
-            File tmpDir = new File(tmpKafkaParent, "server-" + i);
-            assertTrue("cannot create kafka temp dir", tmpDir.mkdir());
-            tmpKafkaDirs.add(tmpDir);
-        }
-
-        zookeeper = null;
         brokers.clear();
 
-        zookeeper = new TestingServer(-1, tmpZkDir);
-        zookeeperConnectionString = zookeeper.getConnectString();
-        LOG.info("Starting Zookeeper with zookeeperConnectionString: {}", zookeeperConnectionString);
-
         LOG.info("Starting KafkaServer");
-
-        ListenerName listenerName = ListenerName.forSecurityProtocol(
-                config.isSecureMode() ? SecurityProtocol.SASL_PLAINTEXT : SecurityProtocol.PLAINTEXT);
-        for (int i = 0; i < config.getKafkaServersNumber(); i++) {
-            KafkaServer kafkaServer = getKafkaServer(i, tmpKafkaDirs.get(i));
-            brokers.add(kafkaServer);
-            brokerConnectionString += hostAndPortToUrlString(KAFKA_HOST,
-                    kafkaServer.socketServer().boundPort(listenerName));
-            brokerConnectionString += ",";
-        }
-        brokerConnectionString = String.join(",", brokerConnectionString.split(","));
+        startKafkaContainerCluster(config.getKafkaServersNumber());
+        LOG.info("KafkaServer started.");
 
         LOG.info("ZK and KafkaServer started.");
 
@@ -189,7 +161,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         pscDiscoveryConfiguration = new Properties();
         int bootstrapCount = brokerConnectionString.split(",").length;
         pscDiscoveryConfiguration.setProperty("psc.discovery.topic.uri.prefixes",
-                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, ",", bootstrapCount));
+                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, ",", bootstrapCount));
         pscDiscoveryConfiguration.setProperty("psc.discovery.connection.urls", brokerConnectionString);
         pscDiscoveryConfiguration.setProperty("psc.discovery.security.protocols",
                 StringUtils.repeat("plaintext", ",", bootstrapCount));
@@ -236,8 +208,13 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
                                 int numberOfPartitions,
                                 int replicationFactor,
                                 Properties properties) {
+        createNewTopic(topicUriString, numberOfPartitions, replicationFactor, getStandardKafkaProperties());
+    }
+
+    public static void createNewTopic(
+            String topicUriString, int numberOfPartitions, int replicationFactor, Properties properties) {
         LOG.info("Creating topic {}", topicUriString);
-        try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
+        try (AdminClient adminClient = AdminClient.create(properties)) {
             Map<String, String> topicConfigs = new HashMap<>();
             topicConfigs.put("retention.ms", Long.toString(Long.MAX_VALUE));
             NewTopic topicObj = new NewTopic(BaseTopicUri.validate(topicUriString).getTopic(), numberOfPartitions, (short) replicationFactor).configs(topicConfigs);
@@ -246,7 +223,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
             // try to create it assuming that it's not a topicUriString
             if (e instanceof TopicUriSyntaxException) {
                 LOG.warn("Trying to create assuming that {} is just the topicName", topicUriString);
-                try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
+                try (AdminClient adminClient = AdminClient.create(properties)) {
                     NewTopic topicObj = new NewTopic(topicUriString, numberOfPartitions, (short) replicationFactor);
                     adminClient.createTopics(Collections.singleton(topicObj)).all().get();
                 } catch (Exception e2) {
@@ -311,11 +288,6 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
     @Override
     public String getVersion() {
         return "2.0";
-    }
-
-    @Override
-    public List<KafkaServer> getBrokers() {
-        return brokers;
     }
 
     @Override
@@ -416,7 +388,12 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
 
     @Override
     public void restartBroker(int leaderId) throws Exception {
-        brokers.set(leaderId, getKafkaServer(leaderId, tmpKafkaDirs.get(leaderId)));
+        unpause(leaderId);
+    }
+
+    @Override
+    public void stopBroker(int brokerId) throws Exception {
+        pause(brokerId);
     }
 
     @Override
@@ -438,38 +415,17 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
 
     @Override
     public void shutdown() throws Exception {
-        for (KafkaServer broker : brokers) {
-            if (broker != null) {
-                broker.shutdown();
-            }
-        }
+        brokers.values().forEach(GenericContainer::stop);
         brokers.clear();
 
         if (zookeeper != null) {
-            try {
-                zookeeper.stop();
-            } catch (Exception e) {
-                LOG.warn("ZK.stop() failed", e);
-            }
-            zookeeper = null;
+            zookeeper.stop();
         }
 
-        // clean up the temp spaces
+        if (network != null) {
+            network.close();
+        }
 
-        if (tmpKafkaParent != null && tmpKafkaParent.exists()) {
-            try {
-                FileUtils.deleteDirectory(tmpKafkaParent);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
-        if (tmpZkDir != null && tmpZkDir.exists()) {
-            try {
-                FileUtils.deleteDirectory(tmpZkDir);
-            } catch (Exception e) {
-                // ignore
-            }
-        }
         super.shutdown();
     }
 
@@ -489,62 +445,6 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
             }
         }
         pscProducer.close();
-    }
-
-    protected KafkaServer getKafkaServer(int brokerId, File tmpFolder) throws Exception {
-        Properties kafkaProperties = new Properties();
-
-        // properties have to be Strings
-        kafkaProperties.put("advertised.host.name", KAFKA_HOST);
-        kafkaProperties.put("broker.id", Integer.toString(brokerId));
-        kafkaProperties.put("log.dir", tmpFolder.toString());
-        kafkaProperties.put("zookeeper.connect", zookeeperConnectionString);
-        kafkaProperties.put("message.max.bytes", String.valueOf(50 * 1024 * 1024));
-        kafkaProperties.put("replica.fetch.max.bytes", String.valueOf(50 * 1024 * 1024));
-        kafkaProperties.put("transaction.max.timeout.ms", Integer.toString(1000 * 60 * 60 * 2)); // 2hours
-        kafkaProperties.put("log.retention.check.interval.ms", Long.MAX_VALUE); // disable Kafka log segment rotation
-
-        // for CI stability, increase zookeeper session timeout
-        kafkaProperties.put("zookeeper.session.timeout.ms", zkTimeout);
-        kafkaProperties.put("zookeeper.connection.timeout.ms", zkTimeout);
-        if (config.getKafkaServerProperties() != null) {
-            kafkaProperties.putAll(config.getKafkaServerProperties());
-        }
-
-        final int numTries = 5;
-
-        for (int i = 1; i <= numTries; i++) {
-            int kafkaPort = NetUtils.getAvailablePort().getPort();
-            kafkaProperties.put("port", Integer.toString(kafkaPort));
-
-            // to support secure kafka cluster
-            if (config.isSecureMode()) {
-                LOG.info("Adding Kafka secure configurations");
-                kafkaProperties.put("listeners", "SASL_PLAINTEXT://" + KAFKA_HOST + ":" + kafkaPort);
-                kafkaProperties.put("advertised.listeners",
-                        "SASL_PLAINTEXT://" + KAFKA_HOST + ":" + kafkaPort);
-                kafkaProperties.putAll(getSecureKafkaConfiguration());
-            }
-
-            KafkaConfig kafkaConfig = new KafkaConfig(kafkaProperties);
-
-            try {
-                scala.Option<String> stringNone = scala.Option.apply(null);
-                KafkaServer server = new KafkaServer(kafkaConfig, Time.SYSTEM, stringNone, false);
-                server.startup();
-                return server;
-            } catch (KafkaException e) {
-                if (e.getCause() instanceof BindException) {
-                    // port conflict, retry...
-                    LOG.info("Port conflict when starting Kafka Broker. Retrying...");
-                } else {
-                    throw e;
-                }
-            }
-        }
-
-        throw new Exception(
-                "Could not start Kafka after " + numTries + " retries due to port conflicts.");
     }
 
     private class PscOffsetHandlerImpl implements PscOffsetHandler {
@@ -579,5 +479,104 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         public void close() throws ConsumerException {
             offsetClient.close();
         }
+    }
+
+    private void startKafkaContainerCluster(int numBrokers) {
+        if (numBrokers > 1) {
+            network = Network.newNetwork();
+            zookeeper = createZookeeperContainer(network);
+            zookeeper.start();
+            LOG.info("Zookeeper container started");
+        }
+        for (int brokerID = 0; brokerID < numBrokers; brokerID++) {
+            KafkaContainer broker = createKafkaContainer(brokerID, zookeeper);
+            brokers.put(brokerID, broker);
+        }
+        new ArrayList<>(brokers.values()).parallelStream().forEach(GenericContainer::start);
+        LOG.info("{} brokers started: {}", numBrokers, brokers.keySet());
+        brokerConnectionString =
+                brokers.values().stream()
+                        .map(KafkaContainer::getBootstrapServers)
+                        // Here we have URL like "PLAINTEXT://127.0.0.1:15213", and we only keep the
+                        // "127.0.0.1:15213" part in broker connection string
+                        .map(server -> server.split("://")[1])
+                        .collect(Collectors.joining(","));
+    }
+
+    private GenericContainer<?> createZookeeperContainer(Network network) {
+        return new GenericContainer<>(DockerImageName.parse(DockerImageVersions.ZOOKEEPER))
+                .withNetwork(network)
+                .withNetworkAliases(ZOOKEEPER_HOSTNAME)
+                .withEnv("ZOOKEEPER_CLIENT_PORT", String.valueOf(ZOOKEEPER_PORT));
+    }
+
+    private KafkaContainer createKafkaContainer(
+            int brokerID, @Nullable GenericContainer<?> zookeeper) {
+        String brokerName = String.format("Kafka-%d", brokerID);
+        KafkaContainer broker =
+                PscUtil.createKafkaContainer(DockerImageVersions.KAFKA, LOG, brokerName)
+                        .withNetworkAliases(brokerName)
+                        .withEnv("KAFKA_BROKER_ID", String.valueOf(brokerID))
+                        .withEnv("KAFKA_MESSAGE_MAX_BYTES", String.valueOf(50 * 1024 * 1024))
+                        .withEnv("KAFKA_REPLICA_FETCH_MAX_BYTES", String.valueOf(50 * 1024 * 1024))
+                        .withEnv(
+                                "KAFKA_TRANSACTION_MAX_TIMEOUT_MS",
+                                Integer.toString(1000 * 60 * 60 * 2))
+                        // Disable log deletion to prevent records from being deleted during test
+                        // run
+                        .withEnv("KAFKA_LOG_RETENTION_MS", "-1")
+                        .withEnv("KAFKA_ZOOKEEPER_SESSION_TIMEOUT_MS", String.valueOf(zkTimeout))
+                        .withEnv(
+                                "KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS", String.valueOf(zkTimeout));
+
+        if (zookeeper != null) {
+            broker.dependsOn(zookeeper)
+                    .withNetwork(zookeeper.getNetwork())
+                    .withExternalZookeeper(
+                            String.format("%s:%d", ZOOKEEPER_HOSTNAME, ZOOKEEPER_PORT));
+        } else {
+            broker.withEmbeddedZookeeper();
+        }
+        return broker;
+    }
+
+    private void pause(int brokerId) {
+        if (pausedBroker.contains(brokerId)) {
+            LOG.warn("Broker {} is already paused. Skipping pause operation", brokerId);
+            return;
+        }
+        DockerClientFactory.instance()
+                .client()
+                .pauseContainerCmd(brokers.get(brokerId).getContainerId())
+                .exec();
+        pausedBroker.add(brokerId);
+        LOG.info("Broker {} is paused", brokerId);
+    }
+
+    private void unpause(int brokerId) throws Exception {
+        if (!pausedBroker.contains(brokerId)) {
+            LOG.warn("Broker {} is already running. Skipping unpause operation", brokerId);
+            return;
+        }
+        DockerClientFactory.instance()
+                .client()
+                .unpauseContainerCmd(brokers.get(brokerId).getContainerId())
+                .exec();
+        try (AdminClient adminClient = AdminClient.create(getStandardKafkaProperties())) {
+            CommonTestUtils.waitUtil(
+                    () -> {
+                        try {
+                            return adminClient.describeCluster().nodes().get().stream()
+                                    .anyMatch((node) -> node.id() == brokerId);
+                        } catch (Exception e) {
+                            return false;
+                        }
+                    },
+                    Duration.ofSeconds(30),
+                    String.format(
+                            "The paused broker %d is not recovered within timeout", brokerId));
+        }
+        pausedBroker.remove(brokerId);
+        LOG.info("Broker {} is resumed", brokerId);
     }
 }

@@ -22,7 +22,6 @@ import com.pinterest.flink.streaming.connectors.psc.internals.KeyedSerialization
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.flink.streaming.connectors.psc.testutils.FailingIdentityMapper;
 import com.pinterest.flink.streaming.connectors.psc.testutils.IntegerSource;
-import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
@@ -32,12 +31,6 @@ import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.configuration.Configuration;
-import org.apache.flink.runtime.client.JobExecutionException;
-import org.apache.flink.runtime.state.CheckpointListener;
-import org.apache.flink.runtime.state.FunctionInitializationContext;
-import org.apache.flink.runtime.state.FunctionSnapshotContext;
-import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
@@ -50,9 +43,7 @@ import org.junit.Test;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -103,11 +94,11 @@ public abstract class PscProducerTestBase extends PscTestBaseWithFlinkWithKafkaA
             LOG.info("Starting PscProducerITCase.testCustomPartitioning()");
 
             final String defaultTopic = "defaultTopic";
-            final String defaultTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + defaultTopic;
+            final String defaultTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + defaultTopic;
             final int defaultTopicPartitions = 2;
 
             final String dynamicTopic = "dynamicTopic";
-            final String dynamicTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + dynamicTopic;
+            final String dynamicTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + dynamicTopic;
             final int dynamicTopicPartitions = 3;
 
             createTestTopic(defaultTopic, defaultTopicPartitions, 1);
@@ -223,7 +214,7 @@ public abstract class PscProducerTestBase extends PscTestBaseWithFlinkWithKafkaA
      */
     protected void testExactlyOnce(boolean regularSink, int sinksCount) throws Exception {
         final String topic = (regularSink ? "exactlyOnceTopicRegularSink" : "exactlyTopicCustomOperator") + sinksCount;
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int partition = 0;
         final int numElements = 1000;
         final int failAfterElements = 333;
@@ -383,86 +374,6 @@ public abstract class PscProducerTestBase extends PscTestBaseWithFlinkWithKafkaA
             if (!missing) {
                 throw new SuccessException();
             }
-        }
-    }
-
-    private static class BrokerRestartingMapper<T> extends RichMapFunction<T, T>
-            implements CheckpointedFunction, CheckpointListener {
-
-        private static final long serialVersionUID = 6334389850158707313L;
-
-        public static volatile boolean triggeredShutdown;
-        public static volatile int lastSnapshotedElementBeforeShutdown;
-        public static volatile Runnable shutdownAction;
-
-        private final int failCount;
-        private int numElementsTotal;
-
-        private boolean failer;
-
-        public static void resetState(Runnable shutdownAction) {
-            triggeredShutdown = false;
-            lastSnapshotedElementBeforeShutdown = 0;
-            BrokerRestartingMapper.shutdownAction = shutdownAction;
-        }
-
-        public BrokerRestartingMapper(int failCount) {
-            this.failCount = failCount;
-        }
-
-        @Override
-        public void open(Configuration parameters) {
-            failer = getRuntimeContext().getIndexOfThisSubtask() == 0;
-        }
-
-        @Override
-        public T map(T value) throws Exception {
-            numElementsTotal++;
-            Thread.sleep(10);
-
-            if (!triggeredShutdown && failer && numElementsTotal >= failCount) {
-                // shut down a Kafka broker
-                triggeredShutdown = true;
-                shutdownAction.run();
-            }
-            return value;
-        }
-
-        @Override
-        public void notifyCheckpointComplete(long checkpointId) {
-        }
-
-        @Override
-        public void notifyCheckpointAborted(long checkpointId) {
-        }
-
-        @Override
-        public void snapshotState(FunctionSnapshotContext context) throws Exception {
-            if (!triggeredShutdown) {
-                lastSnapshotedElementBeforeShutdown = numElementsTotal;
-            }
-        }
-
-        @Override
-        public void initializeState(FunctionInitializationContext context) throws Exception {
-        }
-    }
-
-    private static final class InfiniteIntegerSource implements SourceFunction<Integer> {
-
-        private volatile boolean running = true;
-        private int counter = 0;
-
-        @Override
-        public void run(SourceContext<Integer> ctx) throws Exception {
-            while (running) {
-                ctx.collect(counter++);
-            }
-        }
-
-        @Override
-        public void cancel() {
-            running = false;
         }
     }
 }

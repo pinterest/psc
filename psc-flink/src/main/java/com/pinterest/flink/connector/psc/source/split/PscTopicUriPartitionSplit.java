@@ -33,8 +33,8 @@ import java.util.Set;
 @Internal
 public class PscTopicUriPartitionSplit implements SourceSplit {
     public static final long NO_STOPPING_OFFSET = Long.MIN_VALUE;
-    // Indicating the split should consume from the latest.
-    public static final long LATEST_OFFSET = -1;
+    // @deprecated Only be used for compatibility with the history state, see FLINK-28303
+    @Deprecated public static final long LATEST_OFFSET = -1;
     // Indicating the split should consume from the earliest.
     public static final long EARLIEST_OFFSET = -2;
     // Indicating the split should consume from the last committed offset.
@@ -78,7 +78,7 @@ public class PscTopicUriPartitionSplit implements SourceSplit {
     }
 
     public Optional<Long> getStoppingOffset() {
-        return stoppingOffset > 0
+        return stoppingOffset >= 0
                         || stoppingOffset == LATEST_OFFSET
                         || stoppingOffset == COMMITTED_OFFSET
                 ? Optional.of(stoppingOffset)

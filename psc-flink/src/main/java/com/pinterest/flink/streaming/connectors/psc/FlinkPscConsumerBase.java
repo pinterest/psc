@@ -816,8 +816,10 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
         //                 thread running the main fetcher loop
         //  2) Old state - partition discovery is disabled and only the main fetcher loop is executed
         if (discoveryIntervalMillis == PARTITION_DISCOVERY_DISABLED) {
+            LOG.info("Starting FlinkPscConsumerBase without partition discovery.");
             pscFetcher.runFetchLoop();
         } else {
+            LOG.info("Starting FlinkPscConsumerBase with partition discovery interval={}ms.", discoveryIntervalMillis);
             runWithPartitionDiscovery();
         }
     }
@@ -871,6 +873,8 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
 
                     // no need to add the discovered partitions if we were closed during the meantime
                     if (running && !discoveredPartitions.isEmpty()) {
+                        LOG.info("Consumer subtask {} discovered {} new partitions: {}",
+                                getRuntimeContext().getIndexOfThisSubtask(), discoveredPartitions.size(), discoveredPartitions);
                         pscFetcher.addDiscoveredPartitions(discoveredPartitions);
                     }
 
@@ -961,7 +965,7 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
 
     protected void initializePscConfigurationInternal() {
         if (pscConfigurationInternal == null) {
-            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(properties, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(properties, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         }
     }
 

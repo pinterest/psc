@@ -412,7 +412,7 @@ public class TestOneKafkaBackend {
         PscProducerMessage<Integer, Integer> producerMessage = new PscProducerMessage<>(topicUriStr1, 0);
         Exception e = assertThrows(ProducerException.class, () -> pscProducer.send(producerMessage));
         assertEquals(IllegalStateException.class, e.getCause().getClass());
-        pscProducer.close();
+        pscProducer.close(Duration.ofSeconds(1));
     }
 
     /**
@@ -657,7 +657,7 @@ public class TestOneKafkaBackend {
         TopicUri topicUri = TopicUri.validate("plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region::cluster:");
         TopicUri kafkaTopicUri = KafkaTopicUri.validate(topicUri);
 
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(producerConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(producerConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
 
         Set<PscBackendProducer<String, String>> producers = creator.getProducers(
                 pscConfigurationInternal.getEnvironment(),

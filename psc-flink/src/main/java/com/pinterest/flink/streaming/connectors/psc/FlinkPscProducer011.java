@@ -18,7 +18,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc;
 
-import com.pinterest.flink.streaming.connectors.psc.internals.PscSimpleTypeSerializerSnapshot;
+import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
 
 /**
  * Compatibility class to make migration possible from the 0.11 connector to the universal one.
@@ -40,7 +40,7 @@ import com.pinterest.flink.streaming.connectors.psc.internals.PscSimpleTypeSeria
 //CHECKSTYLE:OFF: JavadocType
 public class FlinkPscProducer011 {
     public static class NextTransactionalIdHintSerializer {
-        public static final class NextTransactionalIdHintSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<FlinkPscProducer.NextTransactionalIdHint> {
+        public static final class NextTransactionalIdHintSerializerSnapshot extends SimpleTypeSerializerSnapshot<FlinkPscProducer.NextTransactionalIdHint> {
             public NextTransactionalIdHintSerializerSnapshot() {
                 super(FlinkPscProducer.NextTransactionalIdHintSerializer::new);
             }
@@ -48,7 +48,7 @@ public class FlinkPscProducer011 {
     }
 
     public static class ContextStateSerializer {
-        public static final class ContextStateSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<FlinkPscProducer.PscTransactionContext> {
+        public static final class ContextStateSerializerSnapshot extends SimpleTypeSerializerSnapshot<FlinkPscProducer.PscTransactionContext> {
             public ContextStateSerializerSnapshot() {
                 super(FlinkPscProducer.ContextStateSerializer::new);
             }
@@ -56,7 +56,7 @@ public class FlinkPscProducer011 {
     }
 
     public static class TransactionStateSerializer {
-        public static final class TransactionStateSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<FlinkPscProducer.PscTransactionState> {
+        public static final class TransactionStateSerializerSnapshot extends SimpleTypeSerializerSnapshot<FlinkPscProducer.PscTransactionState> {
             public TransactionStateSerializerSnapshot() {
                 super(FlinkPscProducer.TransactionStateSerializer::new);
             }

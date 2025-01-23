@@ -129,7 +129,7 @@ class TestSerializedDataMetricsConsumerInterceptor {
 
         // verify messages are not modified
         List<PscConsumerMessage<byte[], byte[]>> pscConsumerMessageListCopy = new ArrayList<>(pscConsumerMessageList);
-        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         pscConsumerMessageList.forEach(rawDataMetricsInterceptor::onConsume);
         bytesConsumerTestUtil.verifyIdenticalLists(pscConsumerMessageList, pscConsumerMessageListCopy);
 

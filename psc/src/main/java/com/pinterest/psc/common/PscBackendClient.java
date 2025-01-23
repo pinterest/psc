@@ -15,7 +15,7 @@ import java.util.concurrent.ScheduledExecutorService;
 
 public abstract class PscBackendClient<K, V> implements AutoCloseable {
     private static final PscLogger logger = PscLogger.getLogger(PscBackendClient.class);
-    protected final static Map<String, TopicUri> backendTopicToTopicUri = new ConcurrentHashMap<>();
+    protected final Map<String, TopicUri> backendTopicToTopicUri = new ConcurrentHashMap<>();
     protected final OverwriteSet activeTopicUrisOrPartitions = new OverwriteSet();
     protected final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     protected final MetricValueProvider metricValueProvider = new MetricValueProvider();

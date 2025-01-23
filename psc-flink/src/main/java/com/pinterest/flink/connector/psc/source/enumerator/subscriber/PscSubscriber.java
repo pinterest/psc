@@ -21,7 +21,7 @@ package com.pinterest.flink.connector.psc.source.enumerator.subscriber;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
-import org.apache.flink.annotation.Internal;
+import org.apache.flink.annotation.PublicEvolving;
 
 import java.io.Serializable;
 import java.util.List;
@@ -40,7 +40,7 @@ import java.util.regex.Pattern;
  * <p>The PscSubscriber provides a unified interface for the PSC source to support all these
  * three types of subscribing mode.
  */
-@Internal
+@PublicEvolving
 public interface PscSubscriber extends Serializable {
 
     /**

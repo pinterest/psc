@@ -23,6 +23,8 @@ import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple3;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.runtime.state.KeyGroupRange;
 import org.apache.flink.runtime.state.KeyGroupRangeAssignment;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -167,6 +169,7 @@ public class PscShuffleTestBase extends PscConsumerTestBaseWithKafkaAsPubSub {
         private final String topicUri;
 
         private int previousPartition;
+        private KeyGroupRange keyGroupRange;
 
         PartitionValidator(
                 KeySelector<Tuple3<Integer, Long, Integer>, Tuple> keySelector,
@@ -179,19 +182,42 @@ public class PscShuffleTestBase extends PscConsumerTestBaseWithKafkaAsPubSub {
         }
 
         @Override
+        public void open(Configuration parameters) throws Exception {
+            super.open(parameters);
+            this.keyGroupRange =
+                    KeyGroupRangeAssignment.computeKeyGroupRangeForOperatorIndex(
+                            getRuntimeContext().getMaxNumberOfParallelSubtasks(),
+                            numberOfPartitions,
+                            getRuntimeContext().getIndexOfThisSubtask());
+        }
+
+        @Override
         public void processElement(
                 Tuple3<Integer, Long, Integer> in,
                 Context ctx,
                 Collector<Tuple3<Integer, Long, Integer>> out) throws Exception {
-            int expectedPartition = KeyGroupRangeAssignment
+            int expectedSubtask = KeyGroupRangeAssignment
                     .assignKeyToParallelOperator(keySelector.getKey(in), numberOfPartitions, numberOfPartitions);
+            int expectedPartition = -1;
+            // This is how Kafka assign partition to subTask;
+            for (int i = 0; i < numberOfPartitions; i++) {
+                if (PscTopicUriPartitionAssigner.assign(topicUri, i, numberOfPartitions)
+                        == expectedSubtask) {
+                    expectedPartition = i;
+                }
+            }
             int indexOfThisSubtask = getRuntimeContext().getIndexOfThisSubtask();
-            PscTopicUriPartition pscTopicUriPartition = new PscTopicUriPartition(topicUri, expectedPartition);
 
             // This is how Kafka assign partition to subTask;
             boolean rightAssignment =
-                    PscTopicUriPartitionAssigner.assign(pscTopicUriPartition, numberOfPartitions) == indexOfThisSubtask;
-            boolean samePartition = (previousPartition == expectedPartition) || (previousPartition == -1);
+                    (expectedSubtask == indexOfThisSubtask)
+                            && keyGroupRange.contains(
+                            KeyGroupRangeAssignment.assignToKeyGroup(
+                                    keySelector.getKey(in),
+                                    getRuntimeContext().getMaxNumberOfParallelSubtasks()));
+            boolean samePartition =
+                    (expectedPartition != -1)
+                            && ((previousPartition == expectedPartition) || (previousPartition == -1));
             previousPartition = expectedPartition;
 
             if (!(rightAssignment && samePartition)) {

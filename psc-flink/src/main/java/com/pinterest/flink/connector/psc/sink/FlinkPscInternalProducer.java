@@ -18,14 +18,17 @@
 package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
+import com.pinterest.psc.producer.Callback;
 import com.pinterest.psc.producer.PscBackendProducer;
 import com.pinterest.psc.producer.PscProducer;
+import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 import com.pinterest.psc.producer.transaction.TransactionManagerUtils;
 import org.slf4j.Logger;
@@ -50,6 +53,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlinkPscInternalProducer.class);
     @Nullable private String transactionalId;
+    private volatile boolean hasRecordsInTransaction;
     private volatile boolean inTransaction;
     private volatile boolean closed;
     private TopicUri clusterUri = null;
@@ -76,6 +80,14 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
     }
 
     @Override
+    public Future<MessageId> send(PscProducerMessage<K, V> message, Callback callback) throws ConfigurationException, ProducerException {
+        if (inTransaction) {
+            hasRecordsInTransaction = true;
+        }
+        return super.send(message, callback);
+    }
+
+    @Override
     public void flush() throws ProducerException {
         super.flush();
         if (inTransaction) {
@@ -94,6 +106,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         LOG.debug("abortTransaction {}", transactionalId);
         checkState(inTransaction, "Transaction was not started");
         inTransaction = false;
+        hasRecordsInTransaction = false;
         super.abortTransaction();
     }
 
@@ -102,11 +115,16 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         LOG.debug("commitTransaction {}", transactionalId);
         checkState(inTransaction, "Transaction was not started");
         inTransaction = false;
+        hasRecordsInTransaction = false;
         super.commitTransaction();
     }
 
     public boolean isInTransaction() {
         return inTransaction;
+    }
+
+    public boolean hasRecordsInTransaction() {
+        return hasRecordsInTransaction;
     }
 
     @Override
@@ -226,6 +244,7 @@ class FlinkPscInternalProducer<K, V> extends PscProducer<K, V> {
         PscProducerTransactionalProperties pscProducerTransactionalProperties = new PscProducerTransactionalProperties(producerId, epoch);
         super.resumeTransaction(pscProducerTransactionalProperties, Collections.singleton(clusterUri.getTopicUriAsString()));
         this.inTransaction = true;
+        this.hasRecordsInTransaction = true;
     }
 
     private void ensureOnlyOneBackendProducer() {

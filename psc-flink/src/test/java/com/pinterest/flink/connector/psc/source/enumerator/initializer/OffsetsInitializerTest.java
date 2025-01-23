@@ -29,7 +29,6 @@ import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.junit.AfterClass;
-import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -37,16 +36,19 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+
 
 /** Unit tests for {@link OffsetsInitializer}. */
 public class OffsetsInitializerTest {
     private static final String TOPIC = "topic";
-    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC;
+    private static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC;
     private static final String TOPIC2 = "topic2";
-    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC2;
+    private static final String EMPTY_TOPIC3 = "topic3";
+    private static final String EMPTY_TOPIC_URI3 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + EMPTY_TOPIC3;
     private static PscSourceEnumerator.PartitionOffsetsRetrieverImpl retriever;
 
     @BeforeClass
@@ -54,9 +56,10 @@ public class OffsetsInitializerTest {
         PscSourceTestEnv.setup();
         PscSourceTestEnv.setupTopic(TOPIC_URI, true, true, PscSourceTestEnv::getRecordsForTopic);
         PscSourceTestEnv.setupTopic(TOPIC_URI2, false, false, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.createTestTopic(EMPTY_TOPIC_URI3);
         retriever =
                 new PscSourceEnumerator.PartitionOffsetsRetrieverImpl(
-                        PscSourceTestEnv.getMetadataClient(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI, PscSourceTestEnv.GROUP_ID);
+                        PscSourceTestEnv.getMetadataClient(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI, PscSourceTestEnv.GROUP_ID);
     }
 
     @AfterClass
@@ -70,12 +73,13 @@ public class OffsetsInitializerTest {
         OffsetsInitializer initializer = OffsetsInitializer.earliest();
         List<TopicUriPartition> partitions = PscSourceTestEnv.getPartitionsForTopic(TOPIC_URI);
         Map<TopicUriPartition, Long> offsets = initializer.getPartitionOffsets(partitions, retriever);
-        assertEquals(partitions.size(), offsets.size());
-        assertTrue(offsets.keySet().containsAll(partitions));
+        assertThat(offsets).hasSameSizeAs(partitions);
+        assertThat(offsets.keySet()).containsAll(partitions);
         for (long offset : offsets.values()) {
-            Assert.assertEquals(PscTopicUriPartitionSplit.EARLIEST_OFFSET, offset);
+            assertThat(offset).isEqualTo(PscTopicUriPartitionSplit.EARLIEST_OFFSET);
         }
-        assertEquals(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST, initializer.getAutoOffsetResetStrategy());
+        assertThat(initializer.getAutoOffsetResetStrategy())
+                .isEqualTo(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
     }
 
     @Test
@@ -83,12 +87,13 @@ public class OffsetsInitializerTest {
         OffsetsInitializer initializer = OffsetsInitializer.latest();
         List<TopicUriPartition> partitions = PscSourceTestEnv.getPartitionsForTopic(TOPIC_URI);
         Map<TopicUriPartition, Long> offsets = initializer.getPartitionOffsets(partitions, retriever);
-        assertEquals(partitions.size(), offsets.size());
-        assertTrue(offsets.keySet().containsAll(partitions));
+        assertThat(offsets).hasSameSizeAs(partitions);
+        assertThat(offsets.keySet()).containsAll(partitions);
         for (long offset : offsets.values()) {
-            assertEquals(PscTopicUriPartitionSplit.LATEST_OFFSET, offset);
+            assertThat(offset).isEqualTo(PscSourceTestEnv.NUM_RECORDS_PER_PARTITION);
         }
-        assertEquals(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST, initializer.getAutoOffsetResetStrategy());
+        assertThat(initializer.getAutoOffsetResetStrategy())
+                .isEqualTo(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST);
     }
 
     @Test
@@ -96,10 +101,10 @@ public class OffsetsInitializerTest {
         OffsetsInitializer initializer = OffsetsInitializer.committedOffsets();
         List<TopicUriPartition> partitions = PscSourceTestEnv.getPartitionsForTopic(TOPIC_URI);
         Map<TopicUriPartition, Long> offsets = initializer.getPartitionOffsets(partitions, retriever);
-        assertEquals(partitions.size(), offsets.size());
+        assertThat(offsets).hasSameSizeAs(partitions);
         offsets.forEach(
-                (tp, offset) -> assertEquals(PscTopicUriPartitionSplit.COMMITTED_OFFSET, (long) offset));
-        assertEquals(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE, initializer.getAutoOffsetResetStrategy());
+                (tp, offset) -> assertThat((long) offset).isEqualTo(PscTopicUriPartitionSplit.COMMITTED_OFFSET));
+        assertThat(initializer.getAutoOffsetResetStrategy()).isEqualTo(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE);
     }
 
     @Test
@@ -110,9 +115,21 @@ public class OffsetsInitializerTest {
         offsets.forEach(
                 (tp, offset) -> {
                     long expectedOffset = tp.getPartition() > 2 ? tp.getPartition() : 3L;
-                    assertEquals(expectedOffset, (long) offset);
+                    assertThat((long) offset).isEqualTo(expectedOffset);
                 });
-        assertEquals(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE, initializer.getAutoOffsetResetStrategy());
+        assertThat(initializer.getAutoOffsetResetStrategy()).isEqualTo(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST);
+    }
+
+    @Test
+    public void testTimestampOffsetsInitializerForEmptyPartitions() {
+        OffsetsInitializer initializer = OffsetsInitializer.timestamp(2001);
+        List<TopicUriPartition> partitions = PscSourceTestEnv.getPartitionsForTopic(EMPTY_TOPIC_URI3);
+        Map<TopicUriPartition, Long> expectedOffsets =
+                partitions.stream().collect(Collectors.toMap(tp -> tp, tp -> 0L));
+        assertThat(initializer.getPartitionOffsets(partitions, retriever))
+                .as("offsets are equal to 0 since the timestamp is out of range.")
+                .isEqualTo(expectedOffsets);
+        assertThat(initializer.getAutoOffsetResetStrategy()).isEqualTo(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_LATEST);
     }
 
     @Test
@@ -127,7 +144,7 @@ public class OffsetsInitializerTest {
         specifiedOffsets.remove(partitionSetToCommitted);
         OffsetsInitializer initializer = OffsetsInitializer.offsets(specifiedOffsets);
 
-        assertEquals(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST, initializer.getAutoOffsetResetStrategy());
+        assertThat(initializer.getAutoOffsetResetStrategy()).isEqualTo(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         // The partition without committed offset should fallback to offset reset strategy.
         TopicUriPartition partitionSetToEarliest = new TopicUriPartition(KafkaTopicUri.validate(BaseTopicUri.validate(TOPIC_URI2)), 0);
         partitions.add(partitionSetToEarliest);
@@ -143,8 +160,9 @@ public class OffsetsInitializerTest {
             } else {
                 expectedOffset = specifiedOffsets.get(tp);
             }
-            assertEquals(
-                    String.format("%s has incorrect offset.", tp), expectedOffset, (long) offset);
+            assertThat((long) offset)
+                    .as(String.format("%s has incorrect offset.", tp))
+                    .isEqualTo(expectedOffset);
         }
     }
 

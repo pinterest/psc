@@ -21,18 +21,72 @@ package com.pinterest.flink.connector.psc.source.enumerator;
 import com.pinterest.psc.common.TopicUriPartition;
 import org.apache.flink.annotation.Internal;
 
+import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /** The state of PSC source enumerator. */
 @Internal
 public class PscSourceEnumState {
-    private final Set<TopicUriPartition> assignedPartitions;
+    /** Partitions with status: ASSIGNED or UNASSIGNED_INITIAL. */
+    private final Set<TopicUriPartitionAndAssignmentStatus> partitions;
+    /**
+     * this flag will be marked as true if inital partitions are discovered after enumerator starts.
+     */
+    private final boolean initialDiscoveryFinished;
 
-    PscSourceEnumState(Set<TopicUriPartition> assignedPartitions) {
-        this.assignedPartitions = assignedPartitions;
+    public PscSourceEnumState(
+            Set<TopicUriPartitionAndAssignmentStatus> partitions, boolean initialDiscoveryFinished) {
+        this.partitions = partitions;
+        this.initialDiscoveryFinished = initialDiscoveryFinished;
+    }
+
+    public PscSourceEnumState(
+            Set<TopicUriPartition> assignPartitions,
+            Set<TopicUriPartition> unassignedInitialPartitions,
+            boolean initialDiscoveryFinished) {
+        this.partitions = new HashSet<>();
+        partitions.addAll(
+                assignPartitions.stream()
+                        .map(
+                                topicUriPartition ->
+                                        new TopicUriPartitionAndAssignmentStatus(
+                                                topicUriPartition, AssignmentStatus.ASSIGNED))
+                        .collect(Collectors.toSet()));
+        partitions.addAll(
+                unassignedInitialPartitions.stream()
+                        .map(
+                                topicPartition ->
+                                        new TopicUriPartitionAndAssignmentStatus(
+                                                topicPartition,
+                                                AssignmentStatus.UNASSIGNED_INITIAL))
+                        .collect(Collectors.toSet()));
+        this.initialDiscoveryFinished = initialDiscoveryFinished;
+    }
+
+    public Set<TopicUriPartitionAndAssignmentStatus> partitions() {
+        return partitions;
     }
 
     public Set<TopicUriPartition> assignedPartitions() {
-        return assignedPartitions;
+        return filterPartitionsByAssignmentStatus(AssignmentStatus.ASSIGNED);
+    }
+
+    public Set<TopicUriPartition> unassignedInitialPartitions() {
+        return filterPartitionsByAssignmentStatus(AssignmentStatus.UNASSIGNED_INITIAL);
+    }
+
+    public boolean initialDiscoveryFinished() {
+        return initialDiscoveryFinished;
+    }
+
+    private Set<TopicUriPartition> filterPartitionsByAssignmentStatus(
+            AssignmentStatus assignmentStatus) {
+        return partitions.stream()
+                .filter(
+                        partitionWithStatus ->
+                                partitionWithStatus.assignmentStatus().equals(assignmentStatus))
+                .map(TopicUriPartitionAndAssignmentStatus::topicUriPartition)
+                .collect(Collectors.toSet());
     }
 }

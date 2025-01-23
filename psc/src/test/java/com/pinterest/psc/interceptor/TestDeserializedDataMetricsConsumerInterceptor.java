@@ -85,7 +85,7 @@ class TestDeserializedDataMetricsConsumerInterceptor {
         pscMetricRegistryManager.setPscMetricTagManager(pscMetricTagManager);
         PscConsumerUtils.setPscMetricRegistryManager(pscConsumer, pscMetricRegistryManager);
         pscMetricTagManager.initializePscMetricTagManager(pscConfigurationInternal);
-        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
     }
 
     @AfterEach

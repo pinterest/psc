@@ -31,7 +31,7 @@ public class PscMetricsUtils {
                     pscConfiguration.setProperty(PscConfiguration.PSC_METRIC_REPORTING_ENABLED, enableMetricReporting);
                 }
 
-                pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER, true);
+                pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER, true);
                 PscMetricRegistryManager.getInstance().initialize(
                         pscConfigurationInternal
                 );

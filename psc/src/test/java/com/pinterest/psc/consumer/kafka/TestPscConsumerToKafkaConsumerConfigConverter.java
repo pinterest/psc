@@ -33,7 +33,7 @@ public class TestPscConsumerToKafkaConsumerConfigConverter {
 
     @Test
     void testSslConfigInjection() throws ConfigurationException, TopicUriSyntaxException {
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         TopicUri secureUri = TopicUri.validate("secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region::cluster:topic");
         TopicUri plaintextUri = TopicUri.validate("plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region::cluster:topic");
         PscConsumerToBackendConsumerConfigConverter converter = new PscConsumerToKafkaConsumerConfigConverter();

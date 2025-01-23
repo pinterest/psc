@@ -52,7 +52,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.putDiscoveryProperties;
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Base class for KafkaSource unit tests. */
 public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
@@ -88,14 +88,14 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
     public static PscMetadataClient getMetadataClient() throws ConfigurationException {
         Properties props = new Properties();
         props.setProperty(PscConfiguration.PSC_METADATA_CLIENT_ID, "psc-source-test-env-metadata-client");
-        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         return new PscMetadataClient(PscConfigurationUtils.propertiesToPscConfiguration(props));
     }
 
     public static PscMetadataClient getSecureMetadataClient() throws ConfigurationException {
         Properties props = new Properties();
         props.setProperty(PscConfiguration.PSC_METADATA_CLIENT_ID, "psc-source-test-env-metadata-client-secure");
-        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_SECURE_PREFIX);
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_SECURE_PREFIX);
         return new PscMetadataClient(PscConfigurationUtils.propertiesToPscConfiguration(props));
     }
 
@@ -108,7 +108,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
         props.setProperty(
                 PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER,
                 IntegerDeserializer.class.getName());
-        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         return new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(props));
     }
 
@@ -120,7 +120,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
                 PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, deserializerClass.getName());
         props.setProperty(
                 PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, deserializerClass.getName());
-        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         return props;
     }
 
@@ -273,7 +273,7 @@ public class PscSourceTestEnv extends PscTestBaseWithKafkaAsPubSub {
         }
         consumer.commitSync(toCommit);
         Map<TopicUriPartition, Long> toVerify = metadataClient.listOffsetsForConsumerGroup(PscTestUtils.getClusterUri(), GROUP_ID, committedOffsets.keySet(), Duration.ofSeconds(10));
-        assertEquals("The offsets are not committed", committedOffsets, toVerify);
+        assertThat(toVerify).as("The offsets are not committed").isEqualTo(committedOffsets);
     }
 
     public static void produceMessages(Collection<PscProducerMessage<String, Integer>> records)

@@ -20,7 +20,7 @@ package com.pinterest.flink.connector.psc.sink;
 import org.apache.flink.util.TestLogger;
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Tests for {@link TransactionalIdFactory}. */
 public class TransactionIdFactoryTest extends TestLogger {
@@ -28,6 +28,7 @@ public class TransactionIdFactoryTest extends TestLogger {
     @Test
     public void testBuildTransactionalId() {
         final String expected = "prefix-0-2";
-        assertEquals(expected, TransactionalIdFactory.buildTransactionalId("prefix", 0, 2L));
+        assertThat(TransactionalIdFactory.buildTransactionalId("prefix", 0, 2L))
+                .isEqualTo(expected);
     }
 }

@@ -22,7 +22,7 @@ import org.junit.Test;
 
 import java.io.IOException;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Tests for serializing and deserialzing {@link PscCommittable} with {@link
@@ -38,6 +38,6 @@ public class PscCommittableSerializerTest extends TestLogger {
         final short epoch = 5;
         final PscCommittable committable = new PscCommittable(1L, epoch, transactionalId, null);
         final byte[] serialized = SERIALIZER.serialize(committable);
-        assertEquals(committable, SERIALIZER.deserialize(1, serialized));
+        assertThat(SERIALIZER.deserialize(1, serialized)).isEqualTo(committable);
     }
 }

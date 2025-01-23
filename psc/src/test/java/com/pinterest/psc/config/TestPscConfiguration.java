@@ -31,12 +31,12 @@ public class TestPscConfiguration {
         configuration1.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         configuration1.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
         configuration1.setProperty(PscConfiguration.PSC_METRICS_REPORTER_PARALLELISM, "5");
-        PscConfigurationInternal consumerConfig = new PscConfigurationInternal(configuration1, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal consumerConfig = new PscConfigurationInternal(configuration1, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         PscConfiguration configuration2 = new PscConfiguration();
         configuration2.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "client-id");
         configuration2.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         configuration2.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
-        PscConfigurationInternal producerConfig = new PscConfigurationInternal(configuration2, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        PscConfigurationInternal producerConfig = new PscConfigurationInternal(configuration2, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
 
         // bad client type
         assertThrows(ConfigurationException.class, () -> new PscConfigurationInternal(configuration1, "bad_client_type"));
@@ -73,7 +73,7 @@ public class TestPscConfiguration {
         configuration.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "group-id");
         configuration.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, OpenTSDBReporter.class.getName());
         configuration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
-        PscConfigurationInternal consumerConfig = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal consumerConfig = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         consumerConfig.validate();
         assertEquals(OpenTSDBReporter.class.getName(), consumerConfig.getPscMetricsReporterClass());
         assertFalse(consumerConfig.isConfigLoggingEnabled());
@@ -85,7 +85,7 @@ public class TestPscConfiguration {
         configuration.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
         configuration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "true");
         configuration.setProperty(PscConfiguration.PSC_CONFIG_TOPIC_URI, "config_topic_uri");
-        consumerConfig = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        consumerConfig = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         consumerConfig.validate();
         assertEquals(TestUtils.DEFAULT_METRICS_REPORTER, consumerConfig.getPscMetricsReporterClass());
         assertTrue(consumerConfig.isConfigLoggingEnabled());
@@ -99,7 +99,7 @@ public class TestPscConfiguration {
         clearProperty(configuration, PscConfiguration.PSC_CONFIG_LOGGING_ENABLED);
         if (!PscUtils.isEc2Host())
             clearProperty(configuration, PscConfiguration.PSC_CONFIG_TOPIC_URI);
-        consumerConfig = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        consumerConfig = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         consumerConfig.validate();
         assertEquals(
                 PscUtils.isEc2Host() ? OpenTSDBReporter.class.getName() : TestUtils.DEFAULT_METRICS_REPORTER,
@@ -123,7 +123,7 @@ public class TestPscConfiguration {
                         Arrays.asList(ProducerTypedInterceptor1.class.getName(), ProducerTypedInterceptor2.class.getName())
                 )
         );
-        PscConfigurationInternal pscConfiguration = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        PscConfigurationInternal pscConfiguration = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
 
         assertEquals(valueWithSpecialCharacters, pscConfiguration.getPscProducerClientId());
         assertEquals(2, pscConfiguration.getTypedPscProducerInterceptors().size());
@@ -142,7 +142,7 @@ public class TestPscConfiguration {
                         Arrays.asList(ProducerTypedInterceptor1.class.getName(), ProducerTypedInterceptor2.class.getName())
                 )
         );
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
 
         assertEquals(valueWithSpecialCharacters, pscConfigurationInternal.getPscProducerClientId());
         assertEquals(2, pscConfigurationInternal.getTypedPscProducerInterceptors().size());
@@ -161,7 +161,7 @@ public class TestPscConfiguration {
         // PSC default for PSC_CONSUMER_OFFSET_AUTO_RESET is null (to enforce the default value from backend)
         pscConfiguration.setProperty("psc.consumer.auto.offset.reset", "earliest");
 
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
 
         assertEquals(1048576, pscConfigurationInternal.getConfiguration().getLong(PscConfiguration.PSC_CONSUMER_BUFFER_RECEIVE_BYTES));
         assertEquals(null, pscConfigurationInternal.getConfiguration().getString(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET));
@@ -184,8 +184,8 @@ public class TestPscConfiguration {
         pscConsumerConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, new StringDeserializer());
         pscConsumerConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class.getName());
 
-        PscConfigurationInternal pscProducerConfigurationInternal = new PscConfigurationInternal(pscProducerConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
-        PscConfigurationInternal pscConsumerConfigurationInternal = new PscConfigurationInternal(pscConsumerConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal pscProducerConfigurationInternal = new PscConfigurationInternal(pscProducerConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
+        PscConfigurationInternal pscConsumerConfigurationInternal = new PscConfigurationInternal(pscConsumerConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
 
         // Test producer serializers
         assertTrue(pscProducerConfigurationInternal.getPscProducerKeySerializer() instanceof StringSerializer);

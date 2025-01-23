@@ -12,7 +12,7 @@
     </Appenders>
 
     <Loggers>
-        <AsyncRoot level="info" includeLocation="true">
+        <AsyncRoot level="error" includeLocation="true">
             <AppenderRef ref="console"/>
         </AsyncRoot>
     </Loggers>

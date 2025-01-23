@@ -21,14 +21,20 @@ package com.pinterest.flink.streaming.connectors.psc.table;
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.PscSink;
 import com.pinterest.flink.connector.psc.source.PscSource;
+import com.pinterest.flink.connector.psc.source.PscSourceTestUtils;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplit;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.config.BoundedMode;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
+import com.pinterest.flink.streaming.connectors.psc.testutils.MockPartitionOffsetsRetriever;
+import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
+import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.formats.avro.AvroRowDataSerializationSchema;
@@ -81,19 +87,17 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static org.apache.flink.core.testutils.FlinkMatchers.containsCause;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSink;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSource;
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Test for {@link UpsertPscDynamicTableFactory}. */
 public class UpsertPscDynamicTableFactoryTest extends TestLogger {
 
     private static final String SOURCE_TOPIC = "sourceTopic_1";
-    private static final String SOURCE_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + SOURCE_TOPIC;
+    private static final String SOURCE_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + SOURCE_TOPIC;
 
     private static final String SINK_TOPIC = "sinkTopic";
-    private static final String SINK_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + SINK_TOPIC;
+    private static final String SINK_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + SINK_TOPIC;
 
     private static final String TEST_REGISTRY_URL = "http://localhost:8081";
     private static final String DEFAULT_VALUE_SUBJECT = SINK_TOPIC_URI + "-value";
@@ -129,9 +133,9 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     private static final Properties UPSERT_PSC_SINK_PROPERTIES = new Properties();
 
     static {
-        UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
-        UPSERT_PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        UPSERT_PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
     }
 
     static EncodingFormat<SerializationSchema<RowData>> keyEncodingFormat =
@@ -165,7 +169,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         null,
                         SOURCE_TOPIC_URI,
                         UPSERT_PSC_SOURCE_PROPERTIES);
-        assertEquals(actualSource, expectedSource);
+        assertThat(actualSource).isEqualTo(expectedSource);
 
         final PscDynamicSource actualUpsertPscSource = (PscDynamicSource) actualSource;
         ScanTableSource.ScanRuntimeProvider provider =
@@ -176,7 +180,14 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     @Test
     public void testTableSink() {
         // Construct table sink using options and table sink factory.
-        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, getFullSinkOptions());
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getFullSinkOptions(),
+                        options -> {
+                            options.put("sink.delivery-guarantee", "exactly-once");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
+                        });
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, modifiedOptions);
 
         final DynamicTableSink expectedSink =
                 createExpectedSink(
@@ -188,21 +199,22 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         null,
                         SINK_TOPIC_URI,
                         UPSERT_PSC_SINK_PROPERTIES,
-                        DeliveryGuarantee.AT_LEAST_ONCE,
+                        DeliveryGuarantee.EXACTLY_ONCE,
                         SinkBufferFlushMode.DISABLED,
-                        null);
+                        null,
+                        "psc-sink");
 
         // Test sink format.
         final PscDynamicSink actualUpsertPscSink = (PscDynamicSink) actualSink;
-        assertEquals(expectedSink, actualSink);
+        assertThat(actualSink).isEqualTo(expectedSink);
 
         // Test PSC producer.
         DynamicTableSink.SinkRuntimeProvider provider =
                 actualUpsertPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
-        assertThat(provider, instanceOf(SinkV2Provider.class));
+        assertThat(provider).isInstanceOf(SinkV2Provider.class);
         final SinkV2Provider sinkFunctionProvider = (SinkV2Provider) provider;
         final Sink<RowData> sink = sinkFunctionProvider.createSink();
-        assertThat(sink, instanceOf(PscSink.class));
+        assertThat(sink).isInstanceOf(PscSink.class);
     }
 
     @SuppressWarnings("rawtypes")
@@ -217,6 +229,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                                 options -> {
                                     options.put("sink.buffer-flush.max-rows", "100");
                                     options.put("sink.buffer-flush.interval", "1s");
+                                    options.put("sink.delivery-guarantee", "exactly-once");
+                                    options.put("sink.transactional-id-prefix", "psc-sink");
                                 }));
 
         final DynamicTableSink expectedSink =
@@ -229,18 +243,19 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         null,
                         SINK_TOPIC_URI,
                         UPSERT_PSC_SINK_PROPERTIES,
-                        DeliveryGuarantee.AT_LEAST_ONCE,
+                        DeliveryGuarantee.EXACTLY_ONCE,
                         new SinkBufferFlushMode(100, 1000L),
-                        null);
+                        null,
+                        "psc-sink");
 
         // Test sink format.
         final PscDynamicSink actualUpsertPscSink = (PscDynamicSink) actualSink;
-        assertEquals(expectedSink, actualSink);
+        assertThat(actualSink).isEqualTo(expectedSink);
 
         // Test PSC producer.
         DynamicTableSink.SinkRuntimeProvider provider =
                 actualUpsertPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
-        assertThat(provider, instanceOf(DataStreamSinkProvider.class));
+        assertThat(provider).isInstanceOf(DataStreamSinkProvider.class);
         final DataStreamSinkProvider sinkProvider = (DataStreamSinkProvider) provider;
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         sinkProvider.consumeDataStream(
@@ -254,17 +269,22 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                                         new RuntimeException(
                                                 "Expected operator with name Sink in stream graph."))
                         .getOperatorFactory();
-        assertThat(sinkOperatorFactory, instanceOf(SinkWriterOperatorFactory.class));
+        assertThat(sinkOperatorFactory).isInstanceOf(SinkWriterOperatorFactory.class);
         Sink sink =
                 ((SinkWriterOperatorFactory) sinkOperatorFactory).getSink();
-        assertThat(sink, instanceOf(ReducingUpsertSink.class));
+        assertThat(sink).isInstanceOf(ReducingUpsertSink.class);
     }
 
     @Test
     public void testTableSinkWithParallelism() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
-                        getFullSinkOptions(), options -> options.put("sink.parallelism", "100"));
+                        getFullSinkOptions(),
+                        options -> {
+                            options.put("sink.parallelism", "100");
+                            options.put("sink.delivery-guarantee", "exactly-once");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
+                        });
         final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, modifiedOptions);
 
         final DynamicTableSink expectedSink =
@@ -277,17 +297,18 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         null,
                         SINK_TOPIC_URI,
                         UPSERT_PSC_SINK_PROPERTIES,
-                        DeliveryGuarantee.AT_LEAST_ONCE,
+                        DeliveryGuarantee.EXACTLY_ONCE,
                         SinkBufferFlushMode.DISABLED,
-                        100);
-        assertEquals(expectedSink, actualSink);
+                        100,
+                        "psc-sink");
+        assertThat(actualSink).isEqualTo(expectedSink);
 
         final DynamicTableSink.SinkRuntimeProvider provider =
                 actualSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
-        assertThat(provider, instanceOf(SinkV2Provider.class));
+        assertThat(provider).isInstanceOf(SinkV2Provider.class);
         final SinkV2Provider sinkProvider = (SinkV2Provider) provider;
-        assertTrue(sinkProvider.getParallelism().isPresent());
-        assertEquals(100, (long) sinkProvider.getParallelism().get());
+        assertThat(sinkProvider.getParallelism()).isPresent();
+        assertThat((long) sinkProvider.getParallelism().get()).isEqualTo(100);
     }
 
     @Test
@@ -357,7 +378,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         optionModifier.accept(options);
 
         final RowType rowType = (RowType) SINK_SCHEMA.toSinkRowDataType().getLogicalType();
@@ -373,18 +394,17 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             SerializationSchema<RowData> actualValueEncoder =
                     sink.valueEncodingFormat.createRuntimeEncoder(
                             new SinkRuntimeProviderContext(false), SINK_SCHEMA.toSinkRowDataType());
-            assertEquals(
-                    createConfluentAvroSerSchema(rowType, expectedValueSubject),
-                    actualValueEncoder);
+            assertThat(actualValueEncoder)
+                    .isEqualTo(createConfluentAvroSerSchema(rowType, expectedValueSubject));
         }
 
         if (AVRO_CONFLUENT.equals(keyFormat)) {
-            assert sink.keyEncodingFormat != null;
+            assertThat(sink.keyEncodingFormat).isNotNull();
             SerializationSchema<RowData> actualKeyEncoder =
                     sink.keyEncodingFormat.createRuntimeEncoder(
                             new SinkRuntimeProviderContext(false), SINK_SCHEMA.toSinkRowDataType());
-            assertEquals(
-                    createConfluentAvroSerSchema(rowType, expectedKeySubject), actualKeyEncoder);
+            assertThat(actualKeyEncoder)
+                    .isEqualTo(createConfluentAvroSerSchema(rowType, expectedKeySubject));
         }
     }
 
@@ -395,6 +415,135 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 ConfluentRegistryAvroSerializationSchema.forGeneric(
                         subject, AvroSchemaConverter.convertToSchema(rowType), TEST_REGISTRY_URL),
                 RowDataToAvroConverters.createConverter(rowType));
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Bounded end-offset tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testBoundedSpecificOffsetsValidate() {
+        final Map<String, String> options = getFullSourceOptions();
+        options.put(
+                PscConnectorOptions.SCAN_BOUNDED_MODE.key(),
+                PscConnectorOptions.ScanBoundedMode.SPECIFIC_OFFSETS.toString());
+
+        assertThatThrownBy(() -> createTableSource(SOURCE_SCHEMA, options))
+                .isInstanceOf(ValidationException.class)
+                .cause()
+                .hasMessageContaining(
+                        "'scan.bounded.specific-offsets' is required in 'specific-offsets' bounded mode but missing.");
+    }
+
+    @Test
+    public void testBoundedSpecificOffsets() {
+        testBoundedOffsets(
+                PscConnectorOptions.ScanBoundedMode.SPECIFIC_OFFSETS,
+                options -> {
+                    options.put("scan.bounded.specific-offsets", "partition:0,offset:2");
+                },
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(SOURCE_TOPIC_URI, 0);
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.noInteractions());
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, 2L);
+                });
+    }
+
+    @Test
+    public void testBoundedLatestOffset() {
+        testBoundedOffsets(
+                PscConnectorOptions.ScanBoundedMode.LATEST_OFFSET,
+                options -> {},
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(SOURCE_TOPIC_URI, 0);
+                    long endOffsets = 123L;
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.latest(
+                                            (tps) ->
+                                                    Collections.singletonMap(
+                                                            partition, endOffsets)));
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, endOffsets);
+                });
+    }
+
+    @Test
+    public void testBoundedGroupOffsets() {
+        testBoundedOffsets(
+                PscConnectorOptions.ScanBoundedMode.GROUP_OFFSETS,
+                options -> {
+                    options.put("properties.psc.consumer.group.id", "dummy");
+                },
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(SOURCE_TOPIC_URI, 0);
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.noInteractions());
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, PscTopicUriPartitionSplit.COMMITTED_OFFSET);
+                });
+    }
+
+    @Test
+    public void testBoundedTimestamp() {
+        testBoundedOffsets(
+                PscConnectorOptions.ScanBoundedMode.TIMESTAMP,
+                options -> {
+                    options.put("scan.bounded.timestamp-millis", "1");
+                },
+                source -> {
+                    assertThat(source.getBoundedness()).isEqualTo(Boundedness.BOUNDED);
+                    OffsetsInitializer offsetsInitializer =
+                            PscSourceTestUtils.getStoppingOffsetsInitializer(source);
+                    TopicUriPartition partition = new TopicUriPartition(SOURCE_TOPIC_URI, 0);
+                    long offsetForTimestamp = 123L;
+                    Map<TopicUriPartition, Long> partitionOffsets =
+                            offsetsInitializer.getPartitionOffsets(
+                                    Collections.singletonList(partition),
+                                    MockPartitionOffsetsRetriever.timestampAndEnd(
+                                            partitions -> {
+                                                assertThat(partitions)
+                                                        .containsOnlyKeys(partition)
+                                                        .containsEntry(partition, 1L);
+                                                Map<TopicUriPartition, Long> result =
+                                                        new HashMap<>();
+                                                result.put(partition, 123L);
+                                                return result;
+                                            },
+                                            partitions -> {
+                                                Map<TopicUriPartition, Long> result = new HashMap<>();
+                                                result.put(
+                                                        partition,
+                                                        // the end offset is bigger than given by
+                                                        // timestamp
+                                                        // to make sure the one for timestamp is
+                                                        // used
+                                                        offsetForTimestamp + 1000L);
+                                                return result;
+                                            }));
+                    assertThat(partitionOffsets)
+                            .containsOnlyKeys(partition)
+                            .containsEntry(partition, offsetForTimestamp);
+                });
     }
 
     // --------------------------------------------------------------------------------------------
@@ -505,6 +654,26 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                         }));
     }
 
+    @Test
+    public void testExactlyOnceGuaranteeWithoutTransactionalIdPrefix() {
+        thrown.expect(ValidationException.class);
+        thrown.expect(
+                containsCause(
+                        new ValidationException(
+                                "sink.transactional-id-prefix must be specified when using DeliveryGuarantee.EXACTLY_ONCE.")));
+
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getFullSinkOptions(),
+                        options -> {
+                            options.remove(PscConnectorOptions.TRANSACTIONAL_ID_PREFIX.key());
+                            options.put(
+                                    PscConnectorOptions.DELIVERY_GUARANTEE.key(),
+                                    DeliveryGuarantee.EXACTLY_ONCE.toString());
+                        });
+        createTableSink(SINK_SCHEMA, modifiedOptions);
+    }
+
     // --------------------------------------------------------------------------------------------
     // Utilities
     // --------------------------------------------------------------------------------------------
@@ -525,7 +694,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SOURCE_TOPIC_URI);
-        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         // key format options
         options.put("key.format", TestFormatFactory.IDENTIFIER);
         options.put(
@@ -567,7 +736,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
-        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         // key format options
         options.put("value.format", TestFormatFactory.IDENTIFIER);
         options.put(
@@ -617,6 +786,9 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 StartupMode.EARLIEST,
                 Collections.emptyMap(),
                 0,
+                BoundedMode.UNBOUNDED,
+                Collections.emptyMap(),
+                0,
                 true,
                 FactoryMocks.IDENTIFIER.asSummaryString());
     }
@@ -632,7 +804,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             Properties properties,
             DeliveryGuarantee deliveryGuarantee,
             SinkBufferFlushMode flushMode,
-            Integer parallelism) {
+            Integer parallelism,
+            String transactionalIdPrefix) {
         return new PscDynamicSink(
                 consumedDataType,
                 consumedDataType,
@@ -648,11 +821,11 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 true,
                 flushMode,
                 parallelism,
-                null);
+                transactionalIdPrefix);
     }
 
-    private void assertPscSource(ScanTableSource.ScanRuntimeProvider provider) {
-        assertThat(provider, instanceOf(DataStreamScanProvider.class));
+    private PscSource<?> assertPscSource(ScanTableSource.ScanRuntimeProvider provider) {
+        assertThat(provider).isInstanceOf(DataStreamScanProvider.class);
         final DataStreamScanProvider dataStreamScanProvider = (DataStreamScanProvider) provider;
         final Transformation<RowData> transformation =
                 dataStreamScanProvider
@@ -660,11 +833,30 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                                 n -> Optional.empty(),
                                 StreamExecutionEnvironment.createLocalEnvironment())
                         .getTransformation();
-        assertThat(transformation, instanceOf(SourceTransformation.class));
+        assertThat(transformation).isInstanceOf(SourceTransformation.class);
         SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>
                 sourceTransformation =
                         (SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>)
                                 transformation;
-        assertThat(sourceTransformation.getSource(), instanceOf(PscSource.class));
+        assertThat(sourceTransformation.getSource()).isInstanceOf(PscSource.class);
+        return (PscSource<?>) sourceTransformation.getSource();
+    }
+
+    private void testBoundedOffsets(
+            PscConnectorOptions.ScanBoundedMode boundedMode,
+            Consumer<Map<String, String>> optionsConfig,
+            Consumer<PscSource<?>> validator) {
+        final Map<String, String> options = getFullSourceOptions();
+        options.put(PscConnectorOptions.SCAN_BOUNDED_MODE.key(), boundedMode.toString());
+        optionsConfig.accept(options);
+
+        final DynamicTableSource tableSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(tableSource).isInstanceOf(PscDynamicSource.class);
+        ScanTableSource.ScanRuntimeProvider provider =
+                ((PscDynamicSource) tableSource)
+                        .getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(provider).isInstanceOf(DataStreamScanProvider.class);
+        final PscSource<?> kafkaSource = assertPscSource(provider);
+        validator.accept(kafkaSource);
     }
 }

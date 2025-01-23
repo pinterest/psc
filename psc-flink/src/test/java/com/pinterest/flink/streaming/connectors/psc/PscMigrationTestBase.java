@@ -34,11 +34,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
-import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
@@ -52,7 +49,7 @@ import static org.apache.flink.util.Preconditions.checkState;
 public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub {
 
     protected static final Logger LOG = LoggerFactory.getLogger(PscMigrationTestBase.class);
-    protected static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+    protected static final String TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX +
             "flink-psc-producer-migration-test";
 
     protected final FlinkVersion testMigrateVersion;
@@ -62,7 +59,7 @@ public abstract class PscMigrationTestBase extends PscTestBaseWithKafkaAsPubSub 
             new KeyedSerializationSchemaWrapper<>(integerSerializationSchema);
 
     /**
-     * Instructions: change this to the corresponding savepoint version to be written (e.g. {@link MigrationVersion#v1_3} for 1.3)
+     * Instructions: change this to the corresponding savepoint version to be written (e.g. {@link FlinkVersion#v1_3} for 1.3)
      * and remove all @Ignore annotations on writeSnapshot() methods to generate savepoints
      * Note: You should generate the savepoint based on the release branch instead of the master.
      */

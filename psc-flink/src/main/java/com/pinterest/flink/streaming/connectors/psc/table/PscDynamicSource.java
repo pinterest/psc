@@ -20,9 +20,11 @@ package com.pinterest.flink.streaming.connectors.psc.table;
 
 import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppingOffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
 import com.pinterest.flink.streaming.connectors.psc.PscDeserializationSchema;
+import com.pinterest.flink.streaming.connectors.psc.config.BoundedMode;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -144,6 +146,21 @@ public class PscDynamicSource
      */
     protected final long startupTimestampMillis;
 
+    /** The bounded mode for the contained consumer (default is an unbounded data stream). */
+    protected final BoundedMode boundedMode;
+
+    /**
+     * Specific end offsets; only relevant when bounded mode is {@link
+     * BoundedMode#SPECIFIC_OFFSETS}.
+     */
+    protected final Map<PscTopicUriPartition, Long> specificBoundedOffsets;
+
+    /**
+     * The bounded timestamp to locate partition offsets; only relevant when bounded mode is {@link
+     * BoundedMode#TIMESTAMP}.
+     */
+    protected final long boundedTimestampMillis;
+
     /** Flag to determine source mode. In upsert mode, it will keep the tombstone message. * */
     protected final boolean upsertMode;
 
@@ -162,6 +179,9 @@ public class PscDynamicSource
             StartupMode startupMode,
             Map<PscTopicUriPartition, Long> specificStartupOffsets,
             long startupTimestampMillis,
+            BoundedMode boundedMode,
+            Map<PscTopicUriPartition, Long> specificBoundedOffsets,
+            long boundedTimestampMillis,
             boolean upsertMode,
             String tableIdentifier) {
         // Format attributes
@@ -195,6 +215,12 @@ public class PscDynamicSource
                 Preconditions.checkNotNull(
                         specificStartupOffsets, "Specific offsets must not be null.");
         this.startupTimestampMillis = startupTimestampMillis;
+        this.boundedMode =
+                Preconditions.checkNotNull(boundedMode, "Bounded mode must not be null.");
+        this.specificBoundedOffsets =
+                Preconditions.checkNotNull(
+                        specificBoundedOffsets, "Specific bounded offsets must not be null.");
+        this.boundedTimestampMillis = boundedTimestampMillis;
         this.upsertMode = upsertMode;
         this.tableIdentifier = tableIdentifier;
     }
@@ -309,6 +335,9 @@ public class PscDynamicSource
                         startupMode,
                         specificStartupOffsets,
                         startupTimestampMillis,
+                        boundedMode,
+                        specificBoundedOffsets,
+                        boundedTimestampMillis,
                         upsertMode,
                         tableIdentifier);
         copy.producedDataType = producedDataType;
@@ -345,6 +374,9 @@ public class PscDynamicSource
                 && startupMode == that.startupMode
                 && Objects.equals(specificStartupOffsets, that.specificStartupOffsets)
                 && startupTimestampMillis == that.startupTimestampMillis
+                && boundedMode == that.boundedMode
+                && Objects.equals(specificBoundedOffsets, that.specificBoundedOffsets)
+                && boundedTimestampMillis == that.boundedTimestampMillis
                 && Objects.equals(upsertMode, that.upsertMode)
                 && Objects.equals(tableIdentifier, that.tableIdentifier)
                 && Objects.equals(watermarkStrategy, that.watermarkStrategy);
@@ -358,8 +390,8 @@ public class PscDynamicSource
                 physicalDataType,
                 keyDecodingFormat,
                 valueDecodingFormat,
-                keyProjection,
-                valueProjection,
+                Arrays.hashCode(keyProjection),
+                Arrays.hashCode(valueProjection),
                 keyPrefix,
                 topicUris,
                 topicUriPattern,
@@ -367,6 +399,9 @@ public class PscDynamicSource
                 startupMode,
                 specificStartupOffsets,
                 startupTimestampMillis,
+                boundedMode,
+                specificBoundedOffsets,
+                boundedTimestampMillis,
                 upsertMode,
                 tableIdentifier,
                 watermarkStrategy);
@@ -419,6 +454,30 @@ public class PscDynamicSource
             case TIMESTAMP:
                 pscSourceBuilder.setStartingOffsets(
                         OffsetsInitializer.timestamp(startupTimestampMillis));
+                break;
+        }
+
+        switch (boundedMode) {
+            case UNBOUNDED:
+                pscSourceBuilder.setUnbounded(new NoStoppingOffsetsInitializer());
+                break;
+            case LATEST:
+                pscSourceBuilder.setBounded(OffsetsInitializer.latest());
+                break;
+            case GROUP_OFFSETS:
+                pscSourceBuilder.setBounded(OffsetsInitializer.committedOffsets());
+                break;
+            case SPECIFIC_OFFSETS:
+                Map<TopicUriPartition, Long> offsets = new HashMap<>();
+                specificBoundedOffsets.forEach(
+                        (tp, offset) ->
+                                offsets.put(
+                                        new TopicUriPartition(tp.getTopicUri(), tp.getPartition()),
+                                        offset));
+                pscSourceBuilder.setBounded(OffsetsInitializer.offsets(offsets));
+                break;
+            case TIMESTAMP:
+                pscSourceBuilder.setBounded(OffsetsInitializer.timestamp(boundedTimestampMillis));
                 break;
         }
 

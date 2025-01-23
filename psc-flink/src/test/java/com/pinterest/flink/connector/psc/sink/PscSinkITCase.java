@@ -19,11 +19,10 @@ package com.pinterest.flink.connector.psc.sink;
 
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.testutils.PscSinkExternalContextFactory;
+import com.pinterest.flink.connector.psc.testutils.DockerImageVersions;
 import com.pinterest.flink.connector.psc.testutils.PscUtil;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.config.PscConfiguration;
-import com.pinterest.psc.config.PscConfigurationUtils;
-import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
@@ -65,17 +64,13 @@ import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.test.util.TestUtils;
 import org.apache.flink.testutils.junit.SharedObjects;
 import org.apache.flink.testutils.junit.SharedReference;
-import org.apache.flink.util.DockerImageVersions;
 import org.apache.flink.util.TestLogger;
-
-import org.apache.flink.shaded.guava30.com.google.common.base.Joiner;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.DeleteTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
-import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -96,6 +91,7 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -110,16 +106,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
+import static com.pinterest.flink.connector.psc.testutils.DockerImageVersions.KAFKA;
 import static com.pinterest.flink.connector.psc.testutils.PscTestUtils.injectDiscoveryConfigs;
 import static com.pinterest.flink.connector.psc.testutils.PscUtil.createKafkaContainer;
-import static org.apache.flink.util.DockerImageVersions.KAFKA;
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.hasItems;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 /** Tests for using PscSink writing to a Kafka cluster. */
 public class PscSinkITCase extends TestLogger {
@@ -171,7 +162,7 @@ public class PscSinkITCase extends TestLogger {
         lastCheckpointedRecord = sharedObjects.add(new AtomicLong(0));
         topic = UUID.randomUUID().toString();
         createTestTopic(topic, 1, TOPIC_REPLICATION_FACTOR);
-        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
     }
 
     @After
@@ -229,8 +220,7 @@ public class PscSinkITCase extends TestLogger {
         testRecoveryWithAssertion(
                 DeliveryGuarantee.AT_LEAST_ONCE,
                 1,
-                (records) ->
-                        assertThat(records, hasItems(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L)));
+                (records) -> assertThat(records).contains(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L));
     }
 
     @Test
@@ -239,15 +229,11 @@ public class PscSinkITCase extends TestLogger {
                 DeliveryGuarantee.EXACTLY_ONCE,
                 1,
                 (records) ->
-                        assertThat(
-                                records,
-                                contains(
-                                        LongStream.range(1, lastCheckpointedRecord.get().get() + 1)
+                        assertThat(records)
+                                .contains(
+                                        (LongStream.range(1, lastCheckpointedRecord.get().get() + 1)
                                                 .boxed()
-                                                .toArray()
-                                )
-                        )
-        );
+                                                .toArray(Long[]::new))));
     }
 
     @Test
@@ -256,12 +242,11 @@ public class PscSinkITCase extends TestLogger {
                 DeliveryGuarantee.EXACTLY_ONCE,
                 2,
                 (records) ->
-                        assertThat(
-                                records,
-                                contains(
+                        assertThat(records)
+                                .contains(
                                         LongStream.range(1, lastCheckpointedRecord.get().get() + 1)
                                                 .boxed()
-                                                .toArray())));
+                                                .toArray(Long[]::new)));
     }
 
     @Test
@@ -280,9 +265,8 @@ public class PscSinkITCase extends TestLogger {
         try {
             executeWithMapper(new FailAsyncCheckpointMapper(1), config, "firstPrefix");
         } catch (Exception e) {
-            assertThat(
-                    e.getCause().getCause().getMessage(),
-                    containsString("Exceeded checkpoint tolerable failure"));
+            assertThat(e.getCause().getCause().getMessage())
+                    .contains("Exceeded checkpoint tolerable failure");
         }
         final File completedCheckpoint = TestUtils.getMostRecentCompletedCheckpoint(checkpointDir);
 
@@ -295,12 +279,11 @@ public class PscSinkITCase extends TestLogger {
                 new FailingCheckpointMapper(failed, lastCheckpointedRecord), config, "newPrefix");
         final List<PscConsumerMessage<byte[], byte[]>> collectedRecords =
                 drainAllRecordsFromTopic(topicUriStr, true);
-        assertThat(
-                deserializeValues(collectedRecords),
-                contains(
+        assertThat(deserializeValues(collectedRecords))
+                .contains(
                         LongStream.range(1, lastCheckpointedRecord.get().get() + 1)
                                 .boxed()
-                                .toArray()));
+                                .toArray(Long[]::new));
     }
 
     @Test
@@ -311,11 +294,10 @@ public class PscSinkITCase extends TestLogger {
         try {
             executeWithMapper(new FailAsyncCheckpointMapper(0), config, null);
         } catch (Exception e) {
-            assertThat(
-                    e.getCause().getCause().getMessage(),
-                    containsString("Exceeded checkpoint tolerable failure"));
+            assertThat(e.getCause().getCause().getMessage())
+                    .contains("Exceeded checkpoint tolerable failure");
         }
-        assertTrue(deserializeValues(drainAllRecordsFromTopic(topicUriStr, true)).isEmpty());
+        assertThat(deserializeValues(drainAllRecordsFromTopic(topicUriStr, true))).isEmpty();
 
         // Second job aborts all transactions from previous runs with higher parallelism
         config.set(CoreOptions.DEFAULT_PARALLELISM, 1);
@@ -324,12 +306,11 @@ public class PscSinkITCase extends TestLogger {
                 new FailingCheckpointMapper(failed, lastCheckpointedRecord), config, null);
         final List<PscConsumerMessage<byte[], byte[]>> collectedRecords =
                 drainAllRecordsFromTopic(topicUriStr, true);
-        assertThat(
-                deserializeValues(collectedRecords),
-                contains(
+        assertThat(deserializeValues(collectedRecords))
+                .contains(
                         LongStream.range(1, lastCheckpointedRecord.get().get() + 1)
                                 .boxed()
-                                .toArray()));
+                                .toArray(Long[]::new));
     }
 
     private void executeWithMapper(
@@ -344,7 +325,7 @@ public class PscSinkITCase extends TestLogger {
         final DataStream<Long> stream = source.map(mapper);
         final PscSinkBuilder<Long> builder =
                 new PscSinkBuilder<Long>()
-                        .setDeliverGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
+                        .setDeliveryGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
                         .setPscProducerConfig(getPscClientConfiguration())
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
@@ -373,7 +354,7 @@ public class PscSinkITCase extends TestLogger {
                 source.map(new FailingCheckpointMapper(failed, lastCheckpointedRecord));
         stream.sinkTo(
                 new PscSinkBuilder<Long>()
-                        .setDeliverGuarantee(guarantee)
+                        .setDeliveryGuarantee(guarantee)
                         .setPscProducerConfig(getPscClientConfiguration())
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
@@ -401,12 +382,12 @@ public class PscSinkITCase extends TestLogger {
                                 emittedRecordsCount, emittedRecordsWithCheckpoint));
         Properties producerProperties = new Properties();
         producerProperties.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-client");
-        producerProperties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG,PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
-        injectDiscoveryConfigs(producerProperties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        producerProperties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG,PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        injectDiscoveryConfigs(producerProperties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         source.sinkTo(
                 new PscSinkBuilder<Long>()
                         .setPscProducerConfig(producerProperties)
-                        .setDeliverGuarantee(deliveryGuarantee)
+                        .setDeliveryGuarantee(deliveryGuarantee)
                         .setRecordSerializer(
                                 PscRecordSerializationSchema.builder()
                                         .setTopicUriString(topicUriStr)
@@ -420,10 +401,9 @@ public class PscSinkITCase extends TestLogger {
                 drainAllRecordsFromTopic(
                         topicUriStr, deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE);
         final long recordsCount = expectedRecords.get().get();
-        assertEquals(collectedRecords.size(), recordsCount);
-        assertThat(
-                deserializeValues(collectedRecords),
-                contains(LongStream.range(1, recordsCount + 1).boxed().toArray()));
+        assertThat(recordsCount).isEqualTo(collectedRecords.size());
+        assertThat(deserializeValues(collectedRecords))
+                .contains(LongStream.range(1, recordsCount + 1).boxed().toArray(Long[]::new));
         checkProducerLeak();
     }
 
@@ -449,21 +429,9 @@ public class PscSinkITCase extends TestLogger {
         properties.setProperty(PscConfiguration.PSC_PRODUCER_RETRIES, "2147483647");
         properties.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "PscSinkITCase");
         properties.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "PscSinkITCase");
-        properties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
-        injectDiscoveryConfigs(properties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        properties.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        injectDiscoveryConfigs(properties, KAFKA_CONTAINER.getBootstrapServers(), PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         return properties;
-    }
-
-    private static PscConsumer<byte[], byte[]> createTestConsumer(
-            String topic, Properties properties) throws ConfigurationException, ConsumerException {
-        final Properties consumerConfig = new Properties();
-        consumerConfig.putAll(properties);
-        consumerConfig.put(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, ByteArrayDeserializer.class.getName());
-        consumerConfig.put(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, ByteArrayDeserializer.class.getName());
-        consumerConfig.put(PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL, PscConfiguration.PSC_CONSUMER_ISOLATION_LEVEL_TRANSACTIONAL);
-        final PscConsumer<byte[], byte[]> pscConsumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(consumerConfig));
-        pscConsumer.subscribe(Collections.singletonList(topic));
-        return pscConsumer;
     }
 
     private void createTestTopic(String topic, int numPartitions, short replicationFactor)
@@ -668,7 +636,11 @@ public class PscSinkITCase extends TestLogger {
     }
 
     private String format(Map.Entry<Thread, StackTraceElement[]> leak) {
-        return leak.getKey().getName() + ":\n" + Joiner.on("\n").join(leak.getValue());
+        String stackTrace =
+                Arrays.stream(leak.getValue())
+                        .map(StackTraceElement::toString)
+                        .collect(Collectors.joining("\n"));
+        return leak.getKey().getName() + ":\n" + stackTrace;
     }
 
     private boolean findAliveKafkaThread(Map.Entry<Thread, StackTraceElement[]> threadStackTrace) {

@@ -53,12 +53,12 @@ public class TestPscErrorHandler {
 
     @BeforeEach
     void init() {
-        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         pscMetricRegistryManager = PscMetricRegistryManager.getInstance();
         pscMetricTagManager = PscMetricTagManager.getInstance();
         pscMetricRegistryManager.setPscMetricTagManager(pscMetricTagManager);
         pscMetricTagManager.initializePscMetricTagManager(pscConfigurationInternal);
-        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         when(pscConfigurationInternal.getConfiguration()).thenReturn(new PscConfiguration());
         when(pscConfigurationInternal.getEnvironment()).thenReturn(environment);
         MetricsReporterConfiguration metricsReporterConfiguration = new MetricsReporterConfiguration(

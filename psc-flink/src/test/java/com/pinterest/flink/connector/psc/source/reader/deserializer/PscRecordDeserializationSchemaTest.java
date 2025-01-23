@@ -18,38 +18,34 @@
 
 package com.pinterest.flink.connector.psc.source.reader.deserializer;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.pinterest.flink.connector.psc.util.JacksonMapperFactory;
 import com.pinterest.flink.streaming.util.serialization.psc.JSONKeyValueDeserializationSchema;
 import com.pinterest.psc.common.PscPlugin;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
-import com.pinterest.psc.exception.consumer.DeserializerException;
 import com.pinterest.psc.serde.StringDeserializer;
 import com.pinterest.psc.serde.StringSerializer;
+import org.apache.flink.connector.testutils.formats.DummyInitializationContext;
 import org.apache.flink.connector.testutils.source.deserialization.TestingDeserializationContext;
-import org.apache.flink.formats.json.JsonNodeDeserializationSchema;
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableMap;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonProcessingException;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.flink.formats.json.JsonDeserializationSchema;
 import org.apache.flink.util.Collector;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.jupiter.api.Assertions;
 
-import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Unit tests for PscRecordDeserializationSchema. */
 public class PscRecordDeserializationSchemaTest {
-
+    private static final ObjectMapper OBJECT_MAPPER = JacksonMapperFactory.createObjectMapper();
     private static Map<String, String> configurableConfiguration;
     private static Map<String, String> configuration;
     private static boolean isKeyDeserializer;
@@ -62,37 +58,48 @@ public class PscRecordDeserializationSchemaTest {
     }
 
     @Test
-    public void testPscDeserializationSchemaWrapper() throws IOException, DeserializerException {
+    public void testPscDeserializationSchemaWrapper() throws Exception {
         final PscConsumerMessage<byte[], byte[]> consumerRecord = getPscConsumerMessage();
         PscRecordDeserializationSchema<ObjectNode> schema =
                 PscRecordDeserializationSchema.of(new JSONKeyValueDeserializationSchema(true));
+        schema.open(new DummyInitializationContext());
         SimpleCollector<ObjectNode> collector = new SimpleCollector<>();
         schema.deserialize(consumerRecord, collector);
 
-        assertEquals(1, collector.list.size());
+        assertThat(collector.list).hasSize(1);
         ObjectNode deserializedValue = collector.list.get(0);
 
-        assertEquals(4, deserializedValue.get("key").get("index").asInt());
-        assertEquals("world", deserializedValue.get("value").get("word").asText());
-        assertEquals("topic#1", deserializedValue.get("metadata").get("topic").asText());
-        assertEquals(4, deserializedValue.get("metadata").get("offset").asInt());
-        assertEquals(3, deserializedValue.get("metadata").get("partition").asInt());
+        assertThat(deserializedValue.get("key").get("index").asInt()).isEqualTo(4);
+        assertThat(deserializedValue.get("value").get("word").asText()).isEqualTo("world");
+        assertThat(deserializedValue.get("metadata").get("topic").asText()).isEqualTo("topic#1");
+        assertThat(deserializedValue.get("metadata").get("offset").asInt()).isEqualTo(4);
+        assertThat(deserializedValue.get("metadata").get("partition").asInt()).isEqualTo(3);
     }
 
     @Test
-    public void testPscValueDeserializationSchemaWrapper() throws IOException, DeserializerException {
+    public void testPscValueDeserializationSchemaWrapper() throws Exception {
         final PscConsumerMessage<byte[], byte[]> consumerRecord = getPscConsumerMessage();
-        PscRecordDeserializationSchema<ObjectNode> schema =
-                PscRecordDeserializationSchema.valueOnly(new JsonNodeDeserializationSchema());
-        SimpleCollector<ObjectNode> collector = new SimpleCollector<>();
+        PscRecordDeserializationSchema<
+                org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node
+                        .ObjectNode>
+                schema =
+                PscRecordDeserializationSchema.valueOnly(
+                        new JsonDeserializationSchema<>(
+                                org.apache.flink.shaded.jackson2.com.fasterxml.jackson
+                                        .databind.node.ObjectNode.class));
+        schema.open(new DummyInitializationContext());
+        SimpleCollector<
+                org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node
+                        .ObjectNode>
+                collector = new SimpleCollector<>();
         schema.deserialize(consumerRecord, collector);
 
-        assertEquals(1, collector.list.size());
-        ObjectNode deserializedValue = collector.list.get(0);
-
-        assertEquals("world", deserializedValue.get("word").asText());
-        assertNull(deserializedValue.get("key"));
-        assertNull(deserializedValue.get("metadata"));
+        assertThat(collector.list).hasSize(1);
+        org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node.ObjectNode
+                deserializedValue = collector.list.get(0);
+        assertThat(deserializedValue.get("word").asText()).isEqualTo("world");
+        assertThat(deserializedValue.get("key")).isNull();
+        assertThat(deserializedValue.get("metadata")).isNull();
     }
 
     @Test
@@ -108,42 +115,41 @@ public class PscRecordDeserializationSchemaTest {
         SimpleCollector<String> collector = new SimpleCollector<>();
         schema.deserialize(consumerRecord, collector);
 
-        assertEquals(1, collector.list.size());
-        assertEquals("world", collector.list.get(0));
+        assertThat(collector.list).hasSize(1);
+        assertThat(collector.list.get(0)).isEqualTo("world");
     }
 
     @Test
     public void testPscValueDeserializerWrapperWithoutConfigurable() throws Exception {
-        final Map<String, String> config = ImmutableMap.of("simpleKey", "simpleValue");
+        final Map<String, String> config = Collections.singletonMap("simpleKey", "simpleValue");
         PscRecordDeserializationSchema<String> schema =
                 PscRecordDeserializationSchema.valueOnly(SimpleStringSerializer.class, config);
         schema.open(new TestingDeserializationContext());
-        Assertions.assertEquals(configuration, config);
-        assertFalse(isKeyDeserializer);
-        assertTrue(configurableConfiguration.isEmpty());
+        assertThat(config).isEqualTo(configuration);
+        assertThat(isKeyDeserializer).isFalse();
+        assertThat(configurableConfiguration).isEmpty();
     }
 
     @Test
     public void testPscValueDeserializerWrapperWithConfigurable() throws Exception {
-        final Map<String, String> config = ImmutableMap.of("configKey", "configValue");
+        final Map<String, String> config = Collections.singletonMap("configKey", "configValue");
         PscRecordDeserializationSchema<String> schema =
                 PscRecordDeserializationSchema.valueOnly(
                         ConfigurableStringSerializer.class, config);
         schema.open(new TestingDeserializationContext());
-        Assertions.assertEquals(configurableConfiguration, config);
-        assertFalse(isKeyDeserializer);
-        assertTrue(configuration.isEmpty());
+        assertThat(config).isEqualTo(configurableConfiguration);
+        assertThat(isKeyDeserializer).isFalse();
+        assertThat(configuration).isEmpty();
     }
 
     private PscConsumerMessage<byte[], byte[]> getPscConsumerMessage() throws JsonProcessingException {
-        ObjectMapper mapper = new ObjectMapper();
-        ObjectNode initialKey = mapper.createObjectNode();
+        ObjectNode initialKey = OBJECT_MAPPER.createObjectNode();
         initialKey.put("index", 4);
-        byte[] serializedKey = mapper.writeValueAsBytes(initialKey);
+        byte[] serializedKey = OBJECT_MAPPER.writeValueAsBytes(initialKey);
 
-        ObjectNode initialValue = mapper.createObjectNode();
+        ObjectNode initialValue = OBJECT_MAPPER.createObjectNode();
         initialValue.put("word", "world");
-        byte[] serializedValue = mapper.writeValueAsBytes(initialValue);
+        byte[] serializedValue = OBJECT_MAPPER.writeValueAsBytes(initialValue);
 
         return new PscConsumerMessage<>("topic#1", 3, 4L, serializedKey, serializedValue);
     }

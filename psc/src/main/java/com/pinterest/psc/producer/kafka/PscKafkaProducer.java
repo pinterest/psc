@@ -70,8 +70,7 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private KafkaProducer<byte[], byte[]> kafkaProducer;
     private String configuredPscProducerId;
     private Properties properties;
-    private long sslCertificateExpiryTimeInMillis;
-    //private String project;
+    private long sslCertificateExpiryTimeInMillis = Long.MAX_VALUE;
 
     @Override
     public void initialize(PscConfigurationInternal pscConfigurationInternal, ServiceDiscoveryConfig discoveryConfig, Environment environment, TopicUri topicUri) {
@@ -95,10 +94,14 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
         kafkaProducer = getNewKafkaProducer();
 
         // if using secure protocol (SSL), calculate cert expiry time
-        if (topicUri.getProtocol().equals(KafkaTopicUri.SECURE_PROTOCOL)) {
+        if (pscConfigurationInternal.isProactiveSslResetEnabled() &&
+                topicUri.getProtocol().equals(KafkaTopicUri.SECURE_PROTOCOL)) {
             sslCertificateExpiryTimeInMillis = KafkaSslUtils.calculateSslCertExpiryTime(
                     properties, pscConfigurationInternal, Collections.singleton(topicUri));
-            logger.info("Initialized PscKafkaProducer with SSL cert expiry time at " + sslCertificateExpiryTimeInMillis);
+            logger.info("Initialized PscKafkaProducer with proactive SSL certificate reset. " +
+                    "Expiry time at " + sslCertificateExpiryTimeInMillis);
+        } else {
+            logger.info("Initialized PscKafkaProducer without proactive SSL certificate reset.");
         }
         super.initialize(pscConfigurationInternal, discoveryConfig, environment, topicUri);
     }
@@ -836,7 +839,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
 
     protected void maybeResetBackendClient(TopicUriPartition topicUriPartition) throws ProducerException {
         // reset if SSL enabled && cert is expired
-        if (isSslEnabled(topicUriPartition) &&
+        if (pscConfigurationInternal.isProactiveSslResetEnabled() &&
+                isSslEnabled(topicUriPartition) &&
                 (System.currentTimeMillis() >= sslCertificateExpiryTimeInMillis)) {
             if (KafkaSslUtils.keyStoresExist(properties)) {
                 logger.info("Resetting backend Kafka client due to cert expiry at " +

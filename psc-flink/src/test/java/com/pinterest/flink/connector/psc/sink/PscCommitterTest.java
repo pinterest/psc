@@ -45,7 +45,6 @@ public class PscCommitterTest {
     private static final int PRODUCER_ID = 0;
     private static final short EPOCH = 0;
     private static final String TRANSACTIONAL_ID = "transactionalId";
-    private static final String CLUSTER_URI = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
 
     /** Causes a network error by inactive broker and tests that a retry will happen. */
     @Test
@@ -111,15 +110,22 @@ public class PscCommitterTest {
                         super.close();
                     }
                 };
-        try (final PscCommitter committer = new PscCommitter(properties);
-                Recyclable<FlinkPscInternalProducer<Object, Object>> recyclable =
-                        new Recyclable<>(producer, p -> {})) {
+        Recyclable<FlinkPscInternalProducer<Object, Object>> recyclable =
+                new Recyclable<>(producer, p -> {
+                    try {
+                        p.close();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+        try (final PscCommitter committer = new PscCommitter(properties)) {
             final MockCommitRequest<PscCommittable> request =
                     new MockCommitRequest<>(
                             new PscCommittable(PRODUCER_ID, EPOCH, TRANSACTIONAL_ID, recyclable));
 
             committer.commit(Collections.singletonList(request));
             assertThat(recyclable.isRecycled()).isTrue();
+            assertThat(producer.isClosed()).isTrue();
             producer.close();
         }
     }
@@ -129,9 +135,9 @@ public class PscCommitterTest {
         properties.put(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         properties.put(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
         properties.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "PscCommitterTest");
-        properties.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, CLUSTER_URI);
+        properties.put(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         properties.setProperty("psc.discovery.topic.uri.prefixes",
-                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, ",", 1));
+                StringUtils.repeat(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, ",", 1));
         properties.setProperty("psc.discovery.connection.urls", "http://localhost:1");
         properties.setProperty("psc.discovery.security.protocols",
                 StringUtils.repeat("plaintext", ",", 1));

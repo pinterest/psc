@@ -112,7 +112,7 @@ public class TestAutoRemediation {
         pscProducerConfiguration.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
         pscProducerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, baseProducerClientId + "-" + UUID.randomUUID());
         pscProducerConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
-        producerInternalConfiguration = new PscConfigurationInternal(pscProducerConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        producerInternalConfiguration = new PscConfigurationInternal(pscProducerConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
 
         kafkaCluster = new KafkaCluster(
                 "plaintext",

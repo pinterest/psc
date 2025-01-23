@@ -142,6 +142,12 @@ public class PscSourceReader<T>
             return;
         }
 
+        if (committedPartitions.isEmpty()) {
+            LOG.debug("There are no offsets to commit for checkpoint {}.", checkpointId);
+            removeAllOffsetsToCommitUpToCheckpoint(checkpointId);
+            return;
+        }
+
         ((PscSourceFetcherManager) splitFetcherManager)
                 .commitOffsets(
                         committedPartitions.values(),
@@ -171,12 +177,15 @@ public class PscSourceReader<T>
                                                 entry ->
                                                         committedPartitions.containsKey(
                                                                 entry.getKey()));
-                                while (!offsetsToCommit.isEmpty()
-                                        && offsetsToCommit.firstKey() <= checkpointId) {
-                                    offsetsToCommit.remove(offsetsToCommit.firstKey());
-                                }
+                                removeAllOffsetsToCommitUpToCheckpoint(checkpointId);
                             }
                         });
+    }
+
+    private void removeAllOffsetsToCommitUpToCheckpoint(long checkpointId) {
+        while (!offsetsToCommit.isEmpty() && offsetsToCommit.firstKey() <= checkpointId) {
+            offsetsToCommit.remove(offsetsToCommit.firstKey());
+        }
     }
 
     @Override

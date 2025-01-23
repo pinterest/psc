@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.connector.psc.source;
 
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumStateSerializer;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumerator;
@@ -34,6 +35,7 @@ import com.pinterest.flink.connector.psc.source.split.PscTopicUriPartitionSplitS
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -52,10 +54,12 @@ import org.apache.flink.connector.base.source.reader.synchronization.FutureCompl
 import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.util.UserCodeClassLoader;
+import org.apache.flink.util.function.SerializableSupplier;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -72,6 +76,11 @@ import java.util.function.Supplier;
  * is required to be set in the configuration for the PscSource to perform metadata queries against the cluster using
  * a {@link com.pinterest.psc.metadata.client.PscMetadataClient}.
  *
+ * Note that this source currently does not support reading from MemQ topics.
+ * This is due to the fact that we do not yet have a MemQ {@link com.pinterest.psc.metadata.client.PscMetadataClient} implementation.
+ * The only supported topics as of now are those that are backed by Kafka. If you need to read from MemQ topics, please use
+ * {@link com.pinterest.flink.streaming.connectors.psc.FlinkPscConsumer}.
+ *
  * The following example shows how to create a PscSource emitting records of <code>
  * String</code> type.
  *
@@ -85,7 +94,10 @@ import java.util.function.Supplier;
  *     .build();
  * }</pre>
  *
- * <p>See {@link PscSourceBuilder} for more details.
+ * <p>{@link org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumerator} only supports
+ * adding new splits and not removing splits in split discovery.
+ *
+ * <p>See {@link PscSourceBuilder} for more details on how to configure this source.
  *
  * @param <OUT> the output type of the source.
  */
@@ -104,6 +116,8 @@ public class PscSource<OUT>
     private final PscRecordDeserializationSchema<OUT> deserializationSchema;
     // The configurations.
     private final Properties props;
+    // Client rackId callback
+    private final SerializableSupplier<String> rackIdSupplier;
 
     PscSource(
             PscSubscriber subscriber,
@@ -111,13 +125,15 @@ public class PscSource<OUT>
             @Nullable OffsetsInitializer stoppingOffsetsInitializer,
             Boundedness boundedness,
             PscRecordDeserializationSchema<OUT> deserializationSchema,
-            Properties props) {
+            Properties props,
+            SerializableSupplier<String> rackIdSupplier) {
         this.subscriber = subscriber;
         this.startingOffsetsInitializer = startingOffsetsInitializer;
         this.stoppingOffsetsInitializer = stoppingOffsetsInitializer;
         this.boundedness = boundedness;
         this.deserializationSchema = deserializationSchema;
         this.props = props;
+        this.rackIdSupplier = rackIdSupplier;
     }
 
     /**
@@ -165,9 +181,15 @@ public class PscSource<OUT>
         Supplier<PscTopicUriPartitionSplitReader> splitReaderSupplier =
                 () -> {
                     try {
-                        return new PscTopicUriPartitionSplitReader(props, readerContext, pscSourceReaderMetrics);
+                        return new PscTopicUriPartitionSplitReader(
+                                props,
+                                readerContext,
+                                pscSourceReaderMetrics,
+                                Optional.ofNullable(rackIdSupplier)
+                                        .map(Supplier::get)
+                                        .orElse(null));
                     } catch (ConfigurationException | ClientException e) {
-                        throw new RuntimeException("Failed to create new PscTopicUriParititionSplitReader", e);
+                        throw new RuntimeException(e);
                     }
                 };
         PscRecordEmitter<OUT> recordEmitter = new PscRecordEmitter<>(deserializationSchema);
@@ -208,19 +230,31 @@ public class PscSource<OUT>
                 props,
                 enumContext,
                 boundedness,
-                checkpoint.assignedPartitions());
+                checkpoint);
     }
 
     @Internal
     @Override
     public SimpleVersionedSerializer<PscTopicUriPartitionSplit> getSplitSerializer() {
-        return new PscTopicUriPartitionSplitSerializer();
+        PscTopicUriPartitionSplitSerializer serializer = new PscTopicUriPartitionSplitSerializer();
+        try {
+            serializer.setClusterUri(PscFlinkConfiguration.validateAndGetBaseClusterUri(props).getTopicUriAsString());
+            return serializer;
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Failed to set clusterUri for splitSerializer", e);
+        }
     }
 
     @Internal
     @Override
     public SimpleVersionedSerializer<PscSourceEnumState> getEnumeratorCheckpointSerializer() {
-        return new PscSourceEnumStateSerializer();
+        PscSourceEnumStateSerializer serializer = new PscSourceEnumStateSerializer();
+        try {
+            serializer.setClusterUri(PscFlinkConfiguration.validateAndGetBaseClusterUri(props).getTopicUriAsString());
+            return serializer;
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Failed to set clusterUri for enumStateSerializer", e);
+        }
     }
 
     @Override
@@ -239,5 +273,15 @@ public class PscSource<OUT>
     @VisibleForTesting
     Configuration getConfiguration() {
         return toConfiguration(props);
+    }
+
+    @VisibleForTesting
+    PscSubscriber getPscSubscriber() {
+        return subscriber;
+    }
+
+    @VisibleForTesting
+    OffsetsInitializer getStoppingOffsetsInitializer() {
+        return stoppingOffsetsInitializer;
     }
 }
