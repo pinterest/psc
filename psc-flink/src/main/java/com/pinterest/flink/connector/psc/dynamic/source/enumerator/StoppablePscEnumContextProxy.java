@@ -48,11 +48,11 @@ import java.util.stream.Collectors;
 
 /**
  * A proxy enumerator context that supports life cycle management of underlying threads related to a
- * sub {@link org.apache.flink.connector.kafka.source.enumerator.KafkaSourceEnumerator}. This is
+ * sub {@link com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumerator}. This is
  * motivated by the need to cancel the periodic partition discovery in scheduled tasks when sub
- * Kafka Enumerators are restarted. The worker thread pool in {@link
+ * PSC Enumerators are restarted. The worker thread pool in {@link
  * org.apache.flink.runtime.source.coordinator.SourceCoordinatorContext} should not contain tasks of
- * inactive KafkaSourceEnumerators, after source restart.
+ * inactive PscSourceEnumerators, after source restart.
  *
  * <p>Due to the inability to cancel scheduled tasks from {@link
  * org.apache.flink.runtime.source.coordinator.SourceCoordinatorContext}, this enumerator context
@@ -76,9 +76,9 @@ public class StoppablePscEnumContextProxy
     /**
      * Constructor for the enumerator context.
      *
-     * @param clusterId The Kafka cluster id in order to maintain the mapping to the sub
-     *     KafkaSourceEnumerator
-     * @param pscMetadataService the Kafka metadata service to facilitate error handling
+     * @param clusterId The cluster id in order to maintain the mapping to the sub
+     *     PscSourceEnumerator
+     * @param pscMetadataService the PSC metadata service to facilitate error handling
      * @param enumContext the underlying enumerator context
      * @param signalNoMoreSplitsCallback the callback when signal no more splits is invoked
      */
@@ -152,7 +152,7 @@ public class StoppablePscEnumContextProxy
     @Override
     public void signalNoMoreSplits(int subtask) {
         // There are no more splits for this cluster, but we need to wait until all clusters are
-        // finished with their respective split discoveries. In the Kafka Source, this is called in
+        // finished with their respective split discoveries. In the PSC Source, this is called in
         // the coordinator thread, ensuring thread safety, for all source readers at the same time.
         noMoreSplits = true;
         if (signalNoMoreSplitsCallback != null) {
@@ -175,7 +175,7 @@ public class StoppablePscEnumContextProxy
      * <p>Having the scheduled task in the internal thread pool also allows us to cancel the task
      * when the context needs to close due to dynamic enumerator restart.
      *
-     * <p>In the case of KafkaEnumerator partition discovery, the callback modifies KafkaEnumerator
+     * <p>In the case of PscEnumerator partition discovery, the callback modifies PscEnumerator
      * object state.
      */
     @Override
@@ -210,7 +210,7 @@ public class StoppablePscEnumContextProxy
     public void close() throws Exception {
         logger.info("Closing enum context for {}", clusterId);
         if (subEnumeratorWorker != null) {
-            // KafkaSubscriber worker thread will fail if admin client is closed in the middle.
+            // PscSubscriber worker thread will fail if admin client is closed in the middle.
             // Swallow the error and set the context to closed state.
             isClosing = true;
             subEnumeratorWorker.shutdown();
@@ -245,7 +245,7 @@ public class StoppablePscEnumContextProxy
 
     /**
      * Handle exception that is propagated by a callable, executed on coordinator thread. Depending
-     * on condition(s) the exception may be swallowed or forwarded. This is the Kafka topic
+     * on condition(s) the exception may be swallowed or forwarded. This is the topic
      * partition discovery callable handler.
      */
     protected <T> BiConsumer<T, Throwable> wrapCallAsyncCallableHandler(
@@ -294,18 +294,18 @@ public class StoppablePscEnumContextProxy
 
         StoppablePscEnumContextProxy create(
                 SplitEnumeratorContext<DynamicPscSourceSplit> enumContext,
-                String kafkaClusterId,
-                PscMetadataService kafkaMetadataService,
+                String clusterId,
+                PscMetadataService metadataService,
                 Runnable signalNoMoreSplitsCallback);
 
         static StoppablePscEnumContextProxyFactory getDefaultFactory() {
             return (enumContext,
-                    kafkaClusterId,
-                    kafkaMetadataService,
+                    clusterId,
+                    metadataService,
                     signalNoMoreSplitsCallback) ->
                     new StoppablePscEnumContextProxy(
-                            kafkaClusterId,
-                            kafkaMetadataService,
+                            clusterId,
+                            metadataService,
                             enumContext,
                             signalNoMoreSplitsCallback);
         }

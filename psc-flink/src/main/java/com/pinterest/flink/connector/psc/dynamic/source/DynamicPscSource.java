@@ -52,6 +52,10 @@ import java.util.Properties;
  * clusters). If using {@link com.pinterest.flink.connector.psc.source.PscSource}, users need to restart the job by deleting the job and
  * reconfiguring the topics and clusters.
  *
+ * However, similar to {@link com.pinterest.flink.connector.psc.source.PscSource}, this source currently does not support
+ * reading from MemQ topics / streams. This is due to the fact that we do not yet have a MemQ metadataService implementation.
+ * The only supported topics as of now are those that are backed by Kafka.
+ *
  * <p>This example shows how to configure a {@link DynamicPscSource} that emits Integer records:
  *
  * <pre>{@code
@@ -59,7 +63,7 @@ import java.util.Properties;
  *                     DynamicPscSource.<Integer>builder()
  *                             .setStreamIds(Collections.singleton("MY_STREAM_ID"))
  *                             // custom metadata service that resolves `MY_STREAM_ID` to the associated clusters and topics
- *                             .setPscMetadataService(kafkaMetadataService)
+ *                             .setPscMetadataService(pscMetadataService)
  *                             .setDeserializer(
  *                                     PscRecordDeserializationSchema.valueOnly(
  *                                             IntegerDeserializer.class))

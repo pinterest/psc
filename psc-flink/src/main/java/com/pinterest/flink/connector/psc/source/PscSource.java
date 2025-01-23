@@ -76,6 +76,11 @@ import java.util.function.Supplier;
  * is required to be set in the configuration for the PscSource to perform metadata queries against the cluster using
  * a {@link com.pinterest.psc.metadata.client.PscMetadataClient}.
  *
+ * Note that this source currently does not support reading from MemQ topics.
+ * This is due to the fact that we do not yet have a MemQ {@link com.pinterest.psc.metadata.client.PscMetadataClient} implementation.
+ * The only supported topics as of now are those that are backed by Kafka. If you need to read from MemQ topics, please use
+ * {@link com.pinterest.flink.streaming.connectors.psc.FlinkPscConsumer}.
+ *
  * The following example shows how to create a PscSource emitting records of <code>
  * String</code> type.
  *

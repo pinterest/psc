@@ -20,7 +20,6 @@ package com.pinterest.flink.connector.psc.dynamic.source.reader;
 
 import com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics;
 import com.pinterest.flink.connector.psc.source.reader.PscTopicUriPartitionSplitReader;
-import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
@@ -38,33 +37,33 @@ import java.util.stream.Collectors;
 @Internal
 public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartitionSplitReader
         implements AutoCloseable {
-    private final String kafkaClusterId;
+    private final String clusterId;
 
     public PscTopicUriPartitionSplitReaderWrapper(
             Properties props,
             SourceReaderContext context,
             PscSourceReaderMetrics pscSourceReaderMetrics,
-            String kafkaClusterId) throws ConfigurationException, ClientException {
+            String clusterId) throws ConfigurationException, ClientException {
         super(props, context, pscSourceReaderMetrics);
-        this.kafkaClusterId = kafkaClusterId;
+        this.clusterId = clusterId;
     }
 
     @Override
     public RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> fetch() throws IOException {
-        return new WrappedRecordsWithSplitIds(super.fetch(), kafkaClusterId);
+        return new WrappedRecordsWithSplitIds(super.fetch(), clusterId);
     }
 
     private static final class WrappedRecordsWithSplitIds
             implements RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> {
 
         private final RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> delegate;
-        private final String kafkaClusterId;
+        private final String clusterId;
 
         public WrappedRecordsWithSplitIds(
                 RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> delegate,
-                String kafkaClusterId) {
+                String clusterId) {
             this.delegate = delegate;
-            this.kafkaClusterId = kafkaClusterId;
+            this.clusterId = clusterId;
         }
 
         @Nullable
@@ -74,7 +73,7 @@ public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartition
             if (nextSplit == null) {
                 return nextSplit;
             } else {
-                return kafkaClusterId + "-" + nextSplit;
+                return clusterId + "-" + nextSplit;
             }
         }
 
@@ -87,7 +86,7 @@ public class PscTopicUriPartitionSplitReaderWrapper extends PscTopicUriPartition
         @Override
         public Set<String> finishedSplits() {
             return delegate.finishedSplits().stream()
-                    .map(finishedSplit -> kafkaClusterId + "-" + finishedSplit)
+                    .map(finishedSplit -> clusterId + "-" + finishedSplit)
                     .collect(Collectors.toSet());
         }
 

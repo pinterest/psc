@@ -924,11 +924,11 @@ public class DynamicPscSourceEnumeratorTest {
         public StoppablePscEnumContextProxy create(
                 SplitEnumeratorContext<DynamicPscSourceSplit> enumContext,
                 String clusterId,
-                PscMetadataService pscMetadataService,
+                PscMetadataService metadataService,
                 Runnable signalNoMoreSplitsCallback) {
             return new TestPscEnumContextProxy(
                     clusterId,
-                    pscMetadataService,
+                    metadataService,
                     (MockSplitEnumeratorContext<DynamicPscSourceSplit>) enumContext);
         }
     }

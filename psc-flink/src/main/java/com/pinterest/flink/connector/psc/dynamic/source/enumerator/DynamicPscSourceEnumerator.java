@@ -187,9 +187,9 @@ public class DynamicPscSourceEnumerator
     }
 
     /**
-     * Discover Kafka clusters and initialize sub enumerators. Bypass kafka metadata service
-     * discovery if there exists prior state. Exceptions with initializing Kafka source are treated
-     * the same as Kafka state and metadata inconsistency.
+     * Discover PubSub clusters and initialize sub enumerators. Bypass metadata service
+     * discovery if there exists prior state. Exceptions with initializing PSC source are treated
+     * the same as state and metadata inconsistency.
      */
     @Override
     public void start() {
@@ -334,7 +334,7 @@ public class DynamicPscSourceEnumerator
                 return latestPscStreams;
             } else {
                 throw new RuntimeException(
-                        "Fetching subscribed Kafka streams failed and no metadata to fallback", t);
+                        "Fetching subscribed streams failed and no metadata to fallback", t);
             }
         } else {
             // reset count in absence of failure
@@ -353,7 +353,7 @@ public class DynamicPscSourceEnumerator
     }
 
     /**
-     * Initialize KafkaEnumerators, maybe with the topic partitions that are already assigned to by
+     * Initialize PscEnumerators, maybe with the topic partitions that are already assigned to by
      * readers, to avoid duplicate re-assignment of splits. This is especially important in the
      * restart mechanism when duplicate split assignment can cause undesired starting offsets (e.g.
      * not assigning to the offsets prior to reader restart). Split offset resolution is mostly
@@ -402,27 +402,27 @@ public class DynamicPscSourceEnumerator
     }
 
     private void startAllEnumerators() {
-        for (String kafkaClusterId : latestClusterTopicsMap.keySet()) {
+        for (String clusterId : latestClusterTopicsMap.keySet()) {
             try {
                 // starts enumerators and handles split discovery and assignment
-                clusterEnumeratorMap.get(kafkaClusterId).start();
+                clusterEnumeratorMap.get(clusterId).start();
             } catch (Exception e) {
-                if (pscMetadataService.isClusterActive(kafkaClusterId)) {
+                if (pscMetadataService.isClusterActive(clusterId)) {
                     throw new RuntimeException(
-                            String.format("Failed to create enumerator for %s", kafkaClusterId), e);
+                            String.format("Failed to create enumerator for %s", clusterId), e);
                 } else {
                     logger.info(
                             "Found inactive cluster {} while initializing, removing enumerator",
-                            kafkaClusterId,
+                            clusterId,
                             e);
                     try {
-                        clusterEnumContextMap.remove(kafkaClusterId).close();
-                        clusterEnumeratorMap.remove(kafkaClusterId).close();
+                        clusterEnumContextMap.remove(clusterId).close();
+                        clusterEnumeratorMap.remove(clusterId).close();
                     } catch (Exception ex) {
                         // closing enumerator throws an exception, let error propagate and restart
                         // the job
                         throw new RuntimeException(
-                                "Failed to close enum context for " + kafkaClusterId, ex);
+                                "Failed to close enum context for " + clusterId, ex);
                     }
                 }
             }
@@ -444,34 +444,34 @@ public class DynamicPscSourceEnumerator
     }
 
     /**
-     * Multi cluster Kafka source readers will not request splits. Splits will be pushed to them,
+     * Multi cluster PSC source readers will not request splits. Splits will be pushed to them,
      * similarly for the sub enumerators.
      */
     @Override
     public void handleSplitRequest(int subtaskId, @Nullable String requesterHostname) {
-        throw new UnsupportedOperationException("Kafka enumerators only assign splits to readers.");
+        throw new UnsupportedOperationException("PSC enumerators only assign splits to readers.");
     }
 
     @Override
     public void addSplitsBack(List<DynamicPscSourceSplit> splits, int subtaskId) {
         logger.debug("Adding splits back for {}", subtaskId);
         // separate splits by cluster
-        ArrayListMultimap<String, PscTopicUriPartitionSplit> kafkaPartitionSplits =
+        ArrayListMultimap<String, PscTopicUriPartitionSplit> partitionSplits =
                 ArrayListMultimap.create();
         for (DynamicPscSourceSplit split : splits) {
-            kafkaPartitionSplits.put(split.getPubSubClusterId(), split.getPscTopicUriPartitionSplit());
+            partitionSplits.put(split.getPubSubClusterId(), split.getPscTopicUriPartitionSplit());
         }
 
         // add splits back and assign pending splits for all enumerators
-        for (String kafkaClusterId : kafkaPartitionSplits.keySet()) {
-            if (clusterEnumeratorMap.containsKey(kafkaClusterId)) {
+        for (String clusterId : partitionSplits.keySet()) {
+            if (clusterEnumeratorMap.containsKey(clusterId)) {
                 clusterEnumeratorMap
-                        .get(kafkaClusterId)
-                        .addSplitsBack(kafkaPartitionSplits.get(kafkaClusterId), subtaskId);
+                        .get(clusterId)
+                        .addSplitsBack(partitionSplits.get(clusterId), subtaskId);
             } else {
                 logger.warn(
                         "Split refers to inactive cluster {} with current clusters being {}",
-                        kafkaClusterId,
+                        clusterId,
                         clusterEnumeratorMap.keySet());
             }
         }

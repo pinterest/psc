@@ -55,14 +55,14 @@ public class PscClusterMetricGroupManager implements AutoCloseable {
         }
     }
 
-    public void close(String kafkaClusterId) {
-        AbstractMetricGroup metricGroup = metricGroups.remove(kafkaClusterId);
+    public void close(String clusterId) {
+        AbstractMetricGroup metricGroup = metricGroups.remove(clusterId);
         if (metricGroup != null) {
             metricGroup.close();
         } else {
             logger.warn(
                     "Tried to close metric group for {} but it is not registered for lifecycle management",
-                    kafkaClusterId);
+                    clusterId);
         }
     }
 

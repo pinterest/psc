@@ -30,7 +30,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * {@link ClusterMetadata} provides readers information about a cluster on what topics to read and
+ * {@link ClusterMetadata} provides {@link org.apache.flink.api.connector.source.SourceReader}s information about a cluster on what topics to read and
  * how to connect to a cluster.
  */
 @Experimental

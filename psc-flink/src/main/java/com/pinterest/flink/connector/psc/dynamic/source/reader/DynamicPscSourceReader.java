@@ -70,11 +70,11 @@ import java.util.stream.Collectors;
 
 /**
  * Manages state about underlying {@link PscSourceReader} to collect records and commit offsets
- * from multiple Kafka clusters. This reader also handles changes to Kafka topology by reacting to
+ * from multiple PubSub clusters. This reader also handles changes to PubSub topology by reacting to
  * restart sequence initiated by the enumerator and suspending inconsistent sub readers.
  *
  * <p>First, in the restart sequence, we will receive the {@link com.pinterest.flink.connector.psc.dynamic.source.MetadataUpdateEvent} from the
- * enumerator, stop all KafkaSourceReaders, and retain the relevant splits. Second, enumerator will
+ * enumerator, stop all PscSourceReaders, and retain the relevant splits. Second, enumerator will
  * send all new splits that readers should work on (old splits will not be sent again).
  */
 @Internal
@@ -127,7 +127,7 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
     public void start() {
         logger.trace("Starting reader for subtask index={}", readerContext.getIndexOfSubtask());
         // metrics cannot be registered in the enumerator
-        readerContext.metricGroup().gauge("kafkaClusterCount", pubsubClusterCount);
+        readerContext.metricGroup().gauge("pubsubClusterCount", pubsubClusterCount);
         readerContext.sendSourceEventToCoordinator(new GetMetadataUpdateEvent());
     }
 
@@ -237,9 +237,9 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
         Set<PscStream> newPscStreams = ((MetadataUpdateEvent) sourceEvent).getPscStreams();
         Map<String, Set<String>> newClustersAndTopicUris = new HashMap<>();
         Map<String, Properties> newClustersProperties = new HashMap<>();
-        for (PscStream kafkaStream : newPscStreams) {
+        for (PscStream pscStream : newPscStreams) {
             for (Map.Entry<String, ClusterMetadata> clusterMetadataMapEntry :
-                    kafkaStream.getClusterMetadataMap().entrySet()) {
+                    pscStream.getClusterMetadataMap().entrySet()) {
                 newClustersAndTopicUris
                         .computeIfAbsent(
                                 clusterMetadataMapEntry.getKey(), (unused) -> new HashSet<>())
@@ -289,7 +289,7 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
             clustersProperties.putAll(newClustersProperties);
             for (String clusterId : newClustersAndTopicUris.keySet()) {
                 try {
-                    // restart kafka source readers with the relevant state
+                    // restart source readers with the relevant state
                     PscSourceReader<T> pscSourceReader = createReader(clusterId);
                     clusterReaderMap.put(clusterId, pscSourceReader);
                     if (filteredNewClusterSplitStateMap.containsKey(clusterId)) {
@@ -418,13 +418,13 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
         PscPropertiesUtil.copyProperties(
                 Preconditions.checkNotNull(
                         clustersProperties.get(clusterId),
-                        "Properties for cluster %s is not found. Current Kafka cluster ids: %s",
+                        "Properties for cluster %s is not found. Current PubSub cluster ids: %s",
                         clusterId,
                         clustersProperties.keySet()),
                 readerSpecificProperties);
         PscPropertiesUtil.setClientIdPrefix(readerSpecificProperties, clusterId);
 
-        // layer a kafka cluster group to distinguish metrics by cluster
+        // layer a cluster group to distinguish metrics by cluster
         PscClusterMetricGroup pscClusterMetricGroup =
                 new PscClusterMetricGroup(
                         dynamicPscSourceMetricGroup, readerContext.metricGroup(), clusterId);
@@ -437,7 +437,7 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
                     @Override
                     public MetricGroup getMetricGroup() {
                         // adding pscClusterMetricGroup instead of the sourceReaderMetricGroup
-                        // since there could be metric collision, so `kafkaCluster` group is
+                        // since there could be metric collision, so `pubsubCluster` group is
                         // necessary to
                         // distinguish between instances of this metric
                         return pscClusterMetricGroup.addGroup("deserializer");
@@ -474,7 +474,7 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
     }
 
     /**
-     * In metadata change, we need to reset the availability helper since the number of Kafka source
+     * In metadata change, we need to reset the availability helper since the number of PSC source
      * readers could have changed.
      */
     private void completeAndResetAvailabilityHelper() {
@@ -499,8 +499,8 @@ public class DynamicPscSourceReader<T> implements SourceReader<T, DynamicPscSour
 
     private void syncAvailabilityHelperWithReaders() {
         int i = 0;
-        for (String kafkaClusterId : clusterReaderMap.navigableKeySet()) {
-            availabilityHelper.anyOf(i, clusterReaderMap.get(kafkaClusterId).isAvailable());
+        for (String clusterId : clusterReaderMap.navigableKeySet()) {
+            availabilityHelper.anyOf(i, clusterReaderMap.get(clusterId).isAvailable());
             i++;
         }
     }

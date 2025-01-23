@@ -33,9 +33,9 @@ import java.util.Map;
 
 /**
  * A custom proxy metric group in order to group {@link
- * org.apache.flink.connector.kafka.source.metrics.KafkaSourceReaderMetrics} by Kafka cluster.
+ * com.pinterest.flink.connector.psc.source.metrics.PscSourceReaderMetrics} by PubSub cluster.
  *
- * <p>Reports pending records per cluster under DynamicKafkaSource metric group, motivated by
+ * <p>Reports pending records per cluster under DynamicPscSource metric group, motivated by
  * standardized connector metrics:
  * https://cwiki.apache.org/confluence/display/FLINK/FLIP-33%3A+Standardize+Connector+Metrics.
  */
@@ -49,11 +49,11 @@ public class PscClusterMetricGroup implements SourceReaderMetricGroup {
     private final OperatorIOMetricGroup delegateIOMetricGroup;
 
     public PscClusterMetricGroup(
-            MetricGroup dynamicKafkaSourceMetricGroup,
+            MetricGroup dynamicPscSourceMetricGroup,
             SourceReaderMetricGroup delegateSourceReaderMetricGroup,
-            String kafkaClusterId) {
+            String clusterId) {
         this.internalClusterSpecificMetricGroup =
-                dynamicKafkaSourceMetricGroup.addGroup(PSC_CLUSTER_GROUP_NAME, kafkaClusterId);
+                dynamicPscSourceMetricGroup.addGroup(PSC_CLUSTER_GROUP_NAME, clusterId);
         this.delegateIOMetricGroup = delegateSourceReaderMetricGroup.getIOMetricGroup();
     }
 
@@ -64,13 +64,13 @@ public class PscClusterMetricGroup implements SourceReaderMetricGroup {
     @Override
     public Counter getNumRecordsInErrorsCounter() {
         throw new UnsupportedOperationException(
-                "This is not invoked/supported by KafkaSourceReader as of Flink 1.14.");
+                "This is not invoked/supported by PscSourceReader as of Flink 1.14.");
     }
 
     @Override
     public void setPendingBytesGauge(Gauge<Long> gauge) {
         throw new UnsupportedOperationException(
-                "This is not invoked/supported by KafkaSourceReader as of Flink 1.14.");
+                "This is not invoked/supported by PscSourceReader as of Flink 1.14.");
     }
 
     @Override

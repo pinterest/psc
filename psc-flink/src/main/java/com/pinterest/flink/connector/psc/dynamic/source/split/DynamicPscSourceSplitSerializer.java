@@ -64,12 +64,12 @@ public class DynamicPscSourceSplitSerializer
     public DynamicPscSourceSplit deserialize(int version, byte[] serialized) throws IOException {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serialized);
                 DataInputStream in = new DataInputStream(bais)) {
-            String kafkaClusterId = in.readUTF();
+            String clusterId = in.readUTF();
             int pscTopicUriPartitionSplitSerializerVersion = in.readInt();
             PscTopicUriPartitionSplit pscTopicUriPartitionSplit =
                     pscTopicUriPartitionSplitSerializer.deserialize(
                             pscTopicUriPartitionSplitSerializerVersion, ByteStreams.toByteArray(in));
-            return new DynamicPscSourceSplit(kafkaClusterId, pscTopicUriPartitionSplit);
+            return new DynamicPscSourceSplit(clusterId, pscTopicUriPartitionSplit);
         }
     }
 }
