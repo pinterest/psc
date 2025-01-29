@@ -277,6 +277,10 @@ public class KafkaErrors {
                                         "not present in metadata after",
                                         new PscErrorHandler.ProducerAction(PscErrorHandler.ActionType.RESET_THEN_THROW, ProducerException.class)
                                 );
+                                put(
+                                        "has passed since batch creation",
+                                        new PscErrorHandler.ProducerAction(PscErrorHandler.ActionType.RESET_THEN_THROW, ProducerException.class)
+                                );
                             }}
                     )
 
