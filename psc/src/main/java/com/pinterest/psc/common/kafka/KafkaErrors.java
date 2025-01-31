@@ -17,6 +17,7 @@ import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.InvalidOffsetException;
 import org.apache.kafka.common.errors.NotLeaderForPartitionException;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.errors.SslAuthenticationException;
@@ -243,6 +244,14 @@ public class KafkaErrors {
                     // NotLeaderForPartitionException
                     .put(
                             NotLeaderForPartitionException.class,
+                            new LinkedHashMap<String, PscErrorHandler.ProducerAction>(1) {{
+                                put("", new PscErrorHandler.ProducerAction(PscErrorHandler.ActionType.RESET_THEN_THROW, ProducerException.class));
+                            }}
+                    )
+
+                    // NotLeaderOrFollowerException
+                    .put(
+                            NotLeaderOrFollowerException.class,
                             new LinkedHashMap<String, PscErrorHandler.ProducerAction>(1) {{
                                 put("", new PscErrorHandler.ProducerAction(PscErrorHandler.ActionType.RESET_THEN_THROW, ProducerException.class));
                             }}
