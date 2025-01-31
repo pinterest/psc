@@ -1,6 +1,7 @@
 package com.pinterest.psc.consumer.kafka;
 
 import com.google.common.annotations.VisibleForTesting;
+
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
@@ -88,20 +89,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                 ConsumerConfig.CLIENT_ID_CONFIG,
                 pscConfigurationInternal.getPscConsumerClientId() + "-" + UUID.randomUUID()
         );
-
-        String kafkaConsumerClassName = pscConfigurationInternal.getConfiguration().getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS);
-        try {
-            if (kafkaConsumerClassName != null) {
-                Class<?> kafkaConsumerClass = Class.forName(kafkaConsumerClassName).asSubclass(Consumer.class);
-                kafkaConsumer = (Consumer) kafkaConsumerClass.getDeclaredConstructor(Properties.class).newInstance(properties);
-            } else {
-                kafkaConsumer = new KafkaConsumer<>(properties);
-            }
-        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
-            logger.error("Error initializing consumer class: " + kafkaConsumerClassName, e);
-            logger.info("Defaulting to native KafkaConsumer class", e);
-            kafkaConsumer = new KafkaConsumer<>(properties);
-        }
+        initializeKafkaConsumer();
         kafkaPollTimeoutMs = pscConfigurationInternal.getPscConsumerPollTimeoutMs();
 
         // if using secure protocol (SSL), calculate cert expiry time
@@ -1148,12 +1136,40 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         return false;
     }
 
+    /**
+     * Initializes the Kafka consumer.
+     * @throws ConsumerException
+     */
+    protected void initializeKafkaConsumer() {
+        String
+            kafkaConsumerClassName =
+            pscConfigurationInternal.getConfiguration()
+                .getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS);
+        try {
+            if (kafkaConsumerClassName != null) {
+                Class<?>
+                    kafkaConsumerClass =
+                    Class.forName(kafkaConsumerClassName).asSubclass(Consumer.class);
+                kafkaConsumer =
+                    (Consumer) kafkaConsumerClass.getDeclaredConstructor(Properties.class)
+                        .newInstance(properties);
+            } else {
+                kafkaConsumer = new KafkaConsumer<>(properties);
+            }
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException |
+                 NoSuchMethodException | InvocationTargetException e) {
+            logger.error("Error initializing consumer class: " + kafkaConsumerClassName, e);
+            logger.info("Defaulting to native KafkaConsumer class", e);
+            kafkaConsumer = new KafkaConsumer<>(properties);
+        }
+    }
+
     @Override
     protected void resetBackendClient() throws ConsumerException {
         super.resetBackendClient();
         logger.warn("Resetting the backend Kafka consumer (potentially to retry an API if an earlier call failed).");
         executeBackendCallWithRetries(() -> kafkaConsumer.close());
-        kafkaConsumer = new KafkaConsumer<>(properties);
+        initializeKafkaConsumer();
         if (!currentAssignment.isEmpty())
             assign(currentAssignment);
         else if (!currentSubscription.isEmpty())

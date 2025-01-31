@@ -35,6 +35,11 @@
             </exclusions>
         </dependency>
         <dependency>
+            <groupId>com.pinterest.kafka.tieredstorage</groupId>
+            <artifactId>ts-consumer</artifactId>
+            <version>0.0.2</version>
+        </dependency>
+        <dependency>
             <groupId>org.reflections</groupId>
             <artifactId>reflections</artifactId>
         </dependency>
