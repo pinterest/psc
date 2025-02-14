@@ -1138,7 +1138,6 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     /**
      * Initializes the Kafka consumer.
-     * @throws ConsumerException
      */
     protected void initializeKafkaConsumer() {
         String
