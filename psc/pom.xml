@@ -38,6 +38,16 @@
             <groupId>com.pinterest.kafka.tieredstorage</groupId>
             <artifactId>ts-consumer</artifactId>
             <version>0.0.2</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.reflections</groupId>
