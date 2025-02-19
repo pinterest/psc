@@ -15,6 +15,7 @@
     <properties>
         <kafka.version>3.4.0</kafka.version>
         <memq.version>0.2.21</memq.version>
+        <ts-consumer.version>0.0.2</ts-consumer.version>
     </properties>
 
     <dependencies>
@@ -49,6 +50,21 @@
                 <exclusion>
                     <groupId>com.github.luben</groupId>
                     <artifactId>zstd-jni</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.pinterest.kafka.tieredstorage</groupId>
+            <artifactId>ts-consumer</artifactId>
+            <version>${ts-consumer.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>log4j-over-slf4j</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
