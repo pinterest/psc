@@ -1145,6 +1145,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
             pscConfigurationInternal.getConfiguration()
                 .getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS);
         try {
+            logger.info("Initializing Kafka consumer with class: " + kafkaConsumerClassName);
             if (kafkaConsumerClassName != null) {
                 Class<?>
                     kafkaConsumerClass =
@@ -1153,6 +1154,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                     (Consumer) kafkaConsumerClass.getDeclaredConstructor(Properties.class)
                         .newInstance(properties);
             } else {
+                logger.info("No custom Kafka consumer class specified, defaulting to native KafkaConsumer class");
                 kafkaConsumer = new KafkaConsumer<>(properties);
             }
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException |
