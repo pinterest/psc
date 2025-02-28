@@ -107,8 +107,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     @Override
     protected synchronized void reportConsumerMetrics() {
-        // temporary fix to avoid NPE in KafkaConsumer.metrics()
-        if (kafkaConsumer == null || kafkaConsumer.metrics() == null)
+        if (kafkaConsumer == null)
             return;
 
         Map<org.apache.kafka.common.MetricName, ? extends org.apache.kafka.common.Metric> kafkaMetrics = kafkaConsumer.metrics();
