@@ -15,7 +15,7 @@
     <properties>
         <kafka.version>3.4.0</kafka.version>
         <memq.version>0.2.21</memq.version>
-        <ts-consumer.version>0.0.3-20250301.000952-3</ts-consumer.version>
+        <ts-consumer.version>0.0.2</ts-consumer.version>
     </properties>
 
     <dependencies>
