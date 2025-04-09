@@ -1,6 +1,8 @@
 package com.pinterest.psc.consumer.kafka;
 
 import com.google.common.annotations.VisibleForTesting;
+
+import com.pinterest.kafka.tieredstorage.consumer.TieredStorageConsumer;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
@@ -29,6 +31,8 @@ import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
 import com.pinterest.psc.metrics.kafka.KafkaMetricsHandler;
 import com.pinterest.psc.metrics.kafka.KafkaUtils;
+
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -40,6 +44,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
+import java.lang.reflect.InvocationTargetException;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
@@ -56,7 +61,8 @@ import java.util.stream.Collectors;
 
 public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
     private static final PscLogger logger = PscLogger.getLogger(PscKafkaConsumer.class);
-    private KafkaConsumer<byte[], byte[]> kafkaConsumer;
+    private static final String PSC_CONSUMER_KAFKA_CONSUMER_CLASS = "psc.consumer.kafka.consumer.class";
+    private Consumer<byte[], byte[]> kafkaConsumer;
     private final Set<TopicUri> currentSubscription = new HashSet<>();
     private final Set<TopicUriPartition> currentAssignment = new HashSet<>();
     private long kafkaPollTimeoutMs;
@@ -85,7 +91,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                 pscConfigurationInternal.getPscConsumerClientId() + "-" + UUID.randomUUID()
         );
 
-        kafkaConsumer = new KafkaConsumer<>(properties);
+        initializeKafkaConsumer();
         kafkaPollTimeoutMs = pscConfigurationInternal.getPscConsumerPollTimeoutMs();
 
         // if using secure protocol (SSL), calculate cert expiry time
@@ -99,6 +105,37 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
             logger.info("Initialized PscKafkaConsumer without proactive SSL certificate reset.");
         }
         logger.info("Proactive SSL reset enabled: {}", pscConfigurationInternal.isProactiveSslResetEnabled());
+    }
+
+    /**
+     * Initializes the Kafka consumer.
+     */
+    protected void initializeKafkaConsumer() {
+        String
+            kafkaConsumerClassName =
+            pscConfigurationInternal.getConfiguration()
+                .getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS);
+        try {
+            logger.info("Initializing Kafka consumer with class: " + kafkaConsumerClassName);
+            if (kafkaConsumerClassName != null) {
+                Class<?>
+                    kafkaConsumerClass =
+                    Class.forName(kafkaConsumerClassName).asSubclass(Consumer.class);
+                kafkaConsumer =
+                    (Consumer) kafkaConsumerClass.getDeclaredConstructor(Properties.class)
+                        .newInstance(properties);
+            } else {
+                logger.info(
+                    "No custom Kafka consumer class specified, defaulting to native KafkaConsumer"
+                        + " class");
+                kafkaConsumer = new KafkaConsumer<>(properties);
+            }
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException |
+                 NoSuchMethodException | InvocationTargetException e) {
+            logger.error("Error initializing consumer class: " + kafkaConsumerClassName, e);
+            logger.info("Defaulting to native KafkaConsumer class", e);
+            kafkaConsumer = new KafkaConsumer<>(properties);
+        }
     }
 
     @Override
@@ -606,7 +643,16 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
          */
 
         // alternate reflection-based approach using a one-time call - performs ~ 20x faster
-        SubscriptionState subscriptions = (SubscriptionState) PscCommon.getField(kafkaConsumer, "subscriptions");
+        SubscriptionState subscriptions;
+        if (pscConfigurationInternal.getConfiguration().getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS)
+            != null && kafkaConsumer instanceof TieredStorageConsumer) {
+            // Retrieve subscriptions from underlying KafkaConsumer if using TieredStorageConsumer
+            subscriptions =
+                (SubscriptionState) PscCommon.getField(
+                    PscCommon.getField(kafkaConsumer, "kafkaConsumer"), "subscriptions");
+        } else {
+            subscriptions = (SubscriptionState) PscCommon.getField(kafkaConsumer, "subscriptions");
+        }
         Map<TopicPartition, OffsetAndMetadata> offsets = subscriptions.allConsumed();
         Set<MessageId> kafkaMessageIds = new HashSet<>();
         if (offsets != null) {
@@ -1137,7 +1183,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         super.resetBackendClient();
         logger.warn("Resetting the backend Kafka consumer (potentially to retry an API if an earlier call failed).");
         executeBackendCallWithRetries(() -> kafkaConsumer.close());
-        kafkaConsumer = new KafkaConsumer<>(properties);
+        initializeKafkaConsumer();
         if (!currentAssignment.isEmpty())
             assign(currentAssignment);
         else if (!currentSubscription.isEmpty())
