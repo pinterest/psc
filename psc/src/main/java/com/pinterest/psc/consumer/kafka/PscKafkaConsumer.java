@@ -2,7 +2,6 @@ package com.pinterest.psc.consumer.kafka;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import com.pinterest.kafka.tieredstorage.consumer.TieredStorageConsumer;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
@@ -645,7 +644,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         // alternate reflection-based approach using a one-time call - performs ~ 20x faster
         SubscriptionState subscriptions;
         if (pscConfigurationInternal.getConfiguration().getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS)
-            != null && kafkaConsumer instanceof TieredStorageConsumer) {
+            != null) {
             // Retrieve subscriptions from underlying KafkaConsumer if using TieredStorageConsumer
             subscriptions =
                 (SubscriptionState) PscCommon.getField(
