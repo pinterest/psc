@@ -2,7 +2,6 @@ package com.pinterest.psc.consumer.kafka;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import com.pinterest.kafka.tieredstorage.consumer.TieredStorageConsumer;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
@@ -110,7 +109,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
     /**
      * Initializes the Kafka consumer.
      */
-    protected void initializeKafkaConsumer() {
+    private void initializeKafkaConsumer() {
         String
             kafkaConsumerClassName =
             pscConfigurationInternal.getConfiguration()
@@ -645,8 +644,10 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         // alternate reflection-based approach using a one-time call - performs ~ 20x faster
         SubscriptionState subscriptions;
         if (pscConfigurationInternal.getConfiguration().getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS)
-            != null && kafkaConsumer instanceof TieredStorageConsumer) {
-            // Retrieve subscriptions from underlying KafkaConsumer if using TieredStorageConsumer
+            != null) {
+            // Retrieve subscriptions from underlying KafkaConsumer.
+            // NOTE: if custom consumer class does not contain an underlying KafkaConsumer "kafkaConsumer" field, this call
+            // will fail with a RuntimeException.
             subscriptions =
                 (SubscriptionState) PscCommon.getField(
                     PscCommon.getField(kafkaConsumer, "kafkaConsumer"), "subscriptions");
