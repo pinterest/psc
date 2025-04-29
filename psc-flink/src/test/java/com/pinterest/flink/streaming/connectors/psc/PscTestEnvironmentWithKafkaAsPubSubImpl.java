@@ -150,6 +150,16 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         standardPscConsumerConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST); // read from the beginning.
         standardPscConsumerConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_PARTITION_FETCH_MAX_BYTES, "256"); // make a lot of fetches (MESSAGES MUST BE SMALLER!)
         standardPscConsumerConfiguration.setProperty(PscConfiguration.PSC_AUTO_RESOLUTION_ENABLED, "false");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.tiered.storage.mode", "KAFKA_PREFERRED");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.kafka.cluster.id", "cluster0");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.kafka.consumer.class", "com.pinterest.kafka.tieredstorage.consumer.TieredStorageConsumer");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.storage.service.endpoint.s3.bucket", "some-bucket");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.storage.service.endpoint.s3.prefix", "some-prefix");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.storage.service.endpoint.s3.prefix.entropy.num.bits", "5");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.metrics.reporter.class", "com.pinterest.kafka.tieredstorage.common.metrics.NoOpMetricsReporter");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.metrics.reporter.host", "127.0.0.1");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.metrics.reporter.port", "18126");
+        standardPscConsumerConfiguration.setProperty("psc.consumer.offset.reset.policy", "LATEST");
 
         standardPscProducerConfiguration = new Properties();
         standardPscProducerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "flink-producer-client");
