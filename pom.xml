@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.pinterest.psc</groupId>
     <artifactId>psc-java-oss</artifactId>
-    <version>3.3.2-RC1</version>
+    <version>3.3.2</version>
     <packaging>pom</packaging>
     <name>psc-java-oss</name>
     <description>PubSub Client (PSC)</description>
