@@ -166,7 +166,7 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private boolean updateOrGetStatus(KafkaProducer<byte[], byte[]> kafkaProducer, Boolean isActive) {
         synchronized (kafkaProducer) {
             if (isActive == null) {
-                return allProducers.containsKey(kafkaProducer) && allProducers.get(kafkaProducer);
+                return Boolean.TRUE.equals(allProducers.get(kafkaProducer));
             } else {
                 allProducers.put(kafkaProducer, isActive.booleanValue());
                 return false; // no-op
