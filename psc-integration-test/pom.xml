@@ -13,7 +13,7 @@
     <artifactId>psc-integration-test</artifactId>
 
     <properties>
-        <kafka.version>2.3.1</kafka.version>
+        <kafka.version>2.6.3</kafka.version>
         <memq.version>0.2.20</memq.version>
     </properties>
 
