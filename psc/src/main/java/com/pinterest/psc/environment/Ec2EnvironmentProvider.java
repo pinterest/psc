@@ -1,5 +1,6 @@
 package com.pinterest.psc.environment;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.pinterest.psc.logging.PscLogger;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.regions.internal.util.EC2MetadataUtils;
@@ -64,6 +65,7 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
         return System.getenv(PROJECT);
     }
 
+
     /**
      * Fetches EC2 metadata with retries and exponential backoff.
      *
@@ -71,7 +73,8 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
      * @param propertyName       the name of the property being fetched, used for logging
      * @return the fetched metadata or a default value if it fails
      */
-    private String fetchEC2MetadataWithRetries(EC2MetadataFetcher ec2MetadataFetcher,
+    @VisibleForTesting
+    public String fetchEC2MetadataWithRetries(EC2MetadataFetcher ec2MetadataFetcher,
         String propertyName) {
         int attempts = 0;
         long backoff = 500;
@@ -80,10 +83,10 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
             try {
                 return ec2MetadataFetcher.fetch();
             } catch (SdkClientException e) {
+                attempts++;
                 LOGGER.error("Failed to fetch {} from EC2 metadata with {} on attempt {}: {}",
                     propertyName,
-                    attempts + 1, e.getMessage());
-                attempts++;
+                    attempts, e.getMessage());
                 if (attempts >= MAX_FETCH_RETRIES) {
                     break;
                 }
@@ -104,8 +107,12 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
         return Environment.INFO_NOT_AVAILABLE;
     }
 
+    /**
+     * Functional interface for fetching EC2 metadata.
+     * This allows for different metadata fetch methods to be passed in.
+     */
     @FunctionalInterface
-    private interface EC2MetadataFetcher {
+    public interface EC2MetadataFetcher {
 
         String fetch() throws SdkClientException;
     }
