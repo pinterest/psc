@@ -21,29 +21,25 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
 
     @Override
     public String getInstanceId() {
-        return instanceId == null || instanceId.equals(Environment.INFO_NOT_AVAILABLE)
-            ? instanceId = fetchEC2MetadataWithRetries(
+        return instanceId == null ? instanceId = fetchEC2MetadataWithRetries(
             EC2MetadataUtils::getInstanceId, "instanceId") : instanceId;
     }
 
     @Override
     public String getInstanceType() {
-        return instanceType == null || instanceType.equals(Environment.INFO_NOT_AVAILABLE)
-            ? instanceType = fetchEC2MetadataWithRetries(
+        return instanceType == null ? instanceType = fetchEC2MetadataWithRetries(
             EC2MetadataUtils::getInstanceType, "instanceType") : instanceType;
     }
 
     @Override
     public String getIpAddress() {
-        return ipAddress == null || ipAddress.equals(Environment.INFO_NOT_AVAILABLE)
-            ? ipAddress = fetchEC2MetadataWithRetries(
+        return ipAddress == null ? ipAddress = fetchEC2MetadataWithRetries(
             EC2MetadataUtils::getPrivateIpAddress, "ipAddress") : ipAddress;
     }
 
     @Override
     public String getLocality() {
-        return locality == null || locality.equals(Environment.INFO_NOT_AVAILABLE)
-            ? locality = fetchEC2MetadataWithRetries(
+        return locality == null ? locality = fetchEC2MetadataWithRetries(
             EC2MetadataUtils::getAvailabilityZone, "locality") : locality;
     }
 
