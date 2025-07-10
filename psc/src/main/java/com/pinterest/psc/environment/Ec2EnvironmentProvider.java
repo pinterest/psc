@@ -14,44 +14,41 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
     private static final String DEPLOYMENT_STAGE = "DEPLOYMENT_STAGE";
     private static final int MAX_FETCH_RETRIES = 3;
 
+    // Static variables to cache EC2 metadata
+    private static String instanceId;
+    private static String instanceType;
+    private static String ipAddress;
+    private static String locality;
+    private static String region;
+
     @Override
     public String getInstanceId() {
-        if (environment.getInstanceId().equals(Environment.INFO_NOT_AVAILABLE)) {
-            environment.setInstanceId(fetchEC2MetadataWithRetries(EC2MetadataUtils::getInstanceId, "instanceId"));
-        }
-        return environment.getInstanceId();
+        return instanceId == null ? instanceId = fetchEC2MetadataWithRetries(
+            EC2MetadataUtils::getInstanceId, "instanceId") : instanceId;
     }
 
     @Override
     public String getInstanceType() {
-        if (environment.getInstanceType().equals(Environment.INFO_NOT_AVAILABLE)) {
-            environment.setInstanceType(fetchEC2MetadataWithRetries(EC2MetadataUtils::getInstanceType, "instanceType"));
-        }
-        return environment.getInstanceType();
+        return instanceType == null ? instanceType = fetchEC2MetadataWithRetries(
+            EC2MetadataUtils::getInstanceType, "instanceType") : instanceType;
     }
 
     @Override
     public String getIpAddress() {
-        if (environment.getIpAddress().equals(Environment.INFO_NOT_AVAILABLE)) {
-            environment.setIpAddress(fetchEC2MetadataWithRetries(EC2MetadataUtils::getPrivateIpAddress, "ipAddress"));
-        }
-        return environment.getIpAddress();
+        return ipAddress == null ? ipAddress = fetchEC2MetadataWithRetries(
+            EC2MetadataUtils::getPrivateIpAddress, "ipAddress") : ipAddress;
     }
 
     @Override
     public String getLocality() {
-        if (environment.getLocality().equals(Environment.INFO_NOT_AVAILABLE)) {
-            environment.setLocality(fetchEC2MetadataWithRetries(EC2MetadataUtils::getAvailabilityZone, "locality"));
-        }
-        return environment.getLocality();
+        return locality == null ? locality = fetchEC2MetadataWithRetries(
+            EC2MetadataUtils::getAvailabilityZone, "locality") : locality;
     }
 
     @Override
     public String getRegion() {
-        if (environment.getRegion().equals(Environment.INFO_NOT_AVAILABLE)) {
-            environment.setRegion(fetchEC2MetadataWithRetries(EC2MetadataUtils::getEC2InstanceRegion, "region"));
-        }
-        return environment.getRegion();
+        return region == null ? region = fetchEC2MetadataWithRetries(
+            EC2MetadataUtils::getEC2InstanceRegion, "region") : region;
     }
 
     @Override
@@ -98,7 +95,7 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
                 } catch (InterruptedException ie) {
                     LOGGER.error(
                         "Interrupted while waiting to retry fetching {} from EC2 metadata: {}",
-                        propertyName, ie.getMessage());
+                        propertyName, ie);
                     return Environment.INFO_NOT_AVAILABLE;
                 }
                 backoff *= 2;
