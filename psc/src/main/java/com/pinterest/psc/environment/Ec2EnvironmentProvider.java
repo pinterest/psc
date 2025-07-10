@@ -84,7 +84,7 @@ public class Ec2EnvironmentProvider extends EnvironmentProvider {
                 return ec2MetadataFetcher.fetch();
             } catch (SdkClientException e) {
                 attempts++;
-                LOGGER.error("Failed to fetch {} from EC2 metadata with on attempt {}: {}",
+                LOGGER.error("Failed to fetch {} from EC2 metadata on attempt {}: {}",
                     propertyName,
                     attempts, e);
                 if (attempts >= MAX_FETCH_RETRIES) {
