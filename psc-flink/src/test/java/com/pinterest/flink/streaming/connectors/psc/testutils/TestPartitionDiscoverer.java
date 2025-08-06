@@ -27,8 +27,7 @@ import org.mockito.stubbing.Answer;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -63,16 +62,19 @@ public class TestPartitionDiscoverer extends AbstractTopicUriPartitionDiscoverer
 
     @Override
     protected List<String> getAllTopicUris() {
-        assertTrue(topicsDescriptor.isTopicUriPattern());
+        assertThat(topicsDescriptor.isTopicUriPattern()).isTrue();
         return mockGetAllTopicUrisReturnSequence.get(getAllTopicsInvokeCount++);
     }
 
     @Override
     protected List<PscTopicUriPartition> getAllPartitionsForTopicUris(List<String> topics) {
         if (topicsDescriptor.isFixedTopicUris()) {
-            assertEquals(topicsDescriptor.getFixedTopicUris(), topics);
+            assertThat(topics).isEqualTo(topicsDescriptor.getFixedTopicUris());
         } else {
-            assertEquals(mockGetAllTopicUrisReturnSequence.get(getAllPartitionsForTopicsInvokeCount - 1), topics);
+            assertThat(topics)
+                    .isEqualTo(
+                            mockGetAllTopicUrisReturnSequence.get(
+                                    getAllPartitionsForTopicsInvokeCount - 1));
         }
         return mockGetAllPartitionsForTopicUrisReturnSequence.get(getAllPartitionsForTopicsInvokeCount++);
     }

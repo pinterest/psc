@@ -31,6 +31,7 @@ import com.pinterest.psc.producer.Callback;
 import com.pinterest.psc.producer.PscBackendProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
+import com.pinterest.psc.producer.transaction.TransactionManagerUtils;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -69,8 +70,7 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private KafkaProducer<byte[], byte[]> kafkaProducer;
     private String configuredPscProducerId;
     private Properties properties;
-    private long sslCertificateExpiryTimeInMillis;
-    //private String project;
+    private long sslCertificateExpiryTimeInMillis = Long.MAX_VALUE;
 
     @Override
     public void initialize(PscConfigurationInternal pscConfigurationInternal, ServiceDiscoveryConfig discoveryConfig, Environment environment, TopicUri topicUri) {
@@ -94,10 +94,14 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
         kafkaProducer = getNewKafkaProducer();
 
         // if using secure protocol (SSL), calculate cert expiry time
-        if (topicUri.getProtocol().equals(KafkaTopicUri.SECURE_PROTOCOL)) {
+        if (pscConfigurationInternal.isProactiveSslResetEnabled() &&
+                topicUri.getProtocol().equals(KafkaTopicUri.SECURE_PROTOCOL)) {
             sslCertificateExpiryTimeInMillis = KafkaSslUtils.calculateSslCertExpiryTime(
                     properties, pscConfigurationInternal, Collections.singleton(topicUri));
-            logger.info("Initialized PscKafkaProducer with SSL cert expiry time at " + sslCertificateExpiryTimeInMillis);
+            logger.info("Initialized PscKafkaProducer with proactive SSL certificate reset. " +
+                    "Expiry time at " + sslCertificateExpiryTimeInMillis);
+        } else {
+            logger.info("Initialized PscKafkaProducer without proactive SSL certificate reset.");
         }
         super.initialize(pscConfigurationInternal, discoveryConfig, environment, topicUri);
     }
@@ -109,6 +113,20 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private KafkaProducer<byte[], byte[]> getNewKafkaProducer(boolean bumpRef) {
         properties.setProperty(ProducerConfig.CLIENT_ID_CONFIG, configuredPscProducerId + "-" + UUID.randomUUID());
         kafkaProducer = new KafkaProducer<>(properties);
+        // we set PID and epoch explicitly here to avoid ProducerFencedException when a new producer is created
+        // they must be -1 in order for initTransaction to succeed - we don't yet know why
+        // in some cases they are not -1 even though they should be initialized to -1 on calling the KafkaProducer
+        // constructor
+        try {
+            // the transactionManager will be non-null iff the producer enables idempotence and transactions
+            if (getTransactionManager() != null) {
+                setProducerId(-1);
+                setEpoch((short) -1);
+            }
+        } catch (ProducerException e) {
+            logger.warn("Error in setting producer ID and epoch." +
+                    " This might be ok if the producer won't be transactional.", e);
+        }
         updateStatus(kafkaProducer, true);
         PscMetricRegistryManager.getInstance().incrementBackendCounterMetric(
                 null,
@@ -725,42 +743,11 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
             handleUninitializedKafkaProducer("resumeTransaction()");
 
         try {
-            Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
+            Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
             synchronized (kafkaProducer) {
-                Object topicPartitionBookkeeper =
-                        PscCommon.getField(transactionManager, "topicPartitionBookkeeper");
-
-                PscCommon.invoke(
-                        transactionManager,
-                        "transitionTo",
-                        PscCommon.getEnum(
-                                "org.apache.kafka.clients.producer.internals.TransactionManager$State.INITIALIZING"
-                        )
-                );
-
-                PscCommon.invoke(topicPartitionBookkeeper, "reset");
-
-                Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-                PscCommon.setField(producerIdAndEpoch, "producerId", pscProducerTransactionalProperties.getProducerId());
-                PscCommon.setField(producerIdAndEpoch, "epoch", pscProducerTransactionalProperties.getEpoch());
-
-                PscCommon.invoke(
-                        transactionManager,
-                        "transitionTo",
-                        PscCommon.getEnum(
-                                "org.apache.kafka.clients.producer.internals.TransactionManager$State.READY"
-                        )
-                );
-
-                PscCommon.invoke(
-                        transactionManager,
-                        "transitionTo",
-                        PscCommon.getEnum(
-                                "org.apache.kafka.clients.producer.internals.TransactionManager$State.IN_TRANSACTION"
-                        )
-                );
-
-                PscCommon.setField(transactionManager, "transactionStarted", true);
+                TransactionManagerUtils.resumeTransaction(transactionManager, pscProducerTransactionalProperties);
             }
         } catch (Exception exception) {
             handleException(exception, true);
@@ -772,11 +759,23 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
         if (kafkaProducer == null)
             handleUninitializedKafkaProducer("getTransactionalProperties()");
 
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
+        Object transactionManager = getTransactionManager();
+        if (transactionManager == null)
+            handleNullTransactionManager();
         return new PscProducerTransactionalProperties(
-                (long) PscCommon.getField(producerIdAndEpoch, "producerId"),
-                (short) PscCommon.getField(producerIdAndEpoch, "epoch")
+                TransactionManagerUtils.getProducerId(transactionManager),
+                TransactionManagerUtils.getEpoch(transactionManager)
+        );
+    }
+
+    private void handleNullTransactionManager() throws ProducerException {
+        handleException(
+                new BackendProducerException(
+                        "Attempting to get transactionManager in KafkaProducer when " +
+                        "transactionManager is null. This indicates that the KafkaProducer " +
+                        "was not initialized to be transaction-ready.",
+                        PscUtils.BACKEND_TYPE_KAFKA
+                ), true
         );
     }
 
@@ -784,23 +783,52 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     public Map<MetricName, ? extends Metric> metrics() throws ProducerException {
         if (kafkaProducer == null)
             handleUninitializedKafkaProducer("metrics()");
-
-        if (metricValueProvider.getMetrics().isEmpty()) {
-            reportProducerMetrics();
-        }
+        reportProducerMetrics();
         return metricValueProvider.getMetrics();
     }
 
     private long getProducerId() {
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-        return (long) PscCommon.getField(producerIdAndEpoch, "producerId");
+        try {
+            Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
+            return TransactionManagerUtils.getProducerId(transactionManager);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to get producerId", e);
+        }
     }
 
-    private short getEpoch() {
-        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
-        Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
-        return (short) PscCommon.getField(producerIdAndEpoch, "epoch");
+    private void setProducerId(long producerId) {
+        try {
+            Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
+            TransactionManagerUtils.setProducerId(transactionManager, producerId);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to set producerId", e);
+        }
+    }
+
+    public short getEpoch() {
+        try {
+            Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
+            return TransactionManagerUtils.getEpoch(transactionManager);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to get epoch", e);
+        }
+    }
+
+    private void setEpoch(short epoch) {
+        try {
+            Object transactionManager = getTransactionManager();
+            if (transactionManager == null)
+                handleNullTransactionManager();
+            TransactionManagerUtils.setEpoch(transactionManager, epoch);
+        } catch (ProducerException e) {
+            throw new RuntimeException("Unable to set epoch", e);
+        }
     }
 
     @VisibleForTesting
@@ -811,7 +839,8 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
 
     protected void maybeResetBackendClient(TopicUriPartition topicUriPartition) throws ProducerException {
         // reset if SSL enabled && cert is expired
-        if (isSslEnabled(topicUriPartition) &&
+        if (pscConfigurationInternal.isProactiveSslResetEnabled() &&
+                isSslEnabled(topicUriPartition) &&
                 (System.currentTimeMillis() >= sslCertificateExpiryTimeInMillis)) {
             if (KafkaSslUtils.keyStoresExist(properties)) {
                 logger.info("Resetting backend Kafka client due to cert expiry at " +

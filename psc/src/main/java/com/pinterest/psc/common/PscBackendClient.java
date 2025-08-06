@@ -1,5 +1,6 @@
 package com.pinterest.psc.common;
 
+import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.logging.PscLogger;
@@ -14,7 +15,7 @@ import java.util.concurrent.ScheduledExecutorService;
 
 public abstract class PscBackendClient<K, V> implements AutoCloseable {
     private static final PscLogger logger = PscLogger.getLogger(PscBackendClient.class);
-    protected final static Map<String, TopicUri> backendTopicToTopicUri = new ConcurrentHashMap<>();
+    protected final Map<String, TopicUri> backendTopicToTopicUri = new ConcurrentHashMap<>();
     protected final OverwriteSet activeTopicUrisOrPartitions = new OverwriteSet();
     protected final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     protected final MetricValueProvider metricValueProvider = new MetricValueProvider();
@@ -72,4 +73,12 @@ public abstract class PscBackendClient<K, V> implements AutoCloseable {
      * Implements and global retry action for backend producers and consumers APIs
      */
     protected void retryBackendClient() { }
+
+    /**
+     * Allows event-based logic to be executed by the backend producer/consumer
+     * @param event an PscEvent that the consumer may handle
+     */
+    public void onEvent(PscEvent event) {
+
+    }
 }

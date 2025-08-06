@@ -169,21 +169,6 @@ public class TestPscMemqConsumer {
     }
 
     @Test
-    void testAssignDoesNotRequireSubscribe() throws Exception {
-        PscMemqConsumer<byte[], byte[]> pscMemqConsumer = getPscMemqConsumer(
-                "testAssignDoesNotRequireSubscribe");
-
-        pscMemqConsumer.assign(Collections.emptySet());
-
-        MemqTopicUri uri1 = MemqTopicUri.validate(TopicUri.validate(testMemqTopic1));
-        TopicUriPartition topicUriPartition = TestUtils.getFinalizedTopicUriPartition(uri1, 0);
-
-        pscMemqConsumer.assign(Sets.newHashSet(topicUriPartition));
-
-        pscMemqConsumer.close();
-    }
-
-    @Test
     void close() throws Exception {
         PscMemqConsumer<byte[], byte[]> pscMemqConsumer = getPscMemqConsumer(
                 "test_subscribeErrorScenarios");
@@ -319,7 +304,7 @@ public class TestPscMemqConsumer {
         // topic not in subscription
         MemqTopicUri memqUri = MemqTopicUri.validate(TopicUri.validate(testMemqTopic1));
         Set<MessageId> memqMessageIds = Collections
-                .singleton(new MemqMessageId(new TopicUriPartition(testKafkaTopic, 0), 0));
+            .singleton(new MemqMessageId(new TopicUriPartition(testKafkaTopic, 0), 0, false));
         assertThrows(ConsumerException.class, () -> pscMemqConsumer.commitSync(memqMessageIds));
 
         // invalid message id
@@ -335,9 +320,9 @@ public class TestPscMemqConsumer {
                 "test_" + System.currentTimeMillis());
         MemqTopicUri memqUri = MemqTopicUri.validate(TopicUri.validate(testMemqTopic1));
         MessageId memqMessageId1 = new MemqMessageId(
-                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), 0);
+                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), 0, false);
         MessageId memqMessageId2 = new MemqMessageId(
-                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), 10);
+                TestUtils.getFinalizedTopicUriPartition(memqUri, 0), new MemqOffset(10, 0).toLong(), false);
         pscMemqConsumer.subscribe(Sets.newHashSet(memqUri));
 
         MemqConsumer<byte[], byte[]> memqConsumer = Mockito.mock(MemqConsumer.class);
@@ -359,7 +344,7 @@ public class TestPscMemqConsumer {
         pscConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(
                 pscConfiguration,
-                PscConfiguration.PSC_CLIENT_TYPE_CONSUMER
+                PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER
         );
         pscConfigurationInternal.overrideDefaultConfigurations(PscConfiguration.PSC_METRICS_REPORTER_CLASS,
                 TestUtils.DEFAULT_METRICS_REPORTER);

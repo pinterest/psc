@@ -17,6 +17,11 @@
 
 package com.pinterest.flink.streaming.connectors.psc.shuffle;
 
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElement;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElementDeserializer;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleRecord;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleWatermark;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -30,18 +35,11 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
-import org.apache.flink.shaded.guava18.com.google.common.collect.ImmutableMap;
-import org.apache.flink.shaded.guava18.com.google.common.collect.Iterables;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.watermark.Watermark;
-import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElement;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElementDeserializer;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleRecord;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleWatermark;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -53,18 +51,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PARTITION_NUMBER;
+import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PRODUCER_PARALLELISM;
 import static org.apache.flink.streaming.api.TimeCharacteristic.EventTime;
 import static org.apache.flink.streaming.api.TimeCharacteristic.IngestionTime;
 import static org.apache.flink.streaming.api.TimeCharacteristic.ProcessingTime;
-import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PARTITION_NUMBER;
-import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PRODUCER_PARALLELISM;
 import static org.apache.flink.test.util.TestUtils.tryExecute;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 /**
- * Simple End to End Test for Kafka.
+ * Simple End to End Test for PSC.
  */
 public class PscShuffleITCase extends PscShuffleTestBase {
 
@@ -205,7 +205,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         Map<Integer, Collection<PscConsumerMessage<byte[], byte[]>>> results = testPscShuffleProducer(
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic("test_watermark_broadcast", EventTime),
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic("test_watermark_broadcast", EventTime),
                 env, numberOfPartitions, producerParallelism, numElementsPerProducer, EventTime
         );
         TypeSerializer<Tuple3<Integer, Long, Integer>> typeSerializer = createTypeSerializer(env);
@@ -222,9 +222,9 @@ public class PscShuffleITCase extends PscShuffleTestBase {
                 PscShuffleElement element = deserializer.deserialize(consumerRecord);
                 if (element.isRecord()) {
                     PscShuffleRecord<Tuple3<Integer, Long, Integer>> record = element.asRecord();
-                    Assert.assertEquals(record.getValue().f1.longValue(),
+                    assertEquals(record.getValue().f1.longValue(),
                             INIT_TIMESTAMP + record.getValue().f0);
-                    Assert.assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
+                    assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
                 } else if (element.isWatermark()) {
                     PscShuffleWatermark watermark = element.asWatermark();
                     watermarks.computeIfAbsent(watermark.getSubtask(), k -> new ArrayList<>());
@@ -249,13 +249,13 @@ public class PscShuffleITCase extends PscShuffleTestBase {
             // Besides, watermarks from the same producer sub task should keep in order.
             for (List<PscShuffleWatermark> subTaskWatermarks : watermarks.values()) {
                 int index = 0;
-                Assert.assertEquals(numElementsPerProducer + 1, subTaskWatermarks.size());
+                assertEquals(numElementsPerProducer + 1, subTaskWatermarks.size());
                 for (PscShuffleWatermark watermark : subTaskWatermarks) {
                     if (index == numElementsPerProducer) {
                         // the last element is the watermark that signifies end-of-event-time
-                        Assert.assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
+                        assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
                     } else {
-                        Assert.assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + index++);
+                        assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + index++);
                     }
                 }
             }
@@ -272,7 +272,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testKafkaShuffle(int numElementsPerProducer,
                                   TimeCharacteristic timeCharacteristic) throws Exception {
         String topic = topic("test_simple", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 1;
         final int producerParallelism = 1;
 
@@ -303,7 +303,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testAssignedToPartition(int numElementsPerProducer,
                                          TimeCharacteristic timeCharacteristic) throws Exception {
         String topic = topic("test_assigned_to_partition", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 3;
         final int producerParallelism = 2;
 
@@ -338,7 +338,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testWatermarkIncremental(int numElementsPerProducer) throws Exception {
         TimeCharacteristic timeCharacteristic = EventTime;
         String topic = topic("test_watermark_incremental", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 3;
         final int producerParallelism = 2;
 
@@ -367,16 +367,23 @@ public class PscShuffleITCase extends PscShuffleTestBase {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         // Records in a single partition are kept in order
-        Collection<PscConsumerMessage<byte[], byte[]>> records = Iterables
-                .getOnlyElement(testPscShuffleProducer(
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic("test_serde", timeCharacteristic),
-                        env, 1, 1, numElementsPerProducer, timeCharacteristic).values()
-                );
+        Collection<PscConsumerMessage<byte[], byte[]>> records = testPscShuffleProducer(
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX
+                        + topic("test_serde-" + UUID.randomUUID(), timeCharacteristic),
+                env,
+                1,
+                1,
+                numElementsPerProducer,
+                timeCharacteristic)
+                .values()
+                .iterator()
+                .next();
 
         switch (timeCharacteristic) {
             case ProcessingTime:
-                // NonTimestampContext, no watermark
-                Assert.assertEquals(records.size(), numElementsPerProducer);
+                // NonTimestampContext, no intermediate watermarks, and one end-of-event-time
+                // watermark
+                assertEquals(records.size(), numElementsPerProducer + 1);
                 break;
             case IngestionTime:
                 // IngestionTime uses AutomaticWatermarkContext and it emits a watermark after
@@ -388,7 +395,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
                 // ManualWatermarkContext
                 // `numElementsPerProducer` records, `numElementsPerProducer` watermarks, and
                 // one end-of-event-time watermark
-                Assert.assertEquals(records.size(), numElementsPerProducer * 2 + 1);
+                assertEquals(records.size(), numElementsPerProducer * 2 + 1);
                 break;
             default:
                 fail("unknown TimeCharacteristic type");
@@ -414,30 +421,34 @@ public class PscShuffleITCase extends PscShuffleTestBase {
                         Assert.assertNotNull(record.getTimestamp());
                         break;
                     case EventTime:
-                        Assert.assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
+                        assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
                         break;
                     default:
                         fail("unknown TimeCharacteristic type");
                 }
-                Assert.assertEquals(record.getValue().f0.intValue(), recordIndex);
-                Assert.assertEquals(record.getValue().f1.longValue(), INIT_TIMESTAMP + recordIndex);
-                Assert.assertEquals(record.getValue().f2.intValue(), 0);
+                assertEquals(record.getValue().f0.intValue(), recordIndex);
+                assertEquals(record.getValue().f1.longValue(), INIT_TIMESTAMP + recordIndex);
+                assertEquals(record.getValue().f2.intValue(), 0);
                 recordIndex++;
             } else if (element.isWatermark()) {
+                PscShuffleWatermark watermark = element.asWatermark();
                 switch (timeCharacteristic) {
                     case ProcessingTime:
-                        fail("Watermarks should not be generated in the case of ProcessingTime");
+                        assertEquals(watermark.getSubtask(), 0);
+                        // the last element is the watermark that signifies end-of-event-time
+                        assertEquals(numElementsPerProducer, recordIndex);
+                        assertEquals(
+                                watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
                         break;
                     case IngestionTime:
                         break;
                     case EventTime:
-                        PscShuffleWatermark watermark = element.asWatermark();
-                        Assert.assertEquals(watermark.getSubtask(), 0);
+                        assertEquals(watermark.getSubtask(), 0);
                         if (watermarkIndex == recordIndex) {
                             // the last element is the watermark that signifies end-of-event-time
-                            Assert.assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
+                            assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
                         } else {
-                            Assert.assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + watermarkIndex);
+                            assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + watermarkIndex);
                         }
                         break;
                     default:
@@ -487,8 +498,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
         FlinkPscShuffle.writeKeyBy(input, topicUriStr, pscProducerProperties, 0);
 
         env.execute("Write to " + topicUriStr);
-        ImmutableMap.Builder<Integer, Collection<PscConsumerMessage<byte[], byte[]>>> results = ImmutableMap
-                .builder();
+        Map<Integer, Collection<PscConsumerMessage<byte[], byte[]>>> results = new HashMap<>();
 
         for (int p = 0; p < numberOfPartitions; p++) {
             Collection<PscConsumerMessage<byte[], byte[]>> allMessagesFromTopicUri = pscTestEnvWithKafka
@@ -504,7 +514,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
 
         deleteTestTopic(topicUri.getTopic());
 
-        return results.build();
+        return results;
     }
 
     private StreamExecutionEnvironment createEnvironment(int producerParallelism,

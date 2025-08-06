@@ -1,12 +1,13 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,79 +18,677 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
-import com.pinterest.flink.streaming.connectors.psc.FlinkPscConsumerBase;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
-import org.apache.flink.annotation.Internal;
-import org.apache.flink.api.common.serialization.DeserializationSchema;
-import com.pinterest.flink.streaming.connectors.psc.FlinkPscConsumer;
+import com.pinterest.flink.connector.psc.source.PscSource;
+import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppingOffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
+import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
+import com.pinterest.flink.streaming.connectors.psc.PscDeserializationSchema;
+import com.pinterest.flink.streaming.connectors.psc.config.BoundedMode;
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartition;
+import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.consumer.PscConsumerMessage;
+import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.serialization.DeserializationSchema;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.connector.source.Boundedness;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.connector.ChangelogMode;
+import org.apache.flink.table.connector.Projection;
+import org.apache.flink.table.connector.ProviderContext;
 import org.apache.flink.table.connector.format.DecodingFormat;
+import org.apache.flink.table.connector.source.DataStreamScanProvider;
 import org.apache.flink.table.connector.source.DynamicTableSource;
+import org.apache.flink.table.connector.source.ScanTableSource;
+import org.apache.flink.table.connector.source.abilities.SupportsReadingMetadata;
+import org.apache.flink.table.connector.source.abilities.SupportsWatermarkPushDown;
+import org.apache.flink.table.data.GenericMapData;
 import org.apache.flink.table.data.RowData;
-import org.apache.flink.table.sources.StreamTableSource;
+import org.apache.flink.table.data.StringData;
+import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.utils.DataTypeUtils;
+import org.apache.flink.util.Preconditions;
 
+import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
-/**
- * Kafka {@link DynamicTableSource}.
- */
+/** A version-agnostic PSC {@link ScanTableSource}. */
 @Internal
-public class PscDynamicSource extends PscDynamicSourceBase {
+public class PscDynamicSource
+        implements ScanTableSource, SupportsReadingMetadata, SupportsWatermarkPushDown {
+
+    private static final String PSC_TRANSFORMATION = "psc";
+
+    // --------------------------------------------------------------------------------------------
+    // Mutable attributes
+    // --------------------------------------------------------------------------------------------
+
+    /** Data type that describes the final output of the source. */
+    protected DataType producedDataType;
+
+    /** Metadata that is appended at the end of a physical source row. */
+    protected List<String> metadataKeys;
+
+    /** Watermark strategy that is used to generate per-partition watermark. */
+    protected @Nullable WatermarkStrategy<RowData> watermarkStrategy;
+
+    // --------------------------------------------------------------------------------------------
+    // Format attributes
+    // --------------------------------------------------------------------------------------------
+
+    private static final String VALUE_METADATA_PREFIX = "value.";
+
+    /** Data type to configure the formats. */
+    protected final DataType physicalDataType;
+
+    /** Optional format for decoding keys from PSC. */
+    protected final @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat;
+
+    /** Format for decoding values from PSC. */
+    protected final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat;
+
+    /** Indices that determine the key fields and the target position in the produced row. */
+    protected final int[] keyProjection;
+
+    /** Indices that determine the value fields and the target position in the produced row. */
+    protected final int[] valueProjection;
+
+    /** Prefix that needs to be removed from fields when constructing the physical data type. */
+    protected final @Nullable String keyPrefix;
+
+    // --------------------------------------------------------------------------------------------
+    // PSC-specific attributes
+    // --------------------------------------------------------------------------------------------
+
+    /** The PSC topics to consume. */
+    protected final List<String> topicUris;
+
+    /** The PSC topic pattern to consume. */
+    protected final Pattern topicUriPattern;
+
+    /** Properties for the PSC consumer. */
+    protected final Properties properties;
 
     /**
-     * Creates a generic Kafka {@link StreamTableSource}.
-     *
-     * @param outputDataType         Source output data type
-     * @param topicUri               Kafka topic to consume
-     * @param properties             Properties for the Kafka consumer
-     * @param decodingFormat         Decoding format for decoding records from Kafka
-     * @param startupMode            Startup mode for the contained consumer
-     * @param specificStartupOffsets Specific startup offsets; only relevant when startup
-     *                               mode is {@link StartupMode#SPECIFIC_OFFSETS}
+     * The startup mode for the contained consumer (default is {@link StartupMode#GROUP_OFFSETS}).
      */
+    protected final StartupMode startupMode;
+
+    /**
+     * Specific startup offsets; only relevant when startup mode is {@link
+     * StartupMode#SPECIFIC_OFFSETS}.
+     */
+    protected final Map<PscTopicUriPartition, Long> specificStartupOffsets;
+
+    /**
+     * The start timestamp to locate partition offsets; only relevant when startup mode is {@link
+     * StartupMode#TIMESTAMP}.
+     */
+    protected final long startupTimestampMillis;
+
+    /** The bounded mode for the contained consumer (default is an unbounded data stream). */
+    protected final BoundedMode boundedMode;
+
+    /**
+     * Specific end offsets; only relevant when bounded mode is {@link
+     * BoundedMode#SPECIFIC_OFFSETS}.
+     */
+    protected final Map<PscTopicUriPartition, Long> specificBoundedOffsets;
+
+    /**
+     * The bounded timestamp to locate partition offsets; only relevant when bounded mode is {@link
+     * BoundedMode#TIMESTAMP}.
+     */
+    protected final long boundedTimestampMillis;
+
+    /** Flag to determine source mode. In upsert mode, it will keep the tombstone message. * */
+    protected final boolean upsertMode;
+
+    protected final String tableIdentifier;
+
     public PscDynamicSource(
-            DataType outputDataType,
-            String topicUri,
+            DataType physicalDataType,
+            @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
+            DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat,
+            int[] keyProjection,
+            int[] valueProjection,
+            @Nullable String keyPrefix,
+            @Nullable List<String> topics,
+            @Nullable Pattern topicPattern,
             Properties properties,
-            DecodingFormat<DeserializationSchema<RowData>> decodingFormat,
             StartupMode startupMode,
             Map<PscTopicUriPartition, Long> specificStartupOffsets,
-            long startupTimestampMillis) {
-
-        super(
-                outputDataType,
-                topicUri,
-                properties,
-                decodingFormat,
-                startupMode,
-                specificStartupOffsets,
-                startupTimestampMillis);
+            long startupTimestampMillis,
+            BoundedMode boundedMode,
+            Map<PscTopicUriPartition, Long> specificBoundedOffsets,
+            long boundedTimestampMillis,
+            boolean upsertMode,
+            String tableIdentifier) {
+        // Format attributes
+        this.physicalDataType =
+                Preconditions.checkNotNull(
+                        physicalDataType, "Physical data type must not be null.");
+        this.keyDecodingFormat = keyDecodingFormat;
+        this.valueDecodingFormat =
+                Preconditions.checkNotNull(
+                        valueDecodingFormat, "Value decoding format must not be null.");
+        this.keyProjection =
+                Preconditions.checkNotNull(keyProjection, "Key projection must not be null.");
+        this.valueProjection =
+                Preconditions.checkNotNull(valueProjection, "Value projection must not be null.");
+        this.keyPrefix = keyPrefix;
+        // Mutable attributes
+        this.producedDataType = physicalDataType;
+        this.metadataKeys = Collections.emptyList();
+        this.watermarkStrategy = null;
+        // PSC-specific attributes
+        Preconditions.checkArgument(
+                (topics != null && topicPattern == null)
+                        || (topics == null && topicPattern != null),
+                "Either Topic or Topic Pattern must be set for source.");
+        this.topicUris = topics;
+        this.topicUriPattern = topicPattern;
+        this.properties = Preconditions.checkNotNull(properties, "Properties must not be null.");
+        this.startupMode =
+                Preconditions.checkNotNull(startupMode, "Startup mode must not be null.");
+        this.specificStartupOffsets =
+                Preconditions.checkNotNull(
+                        specificStartupOffsets, "Specific offsets must not be null.");
+        this.startupTimestampMillis = startupTimestampMillis;
+        this.boundedMode =
+                Preconditions.checkNotNull(boundedMode, "Bounded mode must not be null.");
+        this.specificBoundedOffsets =
+                Preconditions.checkNotNull(
+                        specificBoundedOffsets, "Specific bounded offsets must not be null.");
+        this.boundedTimestampMillis = boundedTimestampMillis;
+        this.upsertMode = upsertMode;
+        this.tableIdentifier = tableIdentifier;
     }
 
     @Override
-    protected FlinkPscConsumerBase<RowData> createPscConsumer(
-            String topicUri,
-            Properties properties,
-            DeserializationSchema<RowData> deserializationSchema) {
-        return new FlinkPscConsumer<>(topicUri, deserializationSchema, properties);
+    public ChangelogMode getChangelogMode() {
+        return valueDecodingFormat.getChangelogMode();
+    }
+
+    @Override
+    public ScanRuntimeProvider getScanRuntimeProvider(ScanContext context) {
+        final DeserializationSchema<RowData> keyDeserialization =
+                createDeserialization(context, keyDecodingFormat, keyProjection, keyPrefix);
+
+        final DeserializationSchema<RowData> valueDeserialization =
+                createDeserialization(context, valueDecodingFormat, valueProjection, null);
+
+        final TypeInformation<RowData> producedTypeInfo =
+                context.createTypeInformation(producedDataType);
+
+        final PscSource<RowData> pscSource =
+                createPscSource(keyDeserialization, valueDeserialization, producedTypeInfo);
+
+        return new DataStreamScanProvider() {
+            @Override
+            public DataStream<RowData> produceDataStream(
+                    ProviderContext providerContext, StreamExecutionEnvironment execEnv) {
+                if (watermarkStrategy == null) {
+                    watermarkStrategy = WatermarkStrategy.noWatermarks();
+                }
+                DataStreamSource<RowData> sourceStream =
+                        execEnv.fromSource(
+                                pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
+                providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
+                return sourceStream;
+            }
+
+            @Override
+            public boolean isBounded() {
+                return pscSource.getBoundedness() == Boundedness.BOUNDED;
+            }
+        };
+    }
+
+    @Override
+    public Map<String, DataType> listReadableMetadata() {
+        final Map<String, DataType> metadataMap = new LinkedHashMap<>();
+
+        // according to convention, the order of the final row must be
+        // PHYSICAL + FORMAT METADATA + CONNECTOR METADATA
+        // where the format metadata has highest precedence
+
+        // add value format metadata with prefix
+        valueDecodingFormat
+                .listReadableMetadata()
+                .forEach((key, value) -> metadataMap.put(VALUE_METADATA_PREFIX + key, value));
+
+        // add connector metadata
+        Stream.of(ReadableMetadata.values())
+                .forEachOrdered(m -> metadataMap.putIfAbsent(m.key, m.dataType));
+
+        return metadataMap;
+    }
+
+    @Override
+    public void applyReadableMetadata(List<String> metadataKeys, DataType producedDataType) {
+        // separate connector and format metadata
+        final List<String> formatMetadataKeys =
+                metadataKeys.stream()
+                        .filter(k -> k.startsWith(VALUE_METADATA_PREFIX))
+                        .collect(Collectors.toList());
+        final List<String> connectorMetadataKeys = new ArrayList<>(metadataKeys);
+        connectorMetadataKeys.removeAll(formatMetadataKeys);
+
+        // push down format metadata
+        final Map<String, DataType> formatMetadata = valueDecodingFormat.listReadableMetadata();
+        if (formatMetadata.size() > 0) {
+            final List<String> requestedFormatMetadataKeys =
+                    formatMetadataKeys.stream()
+                            .map(k -> k.substring(VALUE_METADATA_PREFIX.length()))
+                            .collect(Collectors.toList());
+            valueDecodingFormat.applyReadableMetadata(requestedFormatMetadataKeys);
+        }
+
+        this.metadataKeys = connectorMetadataKeys;
+        this.producedDataType = producedDataType;
+    }
+
+    @Override
+    public boolean supportsMetadataProjection() {
+        return false;
+    }
+
+    @Override
+    public void applyWatermark(WatermarkStrategy<RowData> watermarkStrategy) {
+        this.watermarkStrategy = watermarkStrategy;
     }
 
     @Override
     public DynamicTableSource copy() {
-        return new PscDynamicSource(
-                this.outputDataType,
-                this.topicUri,
-                this.properties,
-                this.decodingFormat,
-                this.startupMode,
-                this.specificStartupOffsets,
-                this.startupTimestampMillis);
+        final PscDynamicSource copy =
+                new PscDynamicSource(
+                        physicalDataType,
+                        keyDecodingFormat,
+                        valueDecodingFormat,
+                        keyProjection,
+                        valueProjection,
+                        keyPrefix,
+                        topicUris,
+                        topicUriPattern,
+                        properties,
+                        startupMode,
+                        specificStartupOffsets,
+                        startupTimestampMillis,
+                        boundedMode,
+                        specificBoundedOffsets,
+                        boundedTimestampMillis,
+                        upsertMode,
+                        tableIdentifier);
+        copy.producedDataType = producedDataType;
+        copy.metadataKeys = metadataKeys;
+        copy.watermarkStrategy = watermarkStrategy;
+        return copy;
     }
 
     @Override
     public String asSummaryString() {
-        return "PSC";
+        return "PSC table source";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        final PscDynamicSource that = (PscDynamicSource) o;
+        return Objects.equals(producedDataType, that.producedDataType)
+                && Objects.equals(metadataKeys, that.metadataKeys)
+                && Objects.equals(physicalDataType, that.physicalDataType)
+                && Objects.equals(keyDecodingFormat, that.keyDecodingFormat)
+                && Objects.equals(valueDecodingFormat, that.valueDecodingFormat)
+                && Arrays.equals(keyProjection, that.keyProjection)
+                && Arrays.equals(valueProjection, that.valueProjection)
+                && Objects.equals(keyPrefix, that.keyPrefix)
+                && Objects.equals(topicUris, that.topicUris)
+                && Objects.equals(String.valueOf(topicUriPattern), String.valueOf(that.topicUriPattern))
+                && Objects.equals(properties, that.properties)
+                && startupMode == that.startupMode
+                && Objects.equals(specificStartupOffsets, that.specificStartupOffsets)
+                && startupTimestampMillis == that.startupTimestampMillis
+                && boundedMode == that.boundedMode
+                && Objects.equals(specificBoundedOffsets, that.specificBoundedOffsets)
+                && boundedTimestampMillis == that.boundedTimestampMillis
+                && Objects.equals(upsertMode, that.upsertMode)
+                && Objects.equals(tableIdentifier, that.tableIdentifier)
+                && Objects.equals(watermarkStrategy, that.watermarkStrategy);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                producedDataType,
+                metadataKeys,
+                physicalDataType,
+                keyDecodingFormat,
+                valueDecodingFormat,
+                Arrays.hashCode(keyProjection),
+                Arrays.hashCode(valueProjection),
+                keyPrefix,
+                topicUris,
+                topicUriPattern,
+                properties,
+                startupMode,
+                specificStartupOffsets,
+                startupTimestampMillis,
+                boundedMode,
+                specificBoundedOffsets,
+                boundedTimestampMillis,
+                upsertMode,
+                tableIdentifier,
+                watermarkStrategy);
+    }
+
+    // --------------------------------------------------------------------------------------------
+
+    protected PscSource<RowData> createPscSource(
+            DeserializationSchema<RowData> keyDeserialization,
+            DeserializationSchema<RowData> valueDeserialization,
+            TypeInformation<RowData> producedTypeInfo) {
+
+        final PscDeserializationSchema<RowData> pscDeserializer =
+                createPscDeserializationSchema(
+                        keyDeserialization, valueDeserialization, producedTypeInfo);
+
+        final PscSourceBuilder<RowData> pscSourceBuilder = PscSource.builder();
+
+        if (topicUris != null) {
+            pscSourceBuilder.setTopicUris(topicUris);
+        } else {
+            pscSourceBuilder.setTopicUriPattern(topicUriPattern);
+        }
+
+        switch (startupMode) {
+            case EARLIEST:
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.earliest());
+                break;
+            case LATEST:
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.latest());
+                break;
+            case GROUP_OFFSETS:
+                String offsetResetConfig =
+                        properties.getProperty(
+                                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
+                                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_NONE);
+                offsetResetConfig = getResetStrategy(offsetResetConfig);
+                pscSourceBuilder.setStartingOffsets(
+                        OffsetsInitializer.committedOffsets(offsetResetConfig));
+                break;
+            case SPECIFIC_OFFSETS:
+                Map<TopicUriPartition, Long> offsets = new HashMap<>();
+                specificStartupOffsets.forEach(
+                        (tp, offset) ->
+                                offsets.put(
+                                        new TopicUriPartition(tp.getTopicUriStr(), tp.getPartition()),
+                                        offset));
+                pscSourceBuilder.setStartingOffsets(OffsetsInitializer.offsets(offsets));
+                break;
+            case TIMESTAMP:
+                pscSourceBuilder.setStartingOffsets(
+                        OffsetsInitializer.timestamp(startupTimestampMillis));
+                break;
+        }
+
+        switch (boundedMode) {
+            case UNBOUNDED:
+                pscSourceBuilder.setUnbounded(new NoStoppingOffsetsInitializer());
+                break;
+            case LATEST:
+                pscSourceBuilder.setBounded(OffsetsInitializer.latest());
+                break;
+            case GROUP_OFFSETS:
+                pscSourceBuilder.setBounded(OffsetsInitializer.committedOffsets());
+                break;
+            case SPECIFIC_OFFSETS:
+                Map<TopicUriPartition, Long> offsets = new HashMap<>();
+                specificBoundedOffsets.forEach(
+                        (tp, offset) ->
+                                offsets.put(
+                                        new TopicUriPartition(tp.getTopicUri(), tp.getPartition()),
+                                        offset));
+                pscSourceBuilder.setBounded(OffsetsInitializer.offsets(offsets));
+                break;
+            case TIMESTAMP:
+                pscSourceBuilder.setBounded(OffsetsInitializer.timestamp(boundedTimestampMillis));
+                break;
+        }
+
+        pscSourceBuilder
+                .setProperties(properties)
+                .setDeserializer(PscRecordDeserializationSchema.of(pscDeserializer));
+
+        return pscSourceBuilder.build();
+    }
+
+    private String getResetStrategy(String offsetResetConfig) {
+        final String[] validResetStrategies = {"EARLIEST", "LATEST", "NONE"};
+        return Arrays.stream(validResetStrategies)
+                .filter(ors -> ors.equals(offsetResetConfig.toUpperCase(Locale.ROOT)))
+                .findAny()
+                .orElseThrow(
+                        () ->
+                                new IllegalArgumentException(
+                                        String.format(
+                                                "%s can not be set to %s. Valid values: [%s]",
+                                                PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET,
+                                                offsetResetConfig,
+                                                Arrays.stream(validResetStrategies)
+                                                        .map(String::toLowerCase)
+                                                        .collect(Collectors.joining(",")))));
+    }
+
+    private PscDeserializationSchema<RowData> createPscDeserializationSchema(
+            DeserializationSchema<RowData> keyDeserialization,
+            DeserializationSchema<RowData> valueDeserialization,
+            TypeInformation<RowData> producedTypeInfo) {
+        final DynamicPscDeserializationSchema.MetadataConverter[] metadataConverters =
+                metadataKeys.stream()
+                        .map(
+                                k ->
+                                        Stream.of(ReadableMetadata.values())
+                                                .filter(rm -> rm.key.equals(k))
+                                                .findFirst()
+                                                .orElseThrow(IllegalStateException::new))
+                        .map(m -> m.converter)
+                        .toArray(DynamicPscDeserializationSchema.MetadataConverter[]::new);
+
+        // check if connector metadata is used at all
+        final boolean hasMetadata = metadataKeys.size() > 0;
+
+        // adjust physical arity with value format's metadata
+        final int adjustedPhysicalArity =
+                DataType.getFieldDataTypes(producedDataType).size() - metadataKeys.size();
+
+        // adjust value format projection to include value format's metadata columns at the end
+        final int[] adjustedValueProjection =
+                IntStream.concat(
+                                IntStream.of(valueProjection),
+                                IntStream.range(
+                                        keyProjection.length + valueProjection.length,
+                                        adjustedPhysicalArity))
+                        .toArray();
+
+        return new DynamicPscDeserializationSchema(
+                adjustedPhysicalArity,
+                keyDeserialization,
+                keyProjection,
+                valueDeserialization,
+                adjustedValueProjection,
+                hasMetadata,
+                metadataConverters,
+                producedTypeInfo,
+                upsertMode);
+    }
+
+    private @Nullable DeserializationSchema<RowData> createDeserialization(
+            Context context,
+            @Nullable DecodingFormat<DeserializationSchema<RowData>> format,
+            int[] projection,
+            @Nullable String prefix) {
+        if (format == null) {
+            return null;
+        }
+        DataType physicalFormatDataType = Projection.of(projection).project(this.physicalDataType);
+        if (prefix != null) {
+            physicalFormatDataType = DataTypeUtils.stripRowPrefix(physicalFormatDataType, prefix);
+        }
+        return format.createRuntimeDecoder(context, physicalFormatDataType);
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Metadata handling
+    // --------------------------------------------------------------------------------------------
+
+    enum ReadableMetadata {
+        TOPIC_URI(
+                "topic-uri",
+                DataTypes.STRING().notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        return StringData.fromString(record.getMessageId().getTopicUriPartition().getTopicUriAsString());
+                    }
+                }),
+
+        PARTITION(
+                "partition",
+                DataTypes.INT().notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        return record.getMessageId().getTopicUriPartition().getPartition();
+                    }
+                }),
+
+        HEADERS(
+                "headers",
+                // key and value of the map are nullable to make handling easier in queries
+                DataTypes.MAP(DataTypes.STRING().nullable(), DataTypes.BYTES().nullable())
+                        .notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        final Map<StringData, byte[]> map = new HashMap<>();
+                        for (Map.Entry<String, byte[]> header : record.getHeaders().entrySet()) {
+                            if (!header.getKey().startsWith("psc."))
+                                map.put(StringData.fromString(header.getKey()), header.getValue());                        }
+                        return new GenericMapData(map);
+                    }
+                }),
+
+        PSC_HEADERS(
+                "psc-headers",
+                // key and value of the map are nullable to make handling easier in queries
+                DataTypes.MAP(DataTypes.STRING().nullable(), DataTypes.BYTES().nullable())
+                        .notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        final Map<StringData, byte[]> map = new HashMap<>();
+                        for (Map.Entry<String, byte[]> header : record.getHeaders().entrySet()) {
+                            if (header.getKey().startsWith("psc."))
+                                map.put(StringData.fromString(header.getKey()), header.getValue());
+                        }
+                        return new GenericMapData(map);
+                    }
+                }),
+
+        // leader epoch is not supported
+        LEADER_EPOCH(
+                "leader-epoch",
+                DataTypes.INT().nullable(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        throw new UnsupportedOperationException("Leader epoch is not supported.");
+                    }
+                }),
+
+        OFFSET(
+                "offset",
+                DataTypes.BIGINT().notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        return record.getMessageId().getOffset();
+                    }
+                }),
+
+        TIMESTAMP(
+                "timestamp",
+                DataTypes.TIMESTAMP_WITH_LOCAL_TIME_ZONE(3).notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        return TimestampData.fromEpochMillis(record.getMessageId().getTimestamp());
+                    }
+                }),
+
+        // timestamp_type is not supported
+        TIMESTAMP_TYPE(
+                "timestamp-type",
+                DataTypes.STRING().notNull(),
+                new DynamicPscDeserializationSchema.MetadataConverter() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public Object read(PscConsumerMessage<?, ?> record) {
+                        throw new UnsupportedOperationException("Timestamp type is not supported"); // TODO: figure out if this is needed
+                    }
+                });
+
+        final String key;
+
+        final DataType dataType;
+
+        final DynamicPscDeserializationSchema.MetadataConverter converter;
+
+        ReadableMetadata(String key, DataType dataType, DynamicPscDeserializationSchema.MetadataConverter converter) {
+            this.key = key;
+            this.dataType = dataType;
+            this.converter = converter;
+        }
     }
 }

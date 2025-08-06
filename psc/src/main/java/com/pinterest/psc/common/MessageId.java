@@ -32,6 +32,10 @@ public class MessageId implements Serializable {
         this.offset = offset;
     }
 
+    public MessageId(String topicUriString, int partition, long offset) {
+        this(new TopicUriPartition(topicUriString, partition), offset);
+    }
+
     public TopicUriPartition getTopicUriPartition() {
         return topicUriPartition;
     }

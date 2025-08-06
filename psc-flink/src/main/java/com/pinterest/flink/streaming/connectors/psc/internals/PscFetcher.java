@@ -17,9 +17,11 @@
 
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
+import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
+import java.util.Collection;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.metrics.MetricGroup;
@@ -27,6 +29,7 @@ import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import com.pinterest.flink.streaming.connectors.psc.PscDeserializationSchema;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.util.Collector;
+import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.SerializedValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -132,19 +135,44 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             // kick off the actual PSC consumer
             consumerThread.start();
 
+            Map<TopicUri, Map<Integer, PscTopicUriPartition>> topicUriPartitionsMap = new HashMap<>();
+
             while (running) {
                 // this blocks until we get the next records
                 // it automatically re-throws exceptions encountered in the consumer thread
-                final PscConsumerPollMessageIterator<byte[], byte[]> records = handover.pollNext();
 
-                // get the records for each topic partition
-                for (PscTopicUriPartitionState<T, TopicUriPartition> partition : subscribedPartitionStates()) {
+                try (PscConsumerPollMessageIterator<byte[], byte[]> records = handover.pollNext()) {
+                    while (records.hasNext()) {
+                        PscConsumerMessage<byte[], byte[]> record = records.next();
 
-                    Iterator<PscConsumerMessage<byte[], byte[]>> partitionRecords =
-                            records.iteratorFor(partition.getPscTopicUriPartitionHandle());
+                        TopicUri topicUri = record.getMessageId().getTopicUriPartition()
+                            .getTopicUri();
+                        Integer partition = record.getMessageId().getTopicUriPartition()
+                            .getPartition();
 
-                    topicUriPartitionConsumerRecordsHandler(partitionRecords, partition);
+                        Map<Integer, PscTopicUriPartition> partitionMap =
+                            topicUriPartitionsMap.computeIfAbsent(topicUri, k -> new HashMap<>());
+                        PscTopicUriPartition key = partitionMap.computeIfAbsent(partition,
+                            k -> new PscTopicUriPartition(topicUri, k));
+
+                        PscTopicUriPartitionState<T, TopicUriPartition>
+                            partitionState =
+                            subscribedPartitionStates().get(key);
+                        if (partitionState != null) {
+                            topicUriPartitionConsumerRecordsHandler(record, partitionState);
+                        } else {
+                            LOG.warn(
+                                "Found unknown topic and partition: {} {} while reading messages from iterator",
+                                topicUri, partition);
+                        }
+                    }
                 }
+            }
+        }  catch (Handover.ClosedException ex) {
+            if (running) {
+                // rethrow, only if we are running, if fetcher is not running we should not throw
+                // the ClosedException, as we are stopping gracefully
+                ExceptionUtils.rethrowException(ex);
             }
         } finally {
             // this signals the consumer thread that no more work is to be done
@@ -177,11 +205,9 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
     }
 
     protected void topicUriPartitionConsumerRecordsHandler(
-            Iterator<PscConsumerMessage<byte[], byte[]>> topicUriPartitionMessages,
+            PscConsumerMessage<byte[], byte[]> record,
             PscTopicUriPartitionState<T, TopicUriPartition> pscTopicUriPartitionState) throws Exception {
 
-        while (topicUriPartitionMessages.hasNext()) {
-            PscConsumerMessage<byte[], byte[]> record = topicUriPartitionMessages.next();
             deserializer.deserialize(record, pscCollector);
 
             // emit the actual records. this also updates offset state atomically and emits
@@ -195,9 +221,7 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             if (pscCollector.isEndOfStreamSignalled()) {
                 // end of stream signaled
                 running = false;
-                break;
             }
-        }
     }
 
     // ------------------------------------------------------------------------
@@ -214,14 +238,14 @@ public class PscFetcher<T> extends AbstractFetcher<T, TopicUriPartition> {
             Map<PscTopicUriPartition, Long> topicUriPartitionOffsets,
             @Nonnull PscCommitCallback commitCallback) throws Exception {
 
-        List<PscTopicUriPartitionState<T, TopicUriPartition>> pscTopicUriPartitionStates = subscribedPartitionStates();
+        Collection<PscTopicUriPartitionState<T, TopicUriPartition>> pscTopicUriPartitionStates = subscribedPartitionStates().values();
 
         Map<TopicUriPartition, Long> offsetsToCommit = new HashMap<>(pscTopicUriPartitionStates.size());
 
         for (PscTopicUriPartitionState<T, TopicUriPartition> pscTopicUriPartitionState : pscTopicUriPartitionStates) {
             Long lastProcessedOffset = topicUriPartitionOffsets.get(pscTopicUriPartitionState.getPscTopicUriPartition());
             if (lastProcessedOffset != null) {
-                checkState(lastProcessedOffset >= 0, "Illegal offset value to commit");
+                checkState(!PscTopicUriPartitionStateSentinel.isSentinel(lastProcessedOffset), "Illegal offset value to commit");
 
                 // committed offsets through the PscConsumer need to be the last processed offset.
                 // PSC will translate that to the proper offset to commit per backend.

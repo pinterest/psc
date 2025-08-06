@@ -19,10 +19,12 @@ package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.flink.streaming.connectors.psc.internals.FlinkPscInternalProducer;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscSerializationSchemaWrapper;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscSimpleTypeSerializerSnapshot;
 import com.pinterest.flink.streaming.connectors.psc.internals.TransactionalIdsGenerator;
 import com.pinterest.flink.streaming.connectors.psc.internals.metrics.FlinkPscStateRecoveryMetricConstants;
+import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscMetricMutableWrapper;
+import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -46,12 +48,13 @@ import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.RuntimeContext;
+import org.apache.flink.api.common.serialization.RuntimeContextInitializationContextAdapters;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
-import org.apache.flink.api.common.state.OperatorStateStore;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.base.TypeSerializerSingleton;
 import org.apache.flink.api.java.ClosureCleaner;
@@ -61,16 +64,15 @@ import org.apache.flink.core.memory.DataOutputView;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
-import org.apache.flink.shaded.guava18.com.google.common.collect.Lists;
 import org.apache.flink.streaming.api.functions.sink.TwoPhaseCommitSinkFunction;
 import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
-import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscMetricMutableWrapper;
-import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
-import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TemporaryClassLoaderContext;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.errors.InvalidTxnStateException;
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -152,6 +154,12 @@ public class FlinkPscProducer<IN>
     private static final Logger LOG = LoggerFactory.getLogger(FlinkPscProducer.class);
 
     private static final long serialVersionUID = 1L;
+
+    /**
+     * Number of characters to truncate the taskName to for the Kafka transactionalId. The maximum
+     * this can possibly be set to is 32,767 - (length of operatorUniqueId).
+     */
+    private static final short maxTaskNameSize = 1_000;
 
     /**
      * This coefficient determines what is the safe scale down factor.
@@ -261,6 +269,10 @@ public class FlinkPscProducer<IN>
      * Flag controlling whether we are writing the Flink record's timestamp into the backend pubsub.
      */
     protected boolean writeTimestampToPubsub = false;
+
+    /** The transactional.id prefix to be used by the producers when communicating with Kafka. */
+    @Nullable
+    private String transactionalIdPrefix = null;
 
     /**
      * Flag indicating whether to accept failures (and log them), or to fail on failures.
@@ -721,7 +733,7 @@ public class FlinkPscProducer<IN>
             );
             try {
                 PscMetricRegistryManager.getInstance().initialize(
-                        new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER, true)
+                        new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER, true)
                 );
             } catch (ConfigurationException configurationException) {
                 throw new IllegalArgumentException(configurationException);
@@ -754,6 +766,23 @@ public class FlinkPscProducer<IN>
      */
     public void setLogFailuresOnly(boolean logFailuresOnly) {
         this.logFailuresOnly = logFailuresOnly;
+    }
+
+    /**
+     * Specifies the prefix of the transactional.id property to be used by the producers when
+     * communicating with Kafka. If not set, the transactional.id will be prefixed with {@code
+     * taskName + "-" + operatorUid}.
+     *
+     * <p>Note that, if we change the prefix when the Flink application previously failed before
+     * first checkpoint completed or we are starting new batch of {@link FlinkKafkaProducer} from
+     * scratch without clean shutdown of the previous one, since we don't know what was the
+     * previously used transactional.id prefix, there will be some lingering transactions left.
+     *
+     * @param transactionalIdPrefix the transactional.id prefix
+     * @throws NullPointerException Thrown, if the transactionalIdPrefix was null.
+     */
+    public void setTransactionalIdPrefix(String transactionalIdPrefix) {
+        this.transactionalIdPrefix = Preconditions.checkNotNull(transactionalIdPrefix);
     }
 
     /**
@@ -801,20 +830,21 @@ public class FlinkPscProducer<IN>
             };
         }
 
-        RuntimeContext ctx = getRuntimeContext();
-
-        if (flinkPscPartitioner != null) {
-            flinkPscPartitioner.open(ctx.getIndexOfThisSubtask(), ctx.getNumberOfParallelSubtasks());
+        RuntimeContext ctx = this.getRuntimeContext();
+        if (this.flinkPscPartitioner != null) {
+            this.flinkPscPartitioner.open(ctx.getIndexOfThisSubtask(), ctx.getNumberOfParallelSubtasks());
         }
 
-        if (pscSerializationSchema instanceof PscContextAware) {
-            PscContextAware<IN> contextAwareSchema = (PscContextAware<IN>) pscSerializationSchema;
+        if (this.pscSerializationSchema instanceof PscContextAware) {
+            PscContextAware<IN> contextAwareSchema = (PscContextAware)this.pscSerializationSchema;
             contextAwareSchema.setParallelInstanceId(ctx.getIndexOfThisSubtask());
             contextAwareSchema.setNumParallelInstances(ctx.getNumberOfParallelSubtasks());
         }
 
-        if (pscSerializationSchema != null) {
-            pscSerializationSchema.open(() -> ctx.getMetricGroup().addGroup("user"));
+        if (this.pscSerializationSchema != null) {
+            this.pscSerializationSchema.open(RuntimeContextInitializationContextAdapters.serializationAdapter(this.getRuntimeContext(), (metricGroup) -> {
+                return metricGroup.addGroup("user");
+            }));
         }
 
         super.open(configuration);
@@ -868,35 +898,33 @@ public class FlinkPscProducer<IN>
                                 serializedValue,
                                 timestamp);
             }
-        } else if (pscSerializationSchema != null) {
-            if (pscSerializationSchema instanceof PscContextAware) {
-                @SuppressWarnings("unchecked")
-                PscContextAware<IN> contextAwareSchema =
-                        (PscContextAware<IN>) pscSerializationSchema;
+        }  else {
+            if (this.pscSerializationSchema == null) {
+                throw new RuntimeException("We have neither KafkaSerializationSchema nor KeyedSerializationSchema, thisis a bug.");
+            }
 
+            if (this.pscSerializationSchema instanceof PscContextAware) {
+                PscContextAware<IN> contextAwareSchema = (PscContextAware)this.pscSerializationSchema;
                 String targetTopicUri = contextAwareSchema.getTargetTopicUri(next);
                 if (targetTopicUri == null) {
-                    targetTopicUri = defaultTopicUri;
+                    targetTopicUri = this.defaultTopicUri;
                 }
-                int[] partitions = topicUriPartitionsMap.get(targetTopicUri);
 
+                int[] partitions = (int[])this.topicUriPartitionsMap.get(targetTopicUri);
                 if (null == partitions) {
                     partitions = getPartitionsByTopicUri(targetTopicUri, transaction.producer);
-                    topicUriPartitionsMap.put(targetTopicUri, partitions);
+                    this.topicUriPartitionsMap.put(targetTopicUri, partitions);
                 }
 
                 contextAwareSchema.setPartitions(partitions);
             }
-            pscProducerMessage = pscSerializationSchema.serialize(next, context.timestamp());
-        } else {
-            throw new RuntimeException(
-                    "We have neither KafkaSerializationSchema nor KeyedSerializationSchema, this" +
-                            "is a bug.");
+
+            pscProducerMessage = this.pscSerializationSchema.serialize(next, context.timestamp());
         }
 
-        pendingRecords.incrementAndGet();
+        this.pendingRecords.incrementAndGet();
         try {
-            transaction.producer.send(pscProducerMessage, callback);
+            transaction.producer.send(pscProducerMessage, this.callback);
             if (transaction.needsTransactionalStateCompletion())
                 transaction.setProducerIdAndEpoch(pscProducerMessage);
             if (!hasInitializedMetrics) {
@@ -940,13 +968,23 @@ public class FlinkPscProducer<IN>
             // We may have to close producer of the current transaction in case some exception was thrown before
             // the normal close routine finishes.
             if (currentTransaction() != null) {
-                closeProducer(currentTransaction().producer);
+                try {
+                    closeProducer(currentTransaction().producer);
+                } catch (Throwable t) {
+                    LOG.warn("Error closing producer.", t);
+                }
             }
             // Make sure all the producers for pending transactions are closed.
-            pendingTransactions().forEach(transaction -> closeProducer(transaction.getValue().producer));
+            pendingTransactions().forEach(transaction -> {
+                try {
+                    closeProducer(transaction.getValue().producer);
+                } catch (Throwable t) {
+                    LOG.warn("Error closing producer.", t);
+                }
+            });
 
             if (pscConfigurationInternal == null) {
-                pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+                pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
             }
 
             if (pscMetricsInitialized != null && pscMetricsInitialized.compareAndSet(true, false))
@@ -987,7 +1025,7 @@ public class FlinkPscProducer<IN>
                 flush(transaction);
                 break;
             case NONE:
-                break;
+                return;
             default:
                 throw new UnsupportedOperationException("Not implemented semantic");
         }
@@ -1023,15 +1061,33 @@ public class FlinkPscProducer<IN>
                 producer.resumeTransaction(pscProducerTransactionalProperties, topicUris);
                 commitTransaction(producer);
             } catch (FlinkPscException | ProducerException e) {
-                // That means we may have committed this transaction before.
-                LOG.warn(
-                        "Failed to initialize transactional PSC producer for transaction {}," +
-                                "or resuming the same transaction by that producer.",
-                        transaction,
-                        e
-                );
+                LOG.warn("Encountered exception during recoverAndCommit()", e);
+                if (e.getCause() != null) {
+                    // That means we may have committed this transaction before.
+                    if (e.getCause().getClass().isAssignableFrom(InvalidTxnStateException.class)) {
+                        LOG.warn(
+                                "Unable to commit recovered transaction ({}) because it's in an invalid state. "
+                                        + "Most likely the transaction has been aborted for some reason. Please check the Kafka logs for more details.",
+                                transaction,
+                                e);
+                    }
+                    if (e.getCause().getClass().isAssignableFrom(ProducerFencedException.class)) {
+                        LOG.warn(
+                                "Unable to commit recovered transaction ({}) because its producer is already fenced."
+                                        + " This means that you either have a different producer with the same '{}' or"
+                                        + " recovery took longer than '{}' ({}ms). In both cases this most likely signals data loss,"
+                                        + " please consult the Flink documentation for more details.",
+                                transaction,
+                                ProducerConfig.TRANSACTIONAL_ID_CONFIG,
+                                ProducerConfig.TRANSACTION_TIMEOUT_CONFIG,
+                                producerConfig.getProperty(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS),
+                                e);
+                    }
+                }
             } finally {
-                closeProducer(producer);
+                if (producer != null) {
+                    closeProducer(producer);
+                }
             }
         }
     }
@@ -1064,7 +1120,9 @@ public class FlinkPscProducer<IN>
                         e
                 );
             } finally {
-                closeProducer(producer);
+                if (producer != null) {
+                    closeProducer(producer);
+                }
             }
         }
     }
@@ -1093,51 +1151,69 @@ public class FlinkPscProducer<IN>
         }
 
         // if the flushed requests has errors, we should propagate it also and fail the checkpoint
+        // Flink 1.15 FlinkKafkaProducer has this in an else statement, but due to comment above we are leaving as is
         checkErroneous();
     }
 
     @Override
     public void snapshotState(FunctionSnapshotContext context) throws Exception {
-        //super.snapshotState(context);
-        supersSnapshotState(context);
+        super.snapshotState(context);
+
+        PscMetricRegistryManager.getInstance().updateHistogramMetric(
+                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_PENDING_TRANSACTIONS, pendingCommitTransactions.size(), pscConfigurationInternal
+        );
+        PscMetricRegistryManager.getInstance().updateHistogramMetric(
+                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_STATE_SIZE, getSize(state), pscConfigurationInternal
+        );
 
         nextTransactionalIdHintState.clear();
-        // To avoid duplication only first subtask keeps track of next transactional id hint. Otherwise all of the
+        // To avoid duplication only first subtask keeps track of next transactional id hint.
+        // Otherwise all of the
         // subtasks would write exactly same information.
-        if (getRuntimeContext().getIndexOfThisSubtask() == 0 && semantic == FlinkPscProducer.Semantic.EXACTLY_ONCE) {
-            checkState(nextTransactionalIdHint != null, "nextTransactionalIdHint must be set for EXACTLY_ONCE");
+        if (getRuntimeContext().getIndexOfThisSubtask() == 0
+                && semantic == FlinkPscProducer.Semantic.EXACTLY_ONCE) {
+            checkState(
+                    nextTransactionalIdHint != null,
+                    "nextTransactionalIdHint must be set for EXACTLY_ONCE");
             long nextFreeTransactionalId = nextTransactionalIdHint.nextFreeTransactionalId;
 
             // If we scaled up, some (unknown) subtask must have created new transactional ids from scratch. In that
             // case we adjust nextFreeTransactionalId by the range of transactionalIds that could be used for this
             // scaling up.
-            if (getRuntimeContext().getNumberOfParallelSubtasks() > nextTransactionalIdHint.lastParallelism) {
-                nextFreeTransactionalId += getRuntimeContext().getNumberOfParallelSubtasks() * pscProducersPoolSize;
+            if (getRuntimeContext().getNumberOfParallelSubtasks()
+                    > nextTransactionalIdHint.lastParallelism) {
+                nextFreeTransactionalId +=
+                        getRuntimeContext().getNumberOfParallelSubtasks() * pscProducersPoolSize;
             }
 
-            nextTransactionalIdHintState.add(new FlinkPscProducer.NextTransactionalIdHint(
-                    getRuntimeContext().getNumberOfParallelSubtasks(),
-                    nextFreeTransactionalId));
+            nextTransactionalIdHintState.add(
+                    new FlinkPscProducer.NextTransactionalIdHint(
+                            getRuntimeContext().getNumberOfParallelSubtasks(),
+                            nextFreeTransactionalId));
         }
     }
 
     private void supersSnapshotState(FunctionSnapshotContext context) throws Exception {
         try {
             Class superClass = getClass().getSuperclass();
-            Field field;
+            Field currentTransactionHolderField;
+            Field finishedField;
             while (true) {
                 // loop is needed for the case of a child class instance
                 try {
-                    field = superClass.getDeclaredField("currentTransactionHolder");
+                    currentTransactionHolderField = superClass.getDeclaredField("currentTransactionHolder");
+                    finishedField = superClass.getDeclaredField("finished");
                     break;
                 } catch (NoSuchFieldException exception) {
                     superClass = superClass.getSuperclass();
                 }
             }
 
-            field.setAccessible(true);
+            currentTransactionHolderField.setAccessible(true);
+            finishedField.setAccessible(true);
             TwoPhaseCommitSinkFunction.TransactionHolder<PscTransactionState> currentTransactionHolder =
-                    (TwoPhaseCommitSinkFunction.TransactionHolder<PscTransactionState>) field.get(this);
+                    (TwoPhaseCommitSinkFunction.TransactionHolder<PscTransactionState>) currentTransactionHolderField.get(this);
+            boolean finished = (boolean) finishedField.get(this);
 
             Method nameMethod = superClass.getDeclaredMethod("name");
             nameMethod.setAccessible(true);
@@ -1147,25 +1223,33 @@ public class FlinkPscProducer<IN>
 
             PscTransactionState handle = currentTransaction();
 
-            Preconditions.checkState(currentTransactionHolder != null, "bug: no transaction object when performing state snapshot");
             long checkpointId = context.getCheckpointId();
             LOG.debug("{} - checkpoint {} triggered, flushing transaction '{}'", new Object[]{nameMethod.invoke(this), context.getCheckpointId(), currentTransactionHolder});
-            this.preCommit(handle);
-            this.pendingCommitTransactions.put(checkpointId, currentTransactionHolder);
-            LOG.debug("{} - stored pending transactions {}", nameMethod.invoke(this), this.pendingCommitTransactions);
 
-            currentTransactionHolder = (TransactionHolder<PscTransactionState>) beginTransactionInternalMethod.invoke(this);
+            if (currentTransactionHolder != null) {
+                this.preCommit(handle);
+                this.pendingCommitTransactions.put(checkpointId, currentTransactionHolder);
+                LOG.debug("{} - stored pending transactions {}", nameMethod.invoke(this), this.pendingCommitTransactions);
+            }
 
-            field = currentTransactionHolder.getClass().getDeclaredField("handle");
-            field.setAccessible(true);
-            PscTransactionState newHandle = (PscTransactionState) field.get(currentTransactionHolder);
-            if (newHandle.isTransactional()) {
-                PscProducerTransactionalProperties pscProducerTransactionalProperties = initTransactions(newHandle.producer);
-                newHandle.setProducerTransactionalProperties(pscProducerTransactionalProperties);
+            if (!finished) {
+                currentTransactionHolder = (TransactionHolder<PscTransactionState>) beginTransactionInternalMethod.invoke(this);
+            } else {
+                currentTransactionHolder = null;
+            }
 
-                field = superClass.getDeclaredField("currentTransactionHolder");
-                field.setAccessible(true);
-                field.set(this, currentTransactionHolder);
+            if (currentTransactionHolder != null) {
+                Field handleField = currentTransactionHolder.getClass().getDeclaredField("handle");
+                handleField.setAccessible(true);
+                PscTransactionState newHandle = (PscTransactionState) handleField.get(currentTransactionHolder);
+                if (newHandle.isTransactional()) {
+                    PscProducerTransactionalProperties pscProducerTransactionalProperties = initTransactions(newHandle.producer);
+                    newHandle.setProducerTransactionalProperties(pscProducerTransactionalProperties);
+
+                    handleField = superClass.getDeclaredField("currentTransactionHolder");
+                    handleField.setAccessible(true);
+                    handleField.set(this, currentTransactionHolder);
+                }
             }
 
             LOG.debug("{} - started new transaction '{}'", nameMethod.invoke(this), currentTransactionHolder);
@@ -1174,42 +1258,52 @@ public class FlinkPscProducer<IN>
         } catch (InvocationTargetException exception) {
             throw (Exception) exception.getTargetException();
         }
-
-        PscMetricRegistryManager.getInstance().updateHistogramMetric(
-                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_PENDING_TRANSACTIONS, pendingCommitTransactions.size(), pscConfigurationInternal
-        );
-        PscMetricRegistryManager.getInstance().updateHistogramMetric(
-                null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_SNAPSHOT_PSC_STATE_SIZE, getSize(state), pscConfigurationInternal
-        );
     }
 
     @Override
     public void initializeState(FunctionInitializationContext context) throws Exception {
-        if (semantic != FlinkPscProducer.Semantic.NONE && !((StreamingRuntimeContext) this.getRuntimeContext()).isCheckpointingEnabled()) {
-            LOG.warn("Using {} semantic, but checkpointing is not enabled. Switching to {} semantic.", semantic, FlinkPscProducer.Semantic.NONE);
+        if (semantic != FlinkPscProducer.Semantic.NONE
+                && !((StreamingRuntimeContext) this.getRuntimeContext()).isCheckpointingEnabled()) {
+            LOG.warn(
+                    "Using {} semantic, but checkpointing is not enabled. Switching to {} semantic.",
+                    semantic,
+                    FlinkPscProducer.Semantic.NONE);
             semantic = FlinkPscProducer.Semantic.NONE;
         }
 
-        OperatorStateStore operatorStateStore = context.getOperatorStateStore();
-        Set<String> registeredStateNames = operatorStateStore.getRegisteredStateNames();
+        Set<String> registeredStateNames = context.getOperatorStateStore().getRegisteredStateNames();
         if (registeredStateNames == null || registeredStateNames.isEmpty() ||
                 (registeredStateNames.equals(Collections.singleton("state")))) {
-            nextTransactionalIdHintState = operatorStateStore.getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
-            initializeTransactionalState();
+            nextTransactionalIdHintState = context.getOperatorStateStore().getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
+            String actualTransactionalIdPrefix;
+            if (this.transactionalIdPrefix != null) {
+                actualTransactionalIdPrefix = this.transactionalIdPrefix;
+            } else {
+                actualTransactionalIdPrefix = getActualTransactionalIdPrefix();
+            }
+            initializeTransactionState(actualTransactionalIdPrefix);
             super.initializeState(context);
             return;
         }
 
         if (pscConfigurationInternal == null) {
-            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         }
 
-        LOG.info("Registered state names: {}", String.join(", ", registeredStateNames));
-        if (registeredStateNames.contains(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2.getName())) {
+        if (context.getOperatorStateStore()
+                   .getRegisteredStateNames()
+                   .contains(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2.getName())) {
+            // psc checkpoint
             LOG.info("Detected a flink-psc checkpoint.");
             try {
-                nextTransactionalIdHintState = operatorStateStore.getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
-                initializeTransactionalState();
+                nextTransactionalIdHintState = context.getOperatorStateStore().getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
+                String actualTransactionalIdPrefix;
+                if (this.transactionalIdPrefix != null) {
+                    actualTransactionalIdPrefix = this.transactionalIdPrefix;
+                } else {
+                    actualTransactionalIdPrefix = getActualTransactionalIdPrefix();
+                }
+                initializeTransactionState(actualTransactionalIdPrefix);
                 super.initializeState(context);
                 LOG.info("Producer subtask {} restored state from a flink-psc state.", getRuntimeContext().getIndexOfThisSubtask());
                 PscMetricRegistryManager.getInstance().incrementCounterMetric(
@@ -1225,17 +1319,26 @@ public class FlinkPscProducer<IN>
                 );
                 throw e;
             }
-        } else if (registeredStateNames.contains(((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>) PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2")).getName()) ||
-                registeredStateNames.contains(((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>) PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR")).getName())) {
+        } else if (context.getOperatorStateStore()
+                          .getRegisteredStateNames()
+                          .contains(((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>)
+                                          PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2"))
+                                            .getName()) ||
+                context.getOperatorStateStore()
+                       .getRegisteredStateNames()
+                       .contains(((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>)
+                               PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR"))
+                                         .getName())) {
             LOG.info("Detected a flink-kafka checkpoint.");
             try {
                 ListState<FlinkKafkaProducer.NextTransactionalIdHint> nextKafkaTransactionalIdHintState =
-                        operatorStateStore.getUnionListState((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>) PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2"));
+                        context.getOperatorStateStore().getUnionListState((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>) PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2"));
                 ListState<FlinkKafkaProducer.NextTransactionalIdHint> oldNextTransactionalIdHintState =
-                        operatorStateStore.getUnionListState((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>) PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR"));
+                        context.getOperatorStateStore().getUnionListState((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>) PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR"));
 
-                ArrayList<FlinkKafkaProducer.NextTransactionalIdHint> oldTransactionalIdHints =
-                        Lists.newArrayList(oldNextTransactionalIdHintState.get());
+                ArrayList<FlinkKafkaProducer.NextTransactionalIdHint> oldTransactionalIdHints = new ArrayList<>();
+                oldNextTransactionalIdHintState.get().forEach(oldTransactionalIdHints::add);
+
                 if (!oldTransactionalIdHints.isEmpty()) {
                     nextKafkaTransactionalIdHintState.addAll(oldTransactionalIdHints);
                     //clear old state
@@ -1246,15 +1349,20 @@ public class FlinkPscProducer<IN>
                         null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_RECOVERY_KAFKA_TRANSACTIONS, getSize(nextKafkaTransactionalIdHintState), pscConfigurationInternal
                 );
 
-                nextTransactionalIdHintState = operatorStateStore.getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
+                nextTransactionalIdHintState = context.getOperatorStateStore().getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
                 for (FlinkKafkaProducer.NextTransactionalIdHint nextKafkaTransactionalIdHint : nextKafkaTransactionalIdHintState.get()) {
                     nextTransactionalIdHintState.add(new NextTransactionalIdHint(
                             nextKafkaTransactionalIdHint.lastParallelism,
                             nextKafkaTransactionalIdHint.nextFreeTransactionalId
                     ));
                 }
-
-                initializeTransactionalState();
+                String actualTransactionalIdPrefix;
+                if (this.transactionalIdPrefix != null) {
+                    actualTransactionalIdPrefix = this.transactionalIdPrefix;
+                } else {
+                    actualTransactionalIdPrefix = getActualTransactionalIdPrefix();
+                }
+                initializeTransactionState(actualTransactionalIdPrefix);
                 supersInitializeState(context);
 
                 LOG.info("Producer subtask {} restored state from a flink-kafka state.", getRuntimeContext().getIndexOfThisSubtask());
@@ -1272,6 +1380,7 @@ public class FlinkPscProducer<IN>
                 throw e;
             }
         } else {
+            // fresh state
             LOG.info("Producer subtask {} has no restored state.", getRuntimeContext().getIndexOfThisSubtask());
             PscMetricRegistryManager.getInstance().incrementCounterMetric(
                     null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_FRESH, pscConfigurationInternal
@@ -1283,6 +1392,57 @@ public class FlinkPscProducer<IN>
                     null, FlinkPscStateRecoveryMetricConstants.PSC_SINK_STATE_RECOVERY_PSC_TRANSACTIONS, 0, pscConfigurationInternal
             );
         }
+    }
+
+    private void initializeTransactionState(String actualTransactionalIdPrefix) throws Exception {
+        transactionalIdsGenerator =
+                new TransactionalIdsGenerator(
+                        actualTransactionalIdPrefix,
+                        getRuntimeContext().getIndexOfThisSubtask(),
+                        getRuntimeContext().getNumberOfParallelSubtasks(),
+                        pscProducersPoolSize,
+                        SAFE_SCALE_DOWN_FACTOR);
+
+        if (semantic != Semantic.EXACTLY_ONCE) {
+            nextTransactionalIdHint = null;
+        } else {
+            ArrayList<NextTransactionalIdHint> transactionalIdHints = new ArrayList<>();
+            nextTransactionalIdHintState.get().forEach(transactionalIdHints::add);
+            if (transactionalIdHints.size() > 1) {
+                throw new IllegalStateException(
+                        "There should be at most one next transactional id hint written by the first subtask");
+            } else if (transactionalIdHints.size() == 0) {
+                nextTransactionalIdHint = new NextTransactionalIdHint(0, 0);
+
+                // this means that this is either:
+                // (1) the first execution of this application
+                // (2) previous execution has failed before first checkpoint completed
+                //
+                // in case of (2) we have to abort all previous transactions
+                abortTransactions(transactionalIdsGenerator.generateIdsToAbort());
+            } else {
+                nextTransactionalIdHint = transactionalIdHints.get(0);
+            }
+        }
+    }
+
+    private String getActualTransactionalIdPrefix() {
+        String actualTransactionalIdPrefix;
+        String taskName = getRuntimeContext().getTaskName();
+        // Kafka transactional IDs are limited in length to be less than the max value of
+        // a short, so we truncate here if necessary to a more reasonable length string.
+        if (taskName.length() > maxTaskNameSize) {
+            taskName = taskName.substring(0, maxTaskNameSize);
+            LOG.warn(
+                    "Truncated task name for Kafka TransactionalId from {} to {}.",
+                    getRuntimeContext().getTaskName(),
+                    taskName);
+        }
+        actualTransactionalIdPrefix =
+                taskName
+                        + "-"
+                        + ((StreamingRuntimeContext) getRuntimeContext()).getOperatorUniqueID();
+        return actualTransactionalIdPrefix;
     }
 
     private long getSize(ListState<?> transactionalIdHintState) throws Exception {
@@ -1305,9 +1465,11 @@ public class FlinkPscProducer<IN>
             LOG.info("{} - restoring state", method.invoke(this));
             for (State<PscTransactionState, FlinkPscProducer.PscTransactionContext> operatorState : state.get()) {
                 LOG.info("Operator state: {}", operatorState);
+                userContext = operatorState.getContext();
                 List<TransactionHolder<FlinkPscProducer.PscTransactionState>> pendingTransactions = operatorState.getPendingCommitTransactions();
                 List<TransactionHolder<FlinkPscProducer.PscTransactionState>> recoveredTransactions = new ArrayList<>();
                 for (TransactionHolder<FlinkPscProducer.PscTransactionState> pendingTransaction : pendingTransactions) {
+                    // convert from Kafka to PSC transaction state
                     Object handle = PscCommon.getField(pendingTransaction, "handle");
                     if (handle.getClass().getName().endsWith("FlinkKafkaProducer$KafkaTransactionState")) {
                         FlinkKafkaProducer.KafkaTransactionState kafkaTransactionState = (FlinkKafkaProducer.KafkaTransactionState) handle;
@@ -1328,6 +1490,7 @@ public class FlinkPscProducer<IN>
                     }
                 }
 
+
                 List<FlinkPscProducer.PscTransactionState> handledTransactions = new ArrayList<>(recoveredTransactions.size() + 1);
                 for (TransactionHolder<FlinkPscProducer.PscTransactionState> recoveredTransaction : recoveredTransactions) {
                     // If this fails to succeed eventually, there is actually data loss
@@ -1339,6 +1502,7 @@ public class FlinkPscProducer<IN>
                     method.setAccessible(true);
                     LOG.info("{} committed recovered transaction {}", method.invoke(this), recoveredTransaction);
                 }
+
 
                 {
                     TransactionHolder<FlinkPscProducer.PscTransactionState> pendingTransaction = operatorState.getPendingTransaction();
@@ -1384,7 +1548,9 @@ public class FlinkPscProducer<IN>
                         LOG.info("PSC transaction context: {}", pscTransactionContext);
                         userContext = Optional.of(pscTransactionContext);
                     }
-                } else { // default - PscTransactionContext type
+                }
+
+                if (userContext == null) { // default - PscTransactionContext type
                     userContext = operatorState.getContext();
                 }
 
@@ -1415,36 +1581,6 @@ public class FlinkPscProducer<IN>
         method = getClass().getSuperclass().getDeclaredMethod("name");
         method.setAccessible(true);
         LOG.debug("{} - started new transaction '{}'", method.invoke(this), field.get(this));
-    }
-
-    private void initializeTransactionalState() throws Exception {
-        transactionalIdsGenerator = new TransactionalIdsGenerator(
-                getRuntimeContext().getTaskName() + "-" + ((StreamingRuntimeContext) getRuntimeContext()).getOperatorUniqueID(),
-                getRuntimeContext().getIndexOfThisSubtask(),
-                getRuntimeContext().getNumberOfParallelSubtasks(),
-                pscProducersPoolSize,
-                SAFE_SCALE_DOWN_FACTOR);
-
-        if (semantic != FlinkPscProducer.Semantic.EXACTLY_ONCE) {
-            nextTransactionalIdHint = null;
-        } else {
-            ArrayList<FlinkPscProducer.NextTransactionalIdHint> transactionalIdHints = Lists.newArrayList(nextTransactionalIdHintState.get());
-            if (transactionalIdHints.size() > 1) {
-                throw new IllegalStateException(
-                        "There should be at most one next transactional id hint written by the first subtask");
-            } else if (transactionalIdHints.size() == 0) {
-                nextTransactionalIdHint = new FlinkPscProducer.NextTransactionalIdHint(0, 0);
-
-                // this means that this is either:
-                // (1) the first execution of this application
-                // (2) previous execution has failed before first checkpoint completed
-                //
-                // in case of (2) we have to abort all previous transactions
-                abortTransactions(transactionalIdsGenerator.generateIdsToAbort());
-            } else {
-                nextTransactionalIdHint = transactionalIdHints.get(0);
-            }
-        }
     }
 
     @Override
@@ -1564,7 +1700,7 @@ public class FlinkPscProducer<IN>
         } catch (ProducerException | ConfigurationException e) {
             throw new FlinkPscException(
                     FlinkPscErrorCode.EXTERNAL_ERROR,
-                    String.format("Failed to abort transaction for FlinkPscInternalProducer with id %s.", producer.getClientId()),
+                    String.format("Failed to init transaction for FlinkPscInternalProducer with id %s.", producer.getClientId()),
                     e
             );
         }
@@ -1722,7 +1858,8 @@ public class FlinkPscProducer<IN>
                 NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR);
         nextTransactionalIdHintState = context.getOperatorStateStore().getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
 
-        ArrayList<NextTransactionalIdHint> oldTransactionalIdHints = Lists.newArrayList(oldNextTransactionalIdHintState.get());
+        ArrayList<NextTransactionalIdHint> oldTransactionalIdHints = new ArrayList<>();
+        oldNextTransactionalIdHintState.get().forEach(oldTransactionalIdHints::add);
         if (!oldTransactionalIdHints.isEmpty()) {
             nextTransactionalIdHintState.addAll(oldTransactionalIdHints);
             //clear old state
@@ -1767,7 +1904,7 @@ public class FlinkPscProducer<IN>
     private void closeProducer(FlinkPscInternalProducer producer) {
         try {
             producer.close(Duration.ZERO);
-        } catch (ProducerException e) {
+        } catch (IOException e) {
             LOG.warn("Failed to close FlinkPscInternalProducer with id {}", producer.getClientId(), e);
         }
     }
@@ -2005,7 +2142,7 @@ public class FlinkPscProducer<IN>
          */
         @SuppressWarnings("WeakerAccess")
         public static final class TransactionStateSerializerSnapshot extends
-                PscSimpleTypeSerializerSnapshot<PscTransactionState> {
+                SimpleTypeSerializerSnapshot<PscTransactionState> {
 
             public TransactionStateSerializerSnapshot() {
                 super(TransactionStateSerializer::new);
@@ -2100,7 +2237,7 @@ public class FlinkPscProducer<IN>
          * Serializer configuration snapshot for compatibility and format evolution.
          */
         @SuppressWarnings("WeakerAccess")
-        public static final class ContextStateSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<PscTransactionContext> {
+        public static final class ContextStateSerializerSnapshot extends SimpleTypeSerializerSnapshot<PscTransactionContext> {
 
             public ContextStateSerializerSnapshot() {
                 super(ContextStateSerializer::new);
@@ -2225,7 +2362,7 @@ public class FlinkPscProducer<IN>
          * Serializer configuration snapshot for compatibility and format evolution.
          */
         @SuppressWarnings("WeakerAccess")
-        public static final class NextTransactionalIdHintSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<NextTransactionalIdHint> {
+        public static final class NextTransactionalIdHintSerializerSnapshot extends SimpleTypeSerializerSnapshot<NextTransactionalIdHint> {
 
             public NextTransactionalIdHintSerializerSnapshot() {
                 super(NextTransactionalIdHintSerializer::new);

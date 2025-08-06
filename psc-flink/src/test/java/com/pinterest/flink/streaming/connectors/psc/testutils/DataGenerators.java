@@ -20,17 +20,13 @@ package com.pinterest.flink.streaming.connectors.psc.testutils;
 
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.psc.config.PscConfiguration;
-import org.apache.flink.api.common.JobExecutionResult;
-import org.apache.flink.api.common.functions.RichFunction;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.common.serialization.TypeInformationSerializationSchema;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
-import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
-import org.apache.flink.streaming.api.graph.StreamGraph;
 import org.apache.flink.streaming.api.operators.StreamSink;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
@@ -145,15 +141,13 @@ public class DataGenerators {
         @Override
         public void run() {
             // we manually feed data into the Kafka sink
-            RichFunction producer = null;
+            OneInputStreamOperatorTestHarness<String, Object> testHarness = null;
             try {
                 Properties pscProducerConfiguration = new Properties();
                 pscProducerConfiguration.putAll(pscTestEnvironmentWithKafka.getPscDiscoveryConfiguration());
                 pscProducerConfiguration.put(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "flink-data-generator-client");
                 pscProducerConfiguration.put(PscConfiguration.PSC_METRIC_REPORTING_ENABLED, "false");
                 pscProducerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_RETRIES, "3");
-                Transformation<String> mockTransform = new MockTransformation();
-                DataStream<String> stream = new DataStream<>(new DummyStreamExecutionEnvironment(), mockTransform);
 
                 StreamSink<String> sink = pscTestEnvironmentWithKafka.getProducerSink(
                         topicUri,
@@ -162,8 +156,7 @@ public class DataGenerators {
                         new FlinkFixedPartitioner<>()
                 );
 
-                OneInputStreamOperatorTestHarness<String, Object> testHarness =
-                        new OneInputStreamOperatorTestHarness<>(sink);
+                testHarness = new OneInputStreamOperatorTestHarness<>(sink);
 
                 testHarness.open();
 
@@ -184,9 +177,9 @@ public class DataGenerators {
             } catch (Throwable t) {
                 this.error = t;
             } finally {
-                if (producer != null) {
+                if (testHarness != null) {
                     try {
-                        producer.close();
+                        testHarness.close();
                     } catch (Throwable t) {
                         // ignore
                     }
@@ -201,25 +194,6 @@ public class DataGenerators {
 
         public Throwable getError() {
             return this.error;
-        }
-
-        private static class MockTransformation extends Transformation<String> {
-            public MockTransformation() {
-                super("MockTransform", BasicTypeInfo.STRING_TYPE_INFO, 1);
-            }
-
-            @Override
-            public Collection<Transformation<?>> getTransitivePredecessors() {
-                return null;
-            }
-        }
-
-        private static class DummyStreamExecutionEnvironment extends StreamExecutionEnvironment {
-
-            @Override
-            public JobExecutionResult execute(StreamGraph streamGraph) throws Exception {
-                return null;
-            }
         }
     }
 }

@@ -120,7 +120,7 @@ public class TestOneKafkaBackendSsl {
         int partitionsWithSsl = 6;
         topicUriStrWithSsl = String.format("%s:%s%s:kafka:env:cloud_%s::%s:%s",
                 kafkaSSLCluster.getTransport(), TopicUri.SEPARATOR, TopicUri.STANDARD, kafkaSSLCluster.getRegion(), kafkaSSLCluster.getCluster(), topicWithSsl);
-        PscTestUtils.createTopicAndVerify(sharedKafkaTestResourceWithSSL, topicUriStrWithSsl, partitionsWithSsl);
+        PscTestUtils.createTopicAndVerify(sharedKafkaTestResourceWithSSL, topicWithSsl, partitionsWithSsl);
     }
 
     @AfterEach

@@ -4,6 +4,8 @@ import com.pinterest.psc.exception.startup.TopicRnSyntaxException;
 import com.pinterest.psc.logging.PscLogger;
 
 import java.io.IOException;
+import java.io.Serializable;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,8 +27,9 @@ import java.util.regex.Pattern;
  * </ul>
  * An example of topic RN would be <code>rn:kafka:env:aws_us-west-1::kafkacluster01:topic01</code>.
  */
-public class TopicRn {
+public class TopicRn implements Serializable {
     private static final PscLogger logger = PscLogger.getLogger(BaseTopicUri.class);
+    private static final long serialVersionUID = -6081489815985829052L;
     protected static byte CURRENT_VERSION = 0;
     public static final String STANDARD = getTopicRnStandard();
 
@@ -111,6 +114,10 @@ public class TopicRn {
         return topicRnPrefixString;
     }
 
+    public String getStandard() {
+        return standard;
+    }
+
     public String getService() {
         return service;
     }
@@ -165,6 +172,22 @@ public class TopicRn {
          */
 
         throw new TopicRnSyntaxException(String.format("Unsupported topic RN version %d", serializedVersion));
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+                topicRnString,
+                topicRnPrefixString,
+                standard,
+                service,
+                environment,
+                cloud,
+                region,
+                classifier,
+                cluster,
+                topic
+        );
     }
 
     @Override

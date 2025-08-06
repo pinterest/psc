@@ -18,7 +18,12 @@
 
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
+import com.pinterest.psc.common.event.EventHandler;
+import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
+import java.io.IOException;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.util.ExceptionUtils;
 
@@ -45,13 +50,15 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  */
 @ThreadSafe
 @Internal
-public final class Handover implements Closeable {
+public final class Handover implements Closeable, EventHandler {
 
     private final Object lock = new Object();
 
     private PscConsumerPollMessageIterator<byte[], byte[]> next;
     private Throwable error;
     private boolean wakeupProducer;
+
+    private Queue<PscEvent> eventQueue = new ConcurrentLinkedQueue<>();
 
     /**
      * Polls the next element from the Handover, possibly blocking until the next element is
@@ -167,6 +174,13 @@ public final class Handover implements Closeable {
     @Override
     public void close() {
         synchronized (lock) {
+            if (next != null) {
+                try {
+                    next.close();
+                } catch (IOException ioe) {
+                    // pass through; best effort close
+                }
+            }
             next = null;
             wakeupProducer = false;
 
@@ -187,6 +201,17 @@ public final class Handover implements Closeable {
             wakeupProducer = true;
             lock.notifyAll();
         }
+    }
+
+    public void handle(PscEvent pscEvent) {
+        eventQueue.offer(pscEvent);
+        if (!wakeupProducer) {
+            wakeupProducer();
+        }
+    }
+
+    public Queue<PscEvent> getEventQueue() {
+        return eventQueue;
     }
 
     // ------------------------------------------------------------------------

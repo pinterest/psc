@@ -16,6 +16,7 @@ import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import com.pinterest.psc.interceptor.ConsumerInterceptors;
 
+import com.pinterest.psc.logging.PscLogger;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -23,6 +24,8 @@ import java.util.Set;
 
 @PscConsumerCreatorPlugin(backend = "memq")
 public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V> {
+
+    private static final PscLogger logger = PscLogger.getLogger(PscMemqConsumerCreator.class);
 
     @Override
     public Set<PscBackendConsumer<K, V>> getConsumers(Environment environment,
@@ -56,14 +59,14 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
         }
 
         for (Map.Entry<String, Set<TopicUri>> entry : clusterTopics.entrySet()) {
-            PscMemqConsumer<K, V> pscMemqConsumer = (PscMemqConsumer) clusterConsumerCache.get(entry.getKey());
-            TopicUri sampleMemeTopicUri = entry.getValue().iterator().next();
+            PscMemqConsumer<K, V> pscMemqConsumer = (PscMemqConsumer<K, V>) clusterConsumerCache.get(entry.getKey());
+            TopicUri sampleMemqTopicUri = entry.getValue().iterator().next();
             if (pscMemqConsumer == null) {
                 ServiceDiscoveryConfig discoveryConfig;
                 discoveryConfig = ServiceDiscoveryManager.getServiceDiscoveryConfig(environment,
-                        pscConfigurationInternal.getDiscoveryConfiguration(), sampleMemeTopicUri);
+                        pscConfigurationInternal.getDiscoveryConfiguration(), sampleMemqTopicUri);
                 pscMemqConsumer = new PscMemqConsumer<>();
-                pscMemqConsumer.initialize(pscConfigurationInternal, discoveryConfig, sampleMemeTopicUri);
+                pscMemqConsumer.initialize(pscConfigurationInternal, discoveryConfig, sampleMemqTopicUri);
                 clusterConsumerCache.put(entry.getKey(), pscMemqConsumer);
                 if (shouldWakeup)
                     pscMemqConsumer.wakeup();
@@ -89,6 +92,7 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
         return consumers;
     }
 
+
     @Override
     public Set<PscBackendConsumer<K, V>> getAssignmentConsumers(Environment environment,
                                                                 PscConfigurationInternal pscConfigurationInternal,
@@ -106,7 +110,7 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
         }
 
         for (Map.Entry<String, Set<TopicUriPartition>> entry : clusterPartitions.entrySet()) {
-            PscMemqConsumer<K, V> pscMemqConsumer = (PscMemqConsumer) clusterConsumerCache.get(entry.getKey());
+            PscMemqConsumer<K, V> pscMemqConsumer = (PscMemqConsumer<K, V>) clusterConsumerCache.get(entry.getKey());
             TopicUri sampleMemqTopicUri = entry.getValue().iterator().next().getTopicUri();
             if (pscMemqConsumer == null) {
                 ServiceDiscoveryConfig discoveryConfig;
@@ -142,7 +146,62 @@ public class PscMemqConsumerCreator<K, V> extends PscBackendConsumerCreator<K, V
     }
 
     @Override
+    public Set<PscBackendConsumer<K, V>> getCommitConsumers(Environment environment,
+        PscConfigurationInternal pscConfigurationInternal,
+        ConsumerInterceptors<K, V> consumerInterceptors,
+        Set<TopicUriPartition> topicUriPartitions,
+        boolean shouldWakeup)
+        throws ConsumerException, ConfigurationException {
+        Set<PscBackendConsumer<K, V>> consumers = new HashSet<>();
+        Map<String, Set<TopicUriPartition>> clusterPartitions = new HashMap<>();
+
+        for (TopicUriPartition topicUriPartition : topicUriPartitions) {
+            MemqTopicUri memqTopicUri = (MemqTopicUri) topicUriPartition.getTopicUri();
+            clusterPartitions.computeIfAbsent(memqTopicUri.getTopicUriPrefix(), p -> new HashSet<>())
+                .add(topicUriPartition);
+        }
+
+        for (Map.Entry<String, Set<TopicUriPartition>> entry : clusterPartitions.entrySet()) {
+            PscMemqConsumer<K, V> pscMemqConsumer = (PscMemqConsumer<K, V>) clusterConsumerCache.get(entry.getKey());
+            TopicUri sampleMemqTopicUri = entry.getValue().iterator().next().getTopicUri();
+            if (pscMemqConsumer == null) {
+                ServiceDiscoveryConfig discoveryConfig;
+                try {
+                    discoveryConfig = ServiceDiscoveryManager.getServiceDiscoveryConfig(environment,
+                        pscConfigurationInternal.getDiscoveryConfiguration(), sampleMemqTopicUri);
+                } catch (Exception e) {
+                    throw new ConsumerException(e);
+                }
+                pscMemqConsumer = new PscMemqConsumer<>();
+                pscMemqConsumer.initialize(pscConfigurationInternal, discoveryConfig, sampleMemqTopicUri);
+                clusterConsumerCache.put(entry.getKey(), pscMemqConsumer);
+                if (shouldWakeup)
+                    pscMemqConsumer.wakeup();
+            }
+
+            pscMemqConsumer.setConsumerInterceptors(consumerInterceptors);
+            if (!pscMemqConsumer.isNotificationSourceInitialized())
+                pscMemqConsumer.assign(entry.getValue());
+            consumers.add(pscMemqConsumer);
+        }
+
+        return consumers;
+    }
+
+    @Override
     public TopicUri validateBackendTopicUri(TopicUri baseTopicUri) throws TopicUriSyntaxException {
         return MemqTopicUri.validate(baseTopicUri);
+    }
+
+    @Override
+    public void reset() {
+        for (PscBackendConsumer<K, V> pscBackendConsumer : clusterConsumerCache.values()) {
+            try {
+                pscBackendConsumer.close();
+            } catch (Exception e) {
+                logger.warn("Could not close backend MemQ consumer.");
+            }
+        }
+        clusterConsumerCache.clear();
     }
 }

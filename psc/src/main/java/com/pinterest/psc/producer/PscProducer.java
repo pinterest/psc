@@ -19,8 +19,8 @@ import com.pinterest.psc.exception.producer.TransactionalProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.PscStartupException;
 import com.pinterest.psc.interceptor.Interceptors;
-import com.pinterest.psc.interceptor.TypePreservingInterceptor;
 import com.pinterest.psc.interceptor.ProducerInterceptors;
+import com.pinterest.psc.interceptor.TypePreservingInterceptor;
 import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
@@ -32,6 +32,8 @@ import com.pinterest.psc.serde.Serializer;
 import org.apache.commons.configuration2.Configuration;
 import org.apache.kafka.common.annotation.InterfaceStability;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -48,7 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-public class PscProducer<K, V> implements AutoCloseable {
+public class PscProducer<K, V> implements Closeable {
     private static final PscLogger logger = PscLogger.getLogger(PscProducer.class);
 
     static {
@@ -90,7 +92,7 @@ public class PscProducer<K, V> implements AutoCloseable {
     public PscProducer(String customPscConfigurationFilePath) throws ConfigurationException, ProducerException {
         if (customPscConfigurationFilePath == null)
             throw new ProducerException("Null parameter was passed to API PscProducer(String)");
-        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         initialize();
     }
 
@@ -108,7 +110,7 @@ public class PscProducer<K, V> implements AutoCloseable {
     public PscProducer(Configuration configuration) throws ConfigurationException, ProducerException {
         if (configuration == null)
             throw new ProducerException("Null parameter was passed to API PscProducer(Configuration)");
-        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         initialize();
     }
 
@@ -123,7 +125,7 @@ public class PscProducer<K, V> implements AutoCloseable {
     public PscProducer(PscConfiguration pscConfiguration) throws ConfigurationException, ProducerException {
         if (pscConfiguration == null)
             throw new ProducerException("Null parameter was passed to API PscProducer(PscConfiguration)");
-        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         initialize();
     }
 
@@ -272,6 +274,12 @@ public class PscProducer<K, V> implements AutoCloseable {
     public Future<MessageId> send(PscProducerMessage<K, V> pscProducerMessage, Callback callback) throws ProducerException, ConfigurationException {
         ensureOpen();
         validateProducerMessage(pscProducerMessage);
+        if (transactionalState.get() != TransactionalState.NON_TRANSACTIONAL &&
+                !backendProducers.isEmpty() &&
+                !pscBackendProducerByTopicUriPrefix.containsKey(pscProducerMessage.getTopicUriPartition().getTopicUri().getTopicUriPrefix())) {
+            throw new ProducerException("Invalid call to send() which would have created a new backend producer. This is not allowed when the PscProducer" +
+                    " is already transactional.");
+        }
         PscBackendProducer<K, V> backendProducer =
                 getBackendProducerForTopicUri(pscProducerMessage.getTopicUriPartition().getTopicUri());
 
@@ -303,7 +311,7 @@ public class PscProducer<K, V> implements AutoCloseable {
                 }
                 break;
             case BEGUN:
-                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.INIT_AND_BEGUN, TransactionalState.IN_TRANSACTION);
+                transactionalStateByBackendProducer.replace(backendProducer, TransactionalState.BEGUN, TransactionalState.IN_TRANSACTION);
                 break;
         }
 
@@ -371,14 +379,7 @@ public class PscProducer<K, V> implements AutoCloseable {
         }
     }
 
-    /**
-     * Prepares the state of this producer to start a transaction.
-     *
-     * @throws ProducerException if the producer is already closed, or is not in the proper state to begin a
-     *                           transaction.
-     */
-    @InterfaceStability.Evolving
-    public void beginTransaction() throws ProducerException {
+    private void beginTransactionInternal() throws ProducerException {
         ensureOpen();
 
         // the case where no backend producer is created yet
@@ -420,6 +421,17 @@ public class PscProducer<K, V> implements AutoCloseable {
     }
 
     /**
+     * Prepares the state of this producer to start a transaction.
+     *
+     * @throws ProducerException if the producer is already closed, or is not in the proper state to begin a
+     *                           transaction.
+     */
+    @InterfaceStability.Evolving
+    public void beginTransaction() throws ProducerException {
+        beginTransactionInternal();
+    }
+
+    /**
      * Initializes the transactional producer in the backend. This moves the transactional state one step further from what
      * <code>beginTransaction()</code> does as it creates a backend producer and initializes its transactional state. This
      * is used in cases where the PSC producer needs to be immediately transactional ready upon creation. Note that this
@@ -438,9 +450,22 @@ public class PscProducer<K, V> implements AutoCloseable {
 
         TopicUri topicUri = validateTopicUri(topicUriString);
         PscBackendProducer<K, V> backendProducer = getBackendProducerForTopicUri(topicUri);
-        if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
-                !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
-            throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
+        initTransactions(backendProducer, true);
+        return backendProducer.getTransactionalProperties();
+    }
+
+    /**
+     * Centralized logic for initializing transactions for a given backend producer.
+     *
+     * @param backendProducer the backendProducer to initialize transactions for
+     * @param callBeginTransaction whether to call beginTransaction after initializing transactions
+     * @throws ProducerException if the producer is already closed, or is not in the proper state to initialize transactions
+     */
+    protected void initTransactions(PscBackendProducer<K, V> backendProducer, boolean callBeginTransaction) throws ProducerException {
+        // below code is commented out because initTransactions can be called multiple times for the same backend producer in Flink 1.15
+//        if (!transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.NON_TRANSACTIONAL) &&
+//                !transactionalStateByBackendProducer.get(backendProducer).equals(TransactionalState.INIT_AND_BEGUN))
+//            throw new ProducerException("Invalid transaction state: initializing transactions works only once for a PSC producer.");
 
         try {
             backendProducer.initTransaction();
@@ -454,9 +479,8 @@ public class PscProducer<K, V> implements AutoCloseable {
             logger.error("initTransactions() on backend producer failed.");
             throw exception;
         }
-
-        this.beginTransaction();
-        return backendProducer.getTransactionalProperties();
+        if (callBeginTransaction)
+            this.beginTransactionInternal();
     }
 
     /**
@@ -672,6 +696,22 @@ public class PscProducer<K, V> implements AutoCloseable {
     }
 
     /**
+     * Get exactly one transaction manager. If there is more than one transaction managers / backend producers,
+     * this method will throw an exception. Note that this is added due to a dependency by Flink connector,
+     * and should not need to be used otherwise.
+     *
+     * @return the transaction manager object
+     * @throws ProducerException if there is an error in the backend producer or if there is more than one transaction managers
+     */
+    @InterfaceStability.Evolving
+    protected Object getExactlyOneTransactionManager() throws ProducerException {
+        Set<Object> transactionManagers = getTransactionManagers();
+        if (transactionManagers.size() != 1)
+            throw new ProducerException("Expected exactly one transaction manager, but found " + transactionManagers.size());
+        return transactionManagers.iterator().next();
+    }
+
+    /**
      * This API is added due to a dependency by Flink connector, and should not be normally used by a typical producer.
      *
      * @return an object representing the backend transaction manager for the given producer message.
@@ -728,9 +768,10 @@ public class PscProducer<K, V> implements AutoCloseable {
     /**
      * Closes this PscProducer instance.
      *
-     * @throws ProducerException if closing some backend producer fails
+     * @throws IOException if closing some backend producer fails
      */
-    public void close() throws ProducerException {
+    @Override
+    public void close() throws IOException {
         close(Duration.ofMillis(Long.MAX_VALUE));
     }
 
@@ -739,9 +780,9 @@ public class PscProducer<K, V> implements AutoCloseable {
      * Any request not completed by the given timeout will fail.
      *
      * @param duration maximum time that each backend producer should wait for incomplete requests.
-     * @throws ProducerException if closing some backend producer fails.
+     * @throws IOException if closing some backend producer fails.
      */
-    public void close(Duration duration) throws ProducerException {
+    public void close(Duration duration) throws IOException {
         if (closed.getAndSet(true)) {
             // avoid multiple closes
             return;
@@ -763,7 +804,7 @@ public class PscProducer<K, V> implements AutoCloseable {
         transactionalState.set(TransactionalState.NON_TRANSACTIONAL);
 
         if (!exceptions.isEmpty()) {
-            throw new ProducerException(
+            throw new IOException(
                     String.format(
                             "Some backend producers failed to close.\n%s",
                             exceptions.stream().map(Throwable::getMessage).collect(Collectors.joining("\n"))
@@ -849,12 +890,12 @@ public class PscProducer<K, V> implements AutoCloseable {
 
     }
 
-    private void ensureOpen() throws ProducerException {
+    protected void ensureOpen() throws ProducerException {
         if (closed.get())
             throw new ProducerException(ExceptionMessage.ALREADY_CLOSED_EXCEPTION);
     }
 
-    private TopicUri validateTopicUri(String topicUriAsString) throws ProducerException {
+    protected TopicUri validateTopicUri(String topicUriAsString) throws ProducerException {
         if (topicUriAsString == null)
             throw new ProducerException("Null topic URI was passed to the producer API.");
 
@@ -893,7 +934,7 @@ public class PscProducer<K, V> implements AutoCloseable {
         pscProducerMessage.setTopicUriPartition(topicUriPartition);
     }
 
-    private PscBackendProducer<K, V> getBackendProducerForTopicUri(TopicUri topicUri) throws ProducerException, ConfigurationException {
+    protected PscBackendProducer<K, V> getBackendProducerForTopicUri(TopicUri topicUri) throws ProducerException, ConfigurationException {
         topicUriStrToTopicUri.put(topicUri.getTopicUriAsString(), topicUri);
 
         if (pscBackendProducerByTopicUriPrefix.containsKey(topicUri.getTopicUriPrefix()))
@@ -943,6 +984,20 @@ public class PscProducer<K, V> implements AutoCloseable {
     @InterfaceStability.Evolving
     protected TransactionalState getTransactionalState() {
         return transactionalState.get();
+    }
+
+    protected void setTransactionalState(TransactionalState stateToSet) {
+        if (stateToSet == null)
+            throw new IllegalArgumentException("Transactional state cannot be null.");
+        transactionalState.set(stateToSet);
+    }
+
+    protected void setBackendProducerTransactionalState(PscBackendProducer<K, V> backendProducer, TransactionalState stateToSet) {
+        if (backendProducer == null || stateToSet == null)
+            throw new IllegalArgumentException("Backend producer and transactional state cannot be null.");
+        if (!transactionalStateByBackendProducer.containsKey(backendProducer))
+            throw new IllegalArgumentException("Backend producer not found in the transactional state map.");
+        transactionalStateByBackendProducer.put(backendProducer, stateToSet);
     }
 
     @VisibleForTesting

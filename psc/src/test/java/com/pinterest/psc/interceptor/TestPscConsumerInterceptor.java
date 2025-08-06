@@ -6,6 +6,7 @@ import com.pinterest.psc.common.TestTopicUri;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.MetricsReporterConfiguration;
 import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.consumer.PscConsumerUtils;
@@ -59,7 +60,7 @@ public class TestPscConsumerInterceptor extends TestPscConsumerBase {
 
     @BeforeEach
     void init() {
-        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        when(pscConfigurationInternal.getClientType()).thenReturn(PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         when(pscConfigurationInternal.getMetricsReporterConfiguration()).thenReturn(new MetricsReporterConfiguration(
                 true, NullMetricsReporter.class.getName(), 1, "localhost",-1, 10));
     }
@@ -106,7 +107,7 @@ public class TestPscConsumerInterceptor extends TestPscConsumerBase {
         verifyConsumerPollResult(pscConsumer.poll(Duration.ofMillis(defaultPollTimeoutMs)), messagesCp);
         assertEquals(valuesList.get(0).length, interceptor.onConsumeCounter);
 
-        when(creator.getAssignmentConsumer(any(), any(), any(), any(), anyBoolean(), anyBoolean()))
+        when(creator.getCommitConsumer(any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(backendConsumer);
         pscConsumer.commitSync(Collections.singleton(messagesCp2.next().getMessageId()));
         assertEquals(1, interceptor.onCommitCounter);
@@ -158,7 +159,7 @@ public class TestPscConsumerInterceptor extends TestPscConsumerBase {
         assertEquals(valuesList.get(0).length, interceptor1.onConsumeCounter);
         assertEquals(valuesList.get(0).length, interceptor2.onConsumeCounter);
 
-        when(creator.getAssignmentConsumer(any(), any(), any(), any(), anyBoolean(), anyBoolean()))
+        when(creator.getCommitConsumer(any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(backendConsumer);
         pscConsumer.commitSync(Collections.singleton(messagesCp2.next().getMessageId()));
         assertEquals(1, interceptor1.onCommitCounter);
@@ -207,7 +208,7 @@ public class TestPscConsumerInterceptor extends TestPscConsumerBase {
         pscConsumer.subscribe(Collections.singleton(testTopic1));
         verifyConsumerPollResult(pscConsumer.poll(Duration.ofMillis(defaultPollTimeoutMs)), messagesCp);
 
-        when(creator.getAssignmentConsumer(any(), any(), any(), any(), anyBoolean(), anyBoolean()))
+        when(creator.getCommitConsumer(any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(backendConsumer);
         pscConsumer.commitSync(Collections.singleton(messagesCp2.next().getMessageId()));
         assertEquals(1, interceptor.onCommitCounter);
@@ -261,7 +262,7 @@ public class TestPscConsumerInterceptor extends TestPscConsumerBase {
         assertEquals(valuesList.get(0).length,
                 goodInterceptor.onConsumeCounter); // two list are being traversed for comparison
 
-        when(creator.getAssignmentConsumer(any(), any(), any(), any(), anyBoolean(), anyBoolean()))
+        when(creator.getCommitConsumer(any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(backendConsumer);
         pscConsumer.commitSync(Collections.singleton(messagesCp2.next().getMessageId()));
         assertEquals(1, badInterceptor.onCommitCounter);

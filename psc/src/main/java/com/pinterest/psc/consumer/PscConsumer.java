@@ -8,6 +8,7 @@ import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.consumer.creation.PscBackendConsumerCreator;
@@ -21,9 +22,9 @@ import com.pinterest.psc.exception.consumer.WakeupException;
 import com.pinterest.psc.exception.handler.PscErrorHandler;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.exception.startup.PscStartupException;
+import com.pinterest.psc.interceptor.ConsumerInterceptors;
 import com.pinterest.psc.interceptor.Interceptors;
 import com.pinterest.psc.interceptor.TypePreservingInterceptor;
-import com.pinterest.psc.interceptor.ConsumerInterceptors;
 import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
@@ -109,7 +110,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(String customPscConfigurationFilePath) throws ConfigurationException, ConsumerException {
         if (customPscConfigurationFilePath == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(String)");
-        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -127,7 +128,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(Configuration configuration) throws ConfigurationException, ConsumerException {
         if (configuration == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(Configuration)");
-        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -142,7 +143,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(PscConfiguration pscConfiguration) throws ConfigurationException, ConsumerException {
         if (pscConfiguration == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(PscConfiguration)");
-        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -829,7 +830,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
             validateMessageIds(messageIds);
 
             Map<PscBackendConsumer<K, V>, Set<MessageId>> backendConsumers =
-                    getNoAssignmentBackendConsumers(messageIds, false);
+                    getCommitBackendConsumers(messageIds, false);
             for (Map.Entry<PscBackendConsumer<K, V>, Set<MessageId>> entry : backendConsumers.entrySet()) {
                 entry.getKey().commitAsync(entry.getValue(), new OffsetCommitCallback() {
                     @Override
@@ -879,7 +880,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
             validateMessageIds(messageIds);
 
             Map<PscBackendConsumer<K, V>, Set<MessageId>> backendConsumers =
-                    getNoAssignmentBackendConsumers(messageIds, true);
+                    getCommitBackendConsumers(messageIds, true);
             for (Map.Entry<PscBackendConsumer<K, V>, Set<MessageId>> entry : backendConsumers.entrySet()) {
                 try {
                     entry.getKey().commitSync(entry.getValue());
@@ -913,7 +914,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
         commitSync(Collections.singleton(messageId));
     }
 
-    private Map<PscBackendConsumer<K, V>, Set<MessageId>> getNoAssignmentBackendConsumers(Collection<MessageId> messageIds, boolean canWakeup) throws ConfigurationException, ConsumerException {
+    private Map<PscBackendConsumer<K, V>, Set<MessageId>> getCommitBackendConsumers(Collection<MessageId> messageIds, boolean canWakeup) throws ConfigurationException, ConsumerException {
         // dispatch messageIds to creators based on the backend
         Map<String, PscBackendConsumerCreator> creator = creatorManager.getBackendCreators();
         Map<String, Set<MessageId>> backendToMessageIds = new HashMap<>();
@@ -927,13 +928,12 @@ public class PscConsumer<K, V> implements AutoCloseable {
         for (Map.Entry<String, Set<MessageId>> entry : backendToMessageIds.entrySet()) {
             if (creator.containsKey(entry.getKey())) {
                 for (MessageId messageId : entry.getValue()) {
-                    PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getAssignmentConsumer(
+                    PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getCommitConsumer(
                             environment,
                             pscConfigurationInternal,
                             consumerInterceptors,
                             messageId.getTopicUriPartition(),
-                            canWakeup && wakeups.get() >= 0,
-                            false
+                            canWakeup && wakeups.get() >= 0
                     );
 
                     backendConsumerToMessageIds.computeIfAbsent(backendConsumer, b -> new HashSet<>())
@@ -1365,6 +1365,54 @@ public class PscConsumer<K, V> implements AutoCloseable {
     }
 
     /**
+     * Suspend fetching from the specified partitions. Future calls to {@link #poll(Duration)} will not return any
+     * records from these partitions until they are resumed using {@link #resume(Collection)}. Note that this method
+     * does not affect partition subscription.
+     *
+     * @param topicUriPartitions the set of topic URI partitions to pause fetching from.
+     * @throws ConsumerException if there are validation issues or backend failures.
+     */
+    public void pause(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
+        acquireAndEnsureOpen();
+        try {
+            topicUriPartitions = validateTopicUriPartitions(topicUriPartitions);
+            validateAssignment(topicUriPartitions);
+
+            for (Map.Entry<PscBackendConsumer<K, V>, Set<TopicUriPartition>> entry :
+                    getConsumerToTopicUriPartitions(topicUriPartitions).entrySet())
+                entry.getKey().pause(entry.getValue());
+        } catch (ConsumerException e) {
+            logger.error("[PSC] Error pausing partitions", e);
+        } finally {
+            release();
+        }
+    }
+
+    /**
+     * Resume fetching from the specified partitions. Future calls to {@link #poll(Duration)} will return records from
+     * these partitions if there are any to return. If the consumer was not previously paused, this method has no
+     * effect.
+     *
+     * @param topicUriPartitions the set of topic URI partitions to resume fetching from.
+     * @throws ConsumerException if there are validation issues or backend failures.
+     */
+    public void resume(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
+        acquireAndEnsureOpen();
+        try {
+            topicUriPartitions = validateTopicUriPartitions(topicUriPartitions);
+            validateAssignment(topicUriPartitions);
+
+            for (Map.Entry<PscBackendConsumer<K, V>, Set<TopicUriPartition>> entry :
+                    getConsumerToTopicUriPartitions(topicUriPartitions).entrySet())
+                entry.getKey().resume(entry.getValue());
+        } catch (ConsumerException e) {
+            logger.error("[PSC] Error resuming partitions", e);
+        } finally {
+            release();
+        }
+    }
+
+    /**
      * Retrieves all partitions associated with the given URI. The PscConsumer does not need to be subscribed to the
      * URI to call this API. This API is not thread-safe.
      *
@@ -1605,6 +1653,52 @@ public class PscConsumer<K, V> implements AutoCloseable {
     }
 
     /**
+     * Returns a collection of {@link MessageId}s associated with the committed positions of the given topic URI partitions.
+     *
+     * @param topicUriPartitions the topic URI partitions for which the committed positions are to be returned.
+     * @return a collection of message ids from the backend consumers that encompass the requested offsets. If there is no committed offset
+     *       for a given partition, the corresponding message id's offset will be -1L.
+     * @throws ConsumerException if the given URIs can not be parsed, or if an error from the backend bubbles up.
+     * @throws ConfigurationException if the discovery of backend cluster fails.
+     */
+    public Collection<MessageId> committed(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException, ConfigurationException {
+        acquireAndEnsureOpen();
+        try {
+            // maintain a map of backend consumer to topicUriPartitions
+            Map<PscBackendConsumer<K, V>, Collection<TopicUriPartition>> tupToBackendConsumerMap = new HashMap<>();
+            for (TopicUriPartition topicUriPartition: topicUriPartitions) {
+                topicUriPartition = validateTopicUriPartition(topicUriPartition);
+                Map<String, PscBackendConsumerCreator> creator = creatorManager.getBackendCreators();
+                TopicUri topicUri = topicUriPartition.getTopicUri();
+                if (creator.containsKey(topicUri.getBackend())) {
+                    PscBackendConsumer<K, V> backendConsumer = creator.get(topicUri.getBackend()).getConsumer(
+                            environment,
+                            pscConfigurationInternal,
+                            consumerInterceptors,
+                            topicUri,
+                            wakeups.get() >= 0,
+                            false
+                    );
+                    tupToBackendConsumerMap.computeIfAbsent(backendConsumer, k -> new HashSet<>());
+                    tupToBackendConsumerMap.get(backendConsumer).add(topicUriPartition);
+                } else {
+                    throw new ConsumerException("[PSC] Cannot process topicUri: " + topicUriPartition.getTopicUriAsString());
+                }
+            }
+
+            Collection<MessageId> messageIds = new ArrayList<>();
+            for (Map.Entry<PscBackendConsumer<K, V>, Collection<TopicUriPartition>> entry : tupToBackendConsumerMap.entrySet()) {
+                Collection<MessageId> subset = entry.getKey().committed(entry.getValue());
+                messageIds.addAll(subset);
+            }
+
+            return messageIds;
+        } finally {
+            release();
+        }
+    }
+
+    /**
      * Returns the log start offset of the request topic URI partitions. The contract for the returned offsets depends on
      * the backend-specific implementation. For example, for a Kafka backend, the start offset is the offset of the
      * first message in the partition.
@@ -1772,12 +1866,11 @@ public class PscConsumer<K, V> implements AutoCloseable {
             for (Map.Entry<String, Map<TopicUriPartition, Long>> entry : backendToTopicUriPartitionTimestampMap.entrySet()) {
                 if (creator.containsKey(entry.getKey())) {
                     for (Map.Entry<TopicUriPartition, Long> entry2 : entry.getValue().entrySet()) {
-                        PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getAssignmentConsumer(
+                        PscBackendConsumer<K, V> backendConsumer = creator.get(entry.getKey()).getCommitConsumer(
                                 environment,
                                 pscConfigurationInternal,
                                 consumerInterceptors,
                                 entry2.getKey(),
-                                false,
                                 false
                         );
 
@@ -1807,9 +1900,11 @@ public class PscConsumer<K, V> implements AutoCloseable {
      */
     public Map<MetricName, Metric> metrics() throws ClientException {
         ensureOpen();
-        Map<MetricName, Metric> metrics = new HashMap<>();
+        Map<MetricName, Metric> metrics = new ConcurrentHashMap<>();
         for (PscBackendConsumer<K, V> backendConsumer : backendConsumers) {
-            metrics.putAll(backendConsumer.metrics());
+            synchronized (backendConsumer.metrics()) {
+                metrics.putAll(backendConsumer.metrics());
+            }
         }
         return metrics;
     }
@@ -1866,6 +1961,14 @@ public class PscConsumer<K, V> implements AutoCloseable {
         return topicUriPartition;
     }
 
+    private Set<TopicUriPartition> validateTopicUriPartitions(Set<TopicUriPartition> topicUriPartitions)
+            throws ConsumerException {
+        for (TopicUriPartition tup: topicUriPartitions) {
+            tup = validateTopicUriPartition(tup);
+        }
+        return topicUriPartitions;
+    }
+
     private Set<TopicUriPartition> validateTopicUriPartitions(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
         if (topicUriPartitions == null)
             throw new ConsumerException("Null topic URI partitions was passed to the consumer API");
@@ -1898,7 +2001,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
                 messageIdErrors.append("Null message id found in collection passed to consumer API.");
             else if (messageId.getTopicUriPartition() == null)
                 messageIdErrors.append("Message id contains null topic URI partition.");
-            else if (messageId.getTopicUriPartition().getTopicUri() == null)
+            else
                 validateTopicUriPartition(messageId.getTopicUriPartition());
         }
         if (messageIdErrors.length() > 0)
@@ -1909,6 +2012,14 @@ public class PscConsumer<K, V> implements AutoCloseable {
             throw new ConsumerException(
                     ExceptionMessage.DUPLICATE_PARTITIONS_IN_MESSAGE_IDS(duplicateTopicUriPartitions)
             );
+        }
+    }
+
+    public void onEvent(PscEvent event) {
+        if (subscribed.get() && event.getTopicUri() != null) {
+            subscriptionMap.get(event.getTopicUri()).onEvent(event);
+        } else if (assigned.get() && event.getTopicUriPartition() != null) {
+            assignmentMap.get(event.getTopicUriPartition()).onEvent(event);
         }
     }
 

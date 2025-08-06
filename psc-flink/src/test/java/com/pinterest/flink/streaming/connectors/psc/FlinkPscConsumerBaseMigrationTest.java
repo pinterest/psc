@@ -25,10 +25,10 @@ import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartiti
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartitionStateSentinel;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUrisDescriptor;
 import com.pinterest.flink.streaming.connectors.psc.internals.metrics.FlinkPscStateRecoveryMetricConstants;
-import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetricsUtils;
+import org.apache.flink.FlinkVersion;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.core.testutils.OneShotLatch;
 import org.apache.flink.metrics.MetricGroup;
@@ -40,7 +40,6 @@ import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.OperatorSnapshotUtil;
-import org.apache.flink.testutils.migration.MigrationVersion;
 import org.apache.flink.util.SerializedValue;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -50,6 +49,7 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -57,8 +57,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
 import static org.powermock.api.mockito.PowerMockito.doAnswer;
@@ -78,24 +77,24 @@ import static org.powermock.api.mockito.PowerMockito.when;
 public class FlinkPscConsumerBaseMigrationTest {
 
     /**
-     * Instructions: change this to the corresponding savepoint version to be written (e.g. {@link MigrationVersion#v1_3} for 1.3)
+     * Instructions: change this to the corresponding savepoint version to be written (e.g. {@link FlinkVersion#v1_3} for 1.3)
      * and remove all @Ignore annotations on writeSnapshot() methods to generate savepoints
      * Note: You should generate the savepoint based on the release branch instead of the master.
      */
-    private final MigrationVersion flinkGenerateSavepointVersion = null;
+    private final FlinkVersion flinkGenerateSavepointVersion = null;
 
     private static final HashMap<PscTopicUriPartition, Long> TOPIC_URI_PARTITION_STATE = new HashMap<>();
 
     static {
         TOPIC_URI_PARTITION_STATE.put(
                 new PscTopicUriPartition(
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "abc",
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "abc",
                         13),
                 16768L
         );
         TOPIC_URI_PARTITION_STATE.put(
                 new PscTopicUriPartition(
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "def",
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "def",
                         7),
                 987654321L
         );
@@ -107,17 +106,24 @@ public class FlinkPscConsumerBaseMigrationTest {
             .distinct()
             .collect(Collectors.toList());
 
-    private final MigrationVersion testMigrateVersion;
+    private final FlinkVersion testMigrateVersion;
 
     @Parameterized.Parameters(name = "Migration Savepoint: {0}")
-    public static Collection<MigrationVersion> parameters() {
+    public static Collection<FlinkVersion> parameters() {
         // PSC integration started with Flink 1.11
-        return Collections.singletonList(
-                MigrationVersion.v1_11
+        return Arrays.asList(
+                FlinkVersion.v1_11,
+                FlinkVersion.v1_12,
+                FlinkVersion.v1_13,
+                FlinkVersion.v1_14,
+                FlinkVersion.v1_15,
+                FlinkVersion.v1_16,
+                FlinkVersion.v1_17,
+                FlinkVersion.v1_18
         );
     }
 
-    public FlinkPscConsumerBaseMigrationTest(MigrationVersion testMigrateVersion) {
+    public FlinkPscConsumerBaseMigrationTest(FlinkVersion testMigrateVersion) {
         this.testMigrateVersion = testMigrateVersion;
     }
 
@@ -228,11 +234,10 @@ public class FlinkPscConsumerBaseMigrationTest {
         testHarness.open();
 
         // assert that no partitions were found and is empty
-        assertTrue(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets() != null);
-        assertTrue(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets().isEmpty());
+        assertThat(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets()).isEmpty();
 
         // assert that no state was restored
-        assertTrue(consumerFunction.getRestoredState().isEmpty());
+        assertThat(consumerFunction.getRestoredState()).isEmpty();
 
         assertSuccessfulFlinkPscSourceStateMigration();
 
@@ -277,15 +282,16 @@ public class FlinkPscConsumerBaseMigrationTest {
         }
 
         // assert that there are partitions and is identical to expected list
-        assertTrue(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets() != null);
-        assertTrue(!consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets().isEmpty());
-        assertEquals(expectedSubscribedPartitionsWithStartOffsets, consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets());
+        assertThat(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets())
+                .isNotEmpty()
+                .isEqualTo(expectedSubscribedPartitionsWithStartOffsets);
 
         // the new partitions should have been considered as restored state
-        assertTrue(consumerFunction.getRestoredState() != null);
-        assertTrue(!consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets().isEmpty());
+        assertThat(consumerFunction.getRestoredState()).isNotNull();
+        assertThat(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets()).isNotEmpty();
         for (Map.Entry<PscTopicUriPartition, Long> expectedEntry : expectedSubscribedPartitionsWithStartOffsets.entrySet()) {
-            assertEquals(expectedEntry.getValue(), consumerFunction.getRestoredState().get(expectedEntry.getKey()));
+            assertThat(consumerFunction.getRestoredState())
+                    .containsEntry(expectedEntry.getKey(), expectedEntry.getValue());
         }
 
         assertSuccessfulFlinkPscSourceStateMigration();
@@ -323,15 +329,14 @@ public class FlinkPscConsumerBaseMigrationTest {
         testHarness.open();
 
         // assert that there are partitions and is identical to expected list
-        assertTrue(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets() != null);
-        assertTrue(!consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets().isEmpty());
-
-        // on restore, subscribedPartitionsToStartOffsets should be identical to the restored state
-        assertEquals(TOPIC_URI_PARTITION_STATE, consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets());
+        assertThat(consumerFunction.getSubscribedTopicUriPartitionsToStartOffsets())
+                .isNotEmpty()
+                // on restore, subscribedPartitionsToStartOffsets should be identical to the
+                // restored state
+                .isEqualTo(TOPIC_URI_PARTITION_STATE);
 
         // assert that state is correctly restored from legacy checkpoint
-        assertTrue(consumerFunction.getRestoredState() != null);
-        assertEquals(TOPIC_URI_PARTITION_STATE, consumerFunction.getRestoredState());
+        assertThat(consumerFunction.getRestoredState()).isNotNull().isEqualTo(TOPIC_URI_PARTITION_STATE);
 
         assertSuccessfulFlinkPscSourceStateMigration();
 
@@ -340,39 +345,30 @@ public class FlinkPscConsumerBaseMigrationTest {
     }
 
     private void assertSuccessfulFlinkPscSourceStateMigration() {
-        assertTrue(
+        assertThat(
                 PscMetricRegistryManager.getInstance().getCounterMetric(
                         null, FlinkPscStateRecoveryMetricConstants.PSC_SOURCE_STATE_RECOVERY_PSC_SUCCESS, null
-                ) > 0
-        );
+                )).isGreaterThan(0);
 
-        assertEquals(
-                0,
+        assertThat(
                 PscMetricRegistryManager.getInstance().getCounterMetric(
                         null, FlinkPscStateRecoveryMetricConstants.PSC_SOURCE_STATE_RECOVERY_PSC_FAILURE, null
-                )
-        );
+                )).isEqualTo(0);
 
-        assertEquals(
-                0,
+        assertThat(
                 PscMetricRegistryManager.getInstance().getCounterMetric(
                         null, FlinkPscStateRecoveryMetricConstants.PSC_SOURCE_STATE_RECOVERY_KAFKA_SUCCESS, null
-                )
-        );
+                )).isEqualTo(0);
 
-        assertEquals(
-                0,
+        assertThat(
                 PscMetricRegistryManager.getInstance().getCounterMetric(
                         null, FlinkPscStateRecoveryMetricConstants.PSC_SOURCE_STATE_RECOVERY_KAFKA_FAILURE, null
-                )
-        );
+                )).isEqualTo(0);
 
-        assertEquals(
-                0,
+        assertThat(
                 PscMetricRegistryManager.getInstance().getCounterMetric(
                         null, FlinkPscStateRecoveryMetricConstants.PSC_SOURCE_STATE_FRESH, null
-                )
-        );
+                )).isEqualTo(0);
     }
 
     // ------------------------------------------------------------------------

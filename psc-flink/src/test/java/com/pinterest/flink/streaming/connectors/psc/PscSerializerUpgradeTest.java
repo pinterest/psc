@@ -19,14 +19,12 @@
 package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.flink.streaming.connectors.psc.internals.FlinkPscInternalProducer;
+import com.pinterest.flink.streaming.connectors.psc.testutils.TypeSerializerUpgradeTestBase;
+import org.apache.flink.FlinkVersion;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.common.typeutils.TypeSerializerMatchers;
 import org.apache.flink.api.common.typeutils.TypeSerializerSchemaCompatibility;
-import org.apache.flink.api.common.typeutils.TypeSerializerUpgradeTestBase;
-import org.apache.flink.testutils.migration.MigrationVersion;
 import org.hamcrest.Matcher;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
@@ -42,33 +40,25 @@ import static org.hamcrest.Matchers.is;
  */
 //TODO: re-enable when multiple Flink/PSC combinations exist
 //See https://github.com/apache/flink/commit/d31a76c128455c1f619f59791a1564ed24b8fa1f for creating snapshots
-@RunWith(Parameterized.class)
 public class PscSerializerUpgradeTest extends TypeSerializerUpgradeTestBase<Object, Object> {
 
-    public PscSerializerUpgradeTest(TestSpecification<Object, Object> testSpecification) {
-        super(testSpecification);
-    }
-
-    @Parameterized.Parameters(name = "Test Specification = {0}")
-    public static Collection<TestSpecification<?, ?>> testSpecifications() throws Exception {
+    public Collection<TestSpecification<?, ?>> createTestSpecifications() throws Exception {
 
         ArrayList<TestSpecification<?, ?>> testSpecifications = new ArrayList<>();
-		/*
-		for (MigrationVersion migrationVersion : MIGRATION_VERSIONS) {
-			testSpecifications.add(
-				new TestSpecification<>(
-					"transaction-state-serializer",
-					migrationVersion,
-					TransactionStateSerializerSetup.class,
-					TransactionStateSerializerVerifier.class));
-			testSpecifications.add(
-				new TestSpecification<>(
-					"context-state-serializer",
-					migrationVersion,
-					ContextStateSerializerSetup.class,
-					ContextStateSerializerVerifier.class));
-		}
-		 */
+        for (FlinkVersion flinkVersion : MIGRATION_VERSIONS) {
+            testSpecifications.add(
+                    new TestSpecification<>(
+                            "transaction-state-serializer",
+                            flinkVersion,
+                            TransactionStateSerializerSetup.class,
+                            TransactionStateSerializerVerifier.class));
+            testSpecifications.add(
+                    new TestSpecification<>(
+                            "context-state-serializer",
+                            flinkVersion,
+                            ContextStateSerializerSetup.class,
+                            ContextStateSerializerVerifier.class));
+        }
         return testSpecifications;
     }
 
@@ -110,7 +100,7 @@ public class PscSerializerUpgradeTest extends TypeSerializerUpgradeTestBase<Obje
         }
 
         @Override
-        public Matcher<TypeSerializerSchemaCompatibility<FlinkPscProducer.PscTransactionState>> schemaCompatibilityMatcher(MigrationVersion version) {
+        public Matcher<TypeSerializerSchemaCompatibility<FlinkPscProducer.PscTransactionState>> schemaCompatibilityMatcher(FlinkVersion version) {
             return TypeSerializerMatchers.isCompatibleAsIs();
         }
     }
@@ -157,7 +147,10 @@ public class PscSerializerUpgradeTest extends TypeSerializerUpgradeTestBase<Obje
         }
 
         @Override
-        public Matcher<TypeSerializerSchemaCompatibility<FlinkPscProducer.PscTransactionContext>> schemaCompatibilityMatcher(MigrationVersion version) {
+        public Matcher<
+                TypeSerializerSchemaCompatibility<
+                        FlinkPscProducer.PscTransactionContext>>
+        schemaCompatibilityMatcher(FlinkVersion version) {
             return TypeSerializerMatchers.isCompatibleAsIs();
         }
     }

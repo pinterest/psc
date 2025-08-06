@@ -17,12 +17,15 @@
 
 package com.pinterest.flink.streaming.util.serialization.psc;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.pinterest.flink.connector.psc.util.JacksonMapperFactory;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node.ObjectNode;
+
 import com.pinterest.flink.streaming.connectors.psc.PscDeserializationSchema;
 
 import static org.apache.flink.api.java.typeutils.TypeExtractor.getForClass;
@@ -47,6 +50,11 @@ public class JSONKeyValueDeserializationSchema implements PscDeserializationSche
 
     public JSONKeyValueDeserializationSchema(boolean includeMetadata) {
         this.includeMetadata = includeMetadata;
+    }
+
+    @Override
+    public void open(DeserializationSchema.InitializationContext context) throws Exception {
+        mapper = JacksonMapperFactory.createObjectMapper();
     }
 
     @Override

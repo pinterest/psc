@@ -34,7 +34,7 @@ import org.apache.flink.streaming.api.datastream.DataStreamUtils;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
-import org.apache.flink.streaming.api.transformations.SinkTransformation;
+import org.apache.flink.streaming.api.transformations.LegacySinkTransformation;
 import com.pinterest.flink.streaming.connectors.psc.FlinkPscProducer;
 import org.apache.flink.streaming.util.keys.KeySelectorUtil;
 import org.apache.flink.util.Preconditions;
@@ -252,7 +252,7 @@ public class FlinkPscShuffle {
                 "Missing producer parallelism for Kafka Shuffle");
         int producerParallelism = PropertiesUtil.getInt(pscProducerConfiguration, PRODUCER_PARALLELISM, Integer.MIN_VALUE);
 
-        addKafkaShuffle(dataStream, pscProducer, producerParallelism);
+        addPscShuffle(dataStream, pscProducer, producerParallelism);
     }
 
     /**
@@ -336,7 +336,12 @@ public class FlinkPscShuffle {
                 pscConsumerConfiguration.getProperty(PARTITION_NUMBER) != null,
                 "Missing partition number for Kafka Shuffle");
         int numberOfPartitions = PropertiesUtil.getInt(pscConsumerConfiguration, PARTITION_NUMBER, Integer.MIN_VALUE);
-        DataStream<T> outputDataStream = env.addSource(pscConsumer).setParallelism(numberOfPartitions);
+        // Set the parallelism / max parallelism of the keyed stream in consumer side as the number
+        // of kafka partitions
+        DataStream<T> outputDataStream =
+                env.addSource(pscConsumer)
+                        .setParallelism(numberOfPartitions)
+                        .setMaxParallelism(numberOfPartitions);
 
         return DataStreamUtils.reinterpretAsKeyedStream(outputDataStream, keySelector);
     }
@@ -350,7 +355,7 @@ public class FlinkPscShuffle {
      * @param kafkaShuffleProducer Kafka shuffle sink function that can handle both records and watermark
      * @param producerParallelism  The number of tasks writing to the kafka shuffle
      */
-    private static <T, K> void addKafkaShuffle(
+    private static <T, K> void addPscShuffle(
             DataStream<T> inputStream,
             FlinkPscShuffleProducer<T, K> kafkaShuffleProducer,
             int producerParallelism) {
@@ -359,11 +364,12 @@ public class FlinkPscShuffle {
         inputStream.getTransformation().getOutputType();
 
         StreamPscShuffleSink<T> shuffleSinkOperator = new StreamPscShuffleSink<>(kafkaShuffleProducer);
-        SinkTransformation<T> transformation = new SinkTransformation<>(
+        LegacySinkTransformation<T> transformation = new LegacySinkTransformation<>(
                 inputStream.getTransformation(),
                 "kafka_shuffle",
                 shuffleSinkOperator,
-                inputStream.getExecutionEnvironment().getParallelism());
+                inputStream.getExecutionEnvironment().getParallelism(),
+                false);
         inputStream.getExecutionEnvironment().addOperator(transformation);
         transformation.setParallelism(producerParallelism);
     }

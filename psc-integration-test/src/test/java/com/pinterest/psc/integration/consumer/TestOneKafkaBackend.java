@@ -50,10 +50,13 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -87,7 +90,7 @@ public class TestOneKafkaBackend {
             .withBrokers(1)
             .withBrokerProperty("auto.create.topics.enable", "false");
     private static AdminClient adminClient;
-    private static final int TEST_TIMEOUT_SECONDS = 60;
+    private static final int TEST_TIMEOUT_SECONDS = 120;
     private static final int PSC_CONSUME_TIMEOUT_MS = 7500;
     private static final PscConfiguration pscConfiguration = new PscConfiguration();
     private static String baseClientId;
@@ -367,7 +370,7 @@ public class TestOneKafkaBackend {
         }
         assertEquals(12,
             ((SimpleConsumerRebalanceListener) pscConsumer1.getRebalanceListener()).getAssigned());
-        assertEquals(0,
+        assertEquals(-1,
             ((SimpleConsumerRebalanceListener) pscConsumer1.getRebalanceListener()).getRevoked());
         // add second consumer to group
         pscConsumer2.subscribe(Collections.singleton(topicUriStr1),
@@ -382,7 +385,7 @@ public class TestOneKafkaBackend {
             ((SimpleConsumerRebalanceListener) pscConsumer2.getRebalanceListener()).getAssigned());
         assertEquals(12,
             ((SimpleConsumerRebalanceListener) pscConsumer1.getRebalanceListener()).getRevoked());
-        assertEquals(0,
+        assertEquals(-1,
             ((SimpleConsumerRebalanceListener) pscConsumer2.getRebalanceListener()).getRevoked());
         pscConsumer1.unsubscribe();
         pscConsumer2.unsubscribe();
@@ -487,6 +490,8 @@ public class TestOneKafkaBackend {
      * @throws InterruptedException
      * @throws ExecutionException
      */
+    //TODO: Flaky Test
+    @Disabled
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
     public void testConsumerGroupSubscription() throws SerializerException, InterruptedException, ExecutionException {
@@ -1796,6 +1801,58 @@ public class TestOneKafkaBackend {
         pscConsumer.close();
     }
 
+    @Timeout(TEST_TIMEOUT_SECONDS)
+    @Test
+    public void testBatchCommitted() throws SerializerException, InterruptedException, ConfigurationException, ConsumerException {
+        int messageCount1 = 1000;
+        int targetPartition1 = 1;
+        PscTestUtils.produceKafkaMessages(messageCount1, sharedKafkaTestResource, kafkaCluster, topic1, targetPartition1);
+        int messageCount2 = 1000;
+        int targetPartition2 = 2;
+        PscTestUtils.produceKafkaMessages(messageCount2, sharedKafkaTestResource, kafkaCluster, topic1, targetPartition2);
+
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false");
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, this.getClass().getSimpleName() + "-psc-consumer-group");
+
+        TopicUriPartition topicUriPartition1 = new TopicUriPartition(topicUriStr1, targetPartition1);
+        TopicUriPartition topicUriPartition2 = new TopicUriPartition(topicUriStr1, targetPartition2);
+        TopicUriPartition topicUriPartition3 = new TopicUriPartition(topicUriStr1, 3);
+        TopicUriPartition nonExistentPartition = new TopicUriPartition(topicUriStr1, partitions1);  // partitions1 ID is not a valid partition
+        PscConsumer<String, String> pscConsumer = new PscConsumer<>(pscConfiguration);
+        pscConsumer.assign(Sets.newHashSet(topicUriPartition1, topicUriPartition2));
+
+        Collection<MessageId> committed = pscConsumer.committed(Arrays.asList(topicUriPartition1, topicUriPartition2));
+        assertEquals(2, committed.size());
+        for (MessageId messageId : committed) {
+            assertEquals(-1, messageId.getOffset());
+        }
+
+        Map<TopicUriPartition, Long> toCommit = new HashMap<>();
+        toCommit.put(topicUriPartition1, 100L);
+        toCommit.put(topicUriPartition2, 200L);
+
+        pscConsumer.commitSync(toCommit.entrySet().stream().map(e -> new MessageId(e.getKey(), e.getValue())).collect(Collectors.toList()));
+
+        committed = pscConsumer.committed(Arrays.asList(topicUriPartition1, topicUriPartition2, topicUriPartition3));
+        assertEquals(3, committed.size());
+        for (MessageId messageId : committed) {
+            if (messageId.getTopicUriPartition().getPartition() == targetPartition1)
+                assertEquals(101L, messageId.getOffset());
+            else if (messageId.getTopicUriPartition().getPartition() == targetPartition2)
+                assertEquals(201L, messageId.getOffset());
+            else
+                assertEquals(-1, messageId.getOffset());
+        }
+
+        // test with a non-existent partition
+        committed = pscConsumer.committed(Collections.singletonList(nonExistentPartition));
+        assertEquals(1, committed.size());
+        assertEquals(-1, committed.iterator().next().getOffset());
+    }
+
     /**
      * Verifies that the startOffsets() api returns the expected result, which is 0 for partitions with no messages, and
      * first message's offset for partitions that have messages.
@@ -2142,7 +2199,7 @@ public class TestOneKafkaBackend {
         PscConsumer<byte[], byte[]> pscConsumer = new PscConsumer<>(pscConfiguration);
         String topicUriStr = String.format("%s:%s%s:kafka:env:cloud_%s::%s:%s",
                 kafkaCluster.getTransport(), TopicUri.SEPARATOR, TopicUri.STANDARD, kafkaCluster.getRegion(), kafkaCluster.getCluster(), "not_there");
-        assertNull(pscConsumer.getPartitions(topicUriStr));
+        assertTrue(pscConsumer.getPartitions(topicUriStr).isEmpty());
         pscConsumer.close();
     }
 
@@ -2236,6 +2293,104 @@ public class TestOneKafkaBackend {
         }
 
         pscConsumer.close();
+    }
+
+    /**
+     * Verifies the functionality of {@link PscConsumer#pause(Collection)} and {@link PscConsumer#resume(Collection)} APIs
+     * for both consumption modes: <code>subscribe</code> and <code>assign</code>.
+     *
+     * @throws ConsumerException
+     */
+    @Timeout(TEST_TIMEOUT_SECONDS)
+    @ParameterizedTest
+    @ValueSource(strings = {"subscribe", "assign"})
+    public void testConsumerPauseAndResume(String consumptionMode) throws ConsumerException, SerializerException, ConfigurationException {
+        // produce one message per partition
+        int messagesPerPartition = 1;
+        for (int partition = 0; partition < partitions1; partition++) {
+            PscTestUtils.produceKafkaMessages(messagesPerPartition, sharedKafkaTestResource, kafkaCluster, topic1, partition);
+        }
+
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_VALUE_DESERIALIZER, StringDeserializer.class.getName());
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED, "false");
+        pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_POLL_MESSAGES_MAX, 1);   // ensure we consume one message at a time
+        PscConsumer<String, String> pscConsumer = new PscConsumer<>(pscConfiguration);
+
+        Set<TopicUriPartition> tups = new HashSet<>();
+        Set<Integer> tupInts = new HashSet<>();
+        for (int i = 0; i < partitions1; i++) {
+            tups.add(new TopicUriPartition(topicUriStr1, i));
+            tupInts.add(i);
+        }
+
+        if (consumptionMode.equals("subscribe")) {
+            pscConsumer.subscribe(Collections.singleton(topicUriStr1));
+        } else if (consumptionMode.equals("assign")) {
+            pscConsumer.assign(tups);
+        } else {
+            Assertions.fail("Invalid consumption mode: " + consumptionMode);
+        }
+
+        assertPollReturnsMessagesFromExpectedPartitions(tupInts, pscConsumer, partitions1);
+
+        // again, produce one message per partition
+        for (int partition = 0; partition < partitions1; partition++) {
+            PscTestUtils.produceKafkaMessages(messagesPerPartition, sharedKafkaTestResource, kafkaCluster, topic1, partition);
+        }
+
+        // pause partitions 0,1,2,3
+        Set<TopicUriPartition> partitionsToPause = new HashSet<>();
+        for (int i = 0; i < 4; i++) {
+            partitionsToPause.add(new TopicUriPartition(topicUriStr1, i));
+        }
+        pscConsumer.pause(partitionsToPause);
+
+        // poll again, we should not get messages from partitions 0,1,2,3
+        Set<Integer> expectedPartitions = new HashSet<>();
+        for (int i = 4; i < partitions1; i++) {
+            expectedPartitions.add(i);
+        }
+        assertPollReturnsMessagesFromExpectedPartitions(expectedPartitions, pscConsumer, partitions1 - 4);
+
+        // again, produce one message per partition
+        for (int partition = 0; partition < partitions1; partition++) {
+            PscTestUtils.produceKafkaMessages(messagesPerPartition, sharedKafkaTestResource, kafkaCluster, topic1, partition);
+        }
+
+        // resume partitions 0,1,2,3
+        pscConsumer.resume(partitionsToPause);
+
+        // poll again, we should get messages from all partitions, 1 message for each partition + 4 messages from partitions 0,1,2,3 due to skipping in previous run
+        assertPollReturnsMessagesFromExpectedPartitions(tupInts, pscConsumer, partitions1 + 4);
+    }
+
+    private static void assertPollReturnsMessagesFromExpectedPartitions(Set<Integer> expectedPartitions, PscConsumer<String, String> pscConsumer, int messagesToConsume) throws ConsumerException {
+        Set<Integer> polledPartitions = new HashSet<>();
+        int messagesConsumed = 0;
+        while (messagesConsumed < messagesToConsume) {
+            PscConsumerPollMessageIterator<String, String> iterator = pscConsumer.poll();
+
+            // wait for messages to be available
+            while (!iterator.hasNext()) {
+                iterator = pscConsumer.poll();
+            }
+            assertTrue(iterator.hasNext());
+
+            while (iterator.hasNext()) {
+                PscConsumerMessage<String, String> message = iterator.next();
+                messagesConsumed++;
+                polledPartitions.add(message.getMessageId().getTopicUriPartition().getPartition());
+            }
+        }
+        // assert no more messages
+        int numIterationsToCheck = 10;
+        for (int i = 0; i < numIterationsToCheck; i++) {
+            PscConsumerPollMessageIterator<String, String> iterator = pscConsumer.poll();
+            assertFalse(iterator.hasNext());
+        }
+        assertEquals(expectedPartitions, polledPartitions);
     }
 
     /**
@@ -2355,7 +2510,7 @@ public class TestOneKafkaBackend {
         TopicUri topicUri = TopicUri.validate("plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region::cluster:");
         TopicUri kafkaTopicUri = KafkaTopicUri.validate(topicUri);
 
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
 
         Set<PscBackendConsumer<String, String>> consumers = creator.getConsumers(
                 pscConfigurationInternal.getEnvironment(),

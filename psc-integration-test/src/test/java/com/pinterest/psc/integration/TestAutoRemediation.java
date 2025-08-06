@@ -17,6 +17,7 @@ import com.pinterest.psc.integration.consumer.TestOneKafkaBackend;
 import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
+import com.pinterest.psc.metrics.PscMetricsUtil;
 import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.producer.PscProducerUtils;
@@ -111,7 +112,7 @@ public class TestAutoRemediation {
         pscProducerConfiguration.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
         pscProducerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, baseProducerClientId + "-" + UUID.randomUUID());
         pscProducerConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
-        producerInternalConfiguration = new PscConfigurationInternal(pscProducerConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        producerInternalConfiguration = new PscConfigurationInternal(pscProducerConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
 
         kafkaCluster = new KafkaCluster(
                 "plaintext",
@@ -131,6 +132,7 @@ public class TestAutoRemediation {
 
         PscTestUtils.createTopicAndVerify(sharedKafkaTestResource, topic1, partitions1);
         PscTestUtils.createTopicAndVerify(sharedKafkaTestResource, topic2, partitions2);
+        PscMetricsUtil.cleanup(PscMetricRegistryManager.getInstance());
     }
 
     /**
@@ -260,7 +262,7 @@ public class TestAutoRemediation {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testAutoResolutionConfiguration() throws ConfigurationException, ConsumerException, ProducerException {
+    public void testAutoResolutionConfiguration() throws ConfigurationException, ConsumerException, ProducerException, IOException {
         // default configs
         PscConsumer<byte[], byte[]> pscConsumer = new PscConsumer<>(pscConsumerConfiguration);
         PscConfigurationInternal pscConfigurationInternal = PscConsumerUtils.getPscConfigurationInternal(pscConsumer);

@@ -6,6 +6,8 @@ import com.pinterest.psc.discovery.ServiceDiscoveryProvider;
 import com.pinterest.psc.logging.PscLogger;
 import org.apache.commons.configuration2.PropertiesConfiguration;
 
+import java.io.Serializable;
+
 /**
  * Various configurations for PSC client are defined here. There are a few configuration categories:
  * <ol>
@@ -46,7 +48,7 @@ import org.apache.commons.configuration2.PropertiesConfiguration;
  * {@value PSC_CONSUMER_INTERCEPTORS_RAW_CLASSES}. Therefore, to avoid misconfiguration of any single-value config do
  * not use a comma in the config value.
  */
-public class PscConfiguration extends PropertiesConfiguration {
+public class PscConfiguration extends PropertiesConfiguration implements Serializable {
     private static final PscLogger logger = PscLogger.getLogger(PscConfiguration.class);
 
     public final static String PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST = "earliest";
@@ -90,14 +92,13 @@ public class PscConfiguration extends PropertiesConfiguration {
     public final static String PCS_AUTO_RESOLUTION_RETRY_COUNT = "psc.auto.resolution.retry.count";
 
     /**
-     * Whether to proactively reset consumer or producer based on approaching SSL certificate expiry
+     * Whether to proactively reset consumer or producer based on approaching SSL certificate expiry.
+     *
+     * NOTE: This config is incompatible with psc.producer.acks=-1 (exactly once semantic) due to the fact that
+     * resetting the producer will cause the producer to lose track of the in-progress transactions.
+     * A fix is on the way.
      */
     public final static String PSC_PROACTIVE_SSL_RESET_ENABLED = "psc.proactive.ssl.reset.enabled";
-
-    private final static String PSC_CLIENT_TYPE = "psc.client.type";
-    public final static String PSC_CLIENT_TYPE_CONSUMER = "consumer";
-    public final static String PSC_CLIENT_TYPE_PRODUCER = "producer";
-    private final static String[] PSC_VALID_CLIENT_TYPES = {PSC_CLIENT_TYPE_CONSUMER, PSC_CLIENT_TYPE_PRODUCER};
 
 
     // **********************
@@ -123,6 +124,7 @@ public class PscConfiguration extends PropertiesConfiguration {
     protected static final String POLL_MESSAGES_MAX = "poll.messages.max";
     protected static final String POLL_TIMEOUT_MS = "poll.timeout.ms";
     protected static final String VALUE_DESERIALIZER = "value.deserializer";
+    protected static final String CONSUMER_CLIENT_RACK = "client.rack";
 
     // security-related configs
     protected static final String SECURITY_PROTOCOL = "security.protocol";
@@ -272,25 +274,12 @@ public class PscConfiguration extends PropertiesConfiguration {
      */
     public static final String PSC_CONSUMER_VALUE_DESERIALIZER = PSC_CONSUMER + "." + VALUE_DESERIALIZER;
 
-    /*
-    public static final String PSC_CONSUMER_SECURITY_PROTOCOL = PSC_CONSUMER + "." + SECURITY_PROTOCOL;
-
-    public static final String PSC_CONSUMER_SSL_ENABLED_PROTOCOLS = PSC_CONSUMER + "." + SSL_ENABLED_PROTOCOLS;
-
-    public static final String PSC_CONSUMER_SSL_KEY_PASSWORD = PSC_CONSUMER + "." + SSL_KEY_PASSWORD;
-
-    public static final String PSC_CONSUMER_SSL_KEYSTORE_LOCATION = PSC_CONSUMER + "." + SSL_KEYSTORE_LOCATION;
-
-    public static final String PSC_CONSUMER_SSL_KEYSTORE_PASSWORD = PSC_CONSUMER + "." + SSL_KEYSTORE_PASSWORD;
-
-    public static final String PSC_CONSUMER_SSL_KEYSTORE_TYPE = PSC_CONSUMER + "." + SSL_KEYSTORE_TYPE;
-
-    public static final String PSC_CONSUMER_SSL_TRUSTSTORE_LOCATION = PSC_CONSUMER + "." + SSL_TRUSTSTORE_LOCATION;
-
-    public static final String PSC_CONSUMER_SSL_TRUSTSTORE_PASSWORD = PSC_CONSUMER + "." + SSL_TRUSTSTORE_PASSWORD;
-
-    public static final String PSC_CONSUMER_SSL_TRUSTSTORE_TYPE = PSC_CONSUMER + "." + SSL_TRUSTSTORE_TYPE;
-    */
+    /**
+     * The consumer configuration {@value PSC_CONSUMER_CLIENT_RACK} expects a string that identifies the rack where the
+     * consumer client is located. Whether this is used or not depends on the backend client library. Defaults to empty
+     * string so the backend client default value is used.
+     */
+    public static final String PSC_CONSUMER_CLIENT_RACK = PSC_CONSUMER + "." + CONSUMER_CLIENT_RACK;
 
 
     // **********************
@@ -310,6 +299,7 @@ public class PscConfiguration extends PropertiesConfiguration {
     protected static final String TRANSACTIONAL_ID = "transactional.id";
     protected static final String TRANSACTION_TIMEOUT_MS = "transaction.timeout.ms";
     protected static final String RETRIES = "retries";
+    protected static final String PRODUCER_CLIENT_RACK = "client.rack";
 
     /**
      * The producer configuration {@value PSC_PRODUCER_ACKS} expects the number of acknowledgements required by the
@@ -457,30 +447,21 @@ public class PscConfiguration extends PropertiesConfiguration {
      */
     public static final String PSC_PRODUCER_VALUE_SERIALIZER = PSC_PRODUCER + "." + VALUE_SERIALIZER;
 
-    /*
-     * The producer configuration {@value PSC_PRODUCER_SECURITY_PROTOCOL} expects the security protocol for producer
-     * writes. Defaults to <code>PLAINTEXT</code>.
+    /**
+     * The producer configuration {@value PSC_PRODUCER_CLIENT_RACK} expects a string that identifies the
+     * rack for this producer. This configuration is passed-through to the backend producer client instance as
+     * <code>client.rack</code>. Whether or not this configuration is used by the backend producer client is
+     * dependent on the backend client library. Defaults to empty string so the backend client default value is used.
      */
-    /*
-    public static final String PSC_PRODUCER_SECURITY_PROTOCOL = PSC_PRODUCER + "." + SECURITY_PROTOCOL;
+    public static final String PSC_PRODUCER_CLIENT_RACK = PSC_PRODUCER + "." + PRODUCER_CLIENT_RACK;
 
-    public static final String PSC_PRODUCER_SSL_ENABLED_PROTOCOLS = PSC_PRODUCER + "." + SSL_ENABLED_PROTOCOLS;
 
-    public static final String PSC_PRODUCER_SSL_KEY_PASSWORD = PSC_PRODUCER + "." + SSL_KEY_PASSWORD;
+    // **********************
+    // MetadataClient Configuration
+    // **********************
 
-    public static final String PSC_PRODUCER_SSL_KEYSTORE_LOCATION = PSC_PRODUCER + "." + SSL_KEYSTORE_LOCATION;
-
-    public static final String PSC_PRODUCER_SSL_KEYSTORE_PASSWORD = PSC_PRODUCER + "." + SSL_KEYSTORE_PASSWORD;
-
-    public static final String PSC_PRODUCER_SSL_KEYSTORE_TYPE = PSC_PRODUCER + "." + SSL_KEYSTORE_TYPE;
-
-    public static final String PSC_PRODUCER_SSL_TRUSTSTORE_LOCATION = PSC_PRODUCER + "." + SSL_TRUSTSTORE_LOCATION;
-
-    public static final String PSC_PRODUCER_SSL_TRUSTSTORE_PASSWORD = PSC_PRODUCER + "." + SSL_TRUSTSTORE_PASSWORD;
-
-    public static final String PSC_PRODUCER_SSL_TRUSTSTORE_TYPE = PSC_PRODUCER + "." + SSL_TRUSTSTORE_TYPE;
-    */
-
+    protected static final String PSC_METADATA = "psc.metadata";
+    public static final String PSC_METADATA_CLIENT_ID = PSC_METADATA + "." + CLIENT_ID;
 
     // **********************
     // Metrics Configuration
@@ -564,6 +545,7 @@ public class PscConfiguration extends PropertiesConfiguration {
      * is provided in the file <code>discovery.json.example</code>.
      */
     public static final String PSC_DISCOVERY_FALLBACK_FILE = PSC_DISCOVERY + "." + FALLBACK_FILE;
+    private static final long serialVersionUID = 5394130837651422684L;
 
     public PscConfiguration() {
         super();

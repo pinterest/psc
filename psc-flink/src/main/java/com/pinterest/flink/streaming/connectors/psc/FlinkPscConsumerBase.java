@@ -40,6 +40,7 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
+import org.apache.flink.api.common.serialization.RuntimeContextInitializationContextAdapters;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.state.OperatorStateStore;
@@ -80,6 +81,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
@@ -278,6 +280,8 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
 
     protected transient PscConfigurationInternal pscConfigurationInternal;
 
+    private transient AtomicBoolean pscMetricsInitialized;
+
     // ------------------------------------------------------------------------
 
     /**
@@ -308,6 +312,7 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
         this.useMetrics = useMetrics;
 
         initializePscConfigurationInternal();
+        initializePscMetrics();
     }
 
     /**
@@ -748,7 +753,9 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
                         getRuntimeContext().getIndexOfThisSubtask());
             }
         }
-        this.deserializer.open(() -> getRuntimeContext().getMetricGroup().addGroup("user"));
+        this.deserializer.open(RuntimeContextInitializationContextAdapters.deserializationAdapter(this.getRuntimeContext(), (metricGroup) -> {
+            return metricGroup.addGroup("user");
+        }));
     }
 
     @Override
@@ -809,8 +816,10 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
         //                 thread running the main fetcher loop
         //  2) Old state - partition discovery is disabled and only the main fetcher loop is executed
         if (discoveryIntervalMillis == PARTITION_DISCOVERY_DISABLED) {
+            LOG.info("Starting FlinkPscConsumerBase without partition discovery.");
             pscFetcher.runFetchLoop();
         } else {
+            LOG.info("Starting FlinkPscConsumerBase with partition discovery interval={}ms.", discoveryIntervalMillis);
             runWithPartitionDiscovery();
         }
     }
@@ -864,6 +873,8 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
 
                     // no need to add the discovered partitions if we were closed during the meantime
                     if (running && !discoveredPartitions.isEmpty()) {
+                        LOG.info("Consumer subtask {} discovered {} new partitions: {}",
+                                getRuntimeContext().getIndexOfThisSubtask(), discoveredPartitions.size(), discoveredPartitions);
                         pscFetcher.addDiscoveredPartitions(discoveredPartitions);
                     }
 
@@ -943,11 +954,18 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
     }
 
     protected void initializePscMetrics() {
+
+        if (pscMetricsInitialized == null)
+            pscMetricsInitialized = new AtomicBoolean(false);
+
+        if (pscMetricsInitialized.compareAndSet(false, true)) {
+            PscMetricRegistryManager.getInstance().initialize(pscConfigurationInternal);
+        }
     }
 
     protected void initializePscConfigurationInternal() {
         if (pscConfigurationInternal == null) {
-            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(properties, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(properties, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         }
     }
 
