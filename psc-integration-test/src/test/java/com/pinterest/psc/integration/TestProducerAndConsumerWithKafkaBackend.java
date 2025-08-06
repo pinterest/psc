@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -125,7 +126,7 @@ public class TestProducerAndConsumerWithKafkaBackend {
      */
     @Deprecated
     @Timeout(TEST_TIMEOUT_SECONDS)
-    public void testHeaderTimestampDeprecated() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException {
+    public void testHeaderTimestampDeprecated() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException, IOException {
         Configuration producerConfiguration = new PropertiesConfiguration();
         producerConfiguration.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, baseProducerClientId + "-" + UUID.randomUUID());
@@ -204,7 +205,7 @@ public class TestProducerAndConsumerWithKafkaBackend {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testHeaderTimestamp() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException {
+    public void testHeaderTimestamp() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException, IOException {
         int messageCount = 100;
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
@@ -264,7 +265,7 @@ public class TestProducerAndConsumerWithKafkaBackend {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testSerdeMismatch() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException {
+    public void testSerdeMismatch() throws ProducerException, ConfigurationException, InterruptedException, ConsumerException, IOException {
         int messageCount = 1;
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
@@ -317,7 +318,7 @@ public class TestProducerAndConsumerWithKafkaBackend {
      */
     @Timeout(TEST_TIMEOUT_SECONDS)
     @Test
-    public void testKeyValueSize() throws ConfigurationException, ProducerException, ExecutionException, InterruptedException, ConsumerException {
+    public void testKeyValueSize() throws ConfigurationException, ProducerException, ExecutionException, InterruptedException, ConsumerException, IOException {
         String key1 = "key1";
         String value1 = "value1";
 

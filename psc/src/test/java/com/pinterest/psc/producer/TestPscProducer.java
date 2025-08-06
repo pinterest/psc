@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.IOException;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,7 +49,7 @@ public class TestPscProducer extends TestPscProducerBase {
 
     @Test
     @SuppressWarnings("unchecked")
-    void testSingleTopicSend() throws ProducerException, ConfigurationException, TopicUriSyntaxException {
+    void testSingleTopicSend() throws ProducerException, ConfigurationException, TopicUriSyntaxException, IOException {
         String topicUriString = testTopics.get(0);
         TopicUri topicUri1 = TopicUri.validate(topicUriString);
         TopicUri testTopicUri1 = TestTopicUri.validate(topicUri1);
@@ -78,7 +79,7 @@ public class TestPscProducer extends TestPscProducerBase {
 
     @Test
     @SuppressWarnings("unchecked")
-    void testMultipleTopicsSend() throws ProducerException, ConfigurationException, TopicUriSyntaxException {
+    void testMultipleTopicsSend() throws ProducerException, ConfigurationException, TopicUriSyntaxException, IOException {
         TopicUri topicUri0 = TopicUri.validate(testTopics.get(0));
         TopicUri testTopicUri0 = TestTopicUri.validate(topicUri0);
         TopicUri topicUri1 = TopicUri.validate(testTopics.get(1));
@@ -116,7 +117,7 @@ public class TestPscProducer extends TestPscProducerBase {
 
     @Test
     @SuppressWarnings("unchecked")
-    void testBadBackend() throws TopicUriSyntaxException, ProducerException {
+    void testBadBackend() throws TopicUriSyntaxException, ProducerException, IOException {
         String topicUriAsString = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":badbackend:env:cloud_region::cluster:topic";
         TopicUri topicUri = TopicUri.validate(topicUriAsString);
         Exception e = assertThrows(ProducerException.class,
@@ -129,7 +130,7 @@ public class TestPscProducer extends TestPscProducerBase {
 
     @Test
     @SuppressWarnings("unchecked")
-    void testMultipleBackendProducers() throws TopicUriSyntaxException, ProducerException, ConfigurationException {
+    void testMultipleBackendProducers() throws TopicUriSyntaxException, ProducerException, ConfigurationException, IOException {
         TopicUri testBaseUri = TopicUri.validate(testTopic1);
         TopicUri testTopicUri = TestTopicUri.validate(testBaseUri);
         TopicUri kafkaBaseUri = TopicUri.validate(kafkaTopic1);
@@ -166,7 +167,7 @@ public class TestPscProducer extends TestPscProducerBase {
 
     @Test
     @SuppressWarnings("unchecked")
-    void testClosedProducerErrorScenario() throws TopicUriSyntaxException, ProducerException, ConfigurationException {
+    void testClosedProducerErrorScenario() throws TopicUriSyntaxException, ProducerException, ConfigurationException, IOException {
         String topicUriString = testTopics.get(0);
         TopicUri topicUri1 = TopicUri.validate(topicUriString);
         TopicUri testTopicUri1 = TestTopicUri.validate(topicUri1);

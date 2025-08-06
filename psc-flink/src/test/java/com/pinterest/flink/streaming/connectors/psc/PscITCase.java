@@ -171,12 +171,12 @@ public class PscITCase extends PscConsumerTestBaseWithKafkaAsPubSub {
 
     @Test(timeout = 60000)
     public void testCommitOffsetsToKafka() throws Exception {
-        runCommitOffsetsToKafka();
+        runCommitOffsetsToPsc();
     }
 
     @Test(timeout = 60000)
     public void testAutoOffsetRetrievalAndCommitToKafka() throws Exception {
-        runAutoOffsetRetrievalAndCommitToKafka();
+        runAutoOffsetRetrievalAndCommitToPsc();
     }
 
     @Test(timeout = 60000)

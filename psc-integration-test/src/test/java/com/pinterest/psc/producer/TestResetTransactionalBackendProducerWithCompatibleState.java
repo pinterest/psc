@@ -90,7 +90,7 @@ public class TestResetTransactionalBackendProducerWithCompatibleState {
     @Timeout(TEST_TIMEOUT_SECONDS)
     @ParameterizedTest
     @EnumSource(value = PscProducer.TransactionalState.class, names = {"NON_TRANSACTIONAL", "INIT_AND_BEGUN", "READY"})
-    public void testResetBackendProducerOfTransactionalPscProducerWithACompatibleState(PscProducer.TransactionalState transactionalState) throws ConfigurationException, ProducerException, ExecutionException, InterruptedException {
+    public void testResetBackendProducerOfTransactionalPscProducerWithACompatibleState(PscProducer.TransactionalState transactionalState) throws ConfigurationException, ProducerException, ExecutionException, InterruptedException, IOException {
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, StringSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, StringSerializer.class.getName());
         producerConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_TRANSACTIONAL_ID, "transactional-psc-producer");

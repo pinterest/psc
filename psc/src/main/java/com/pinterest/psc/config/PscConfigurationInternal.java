@@ -37,7 +37,8 @@ public class PscConfigurationInternal {
     private final static String PSC_CLIENT_TYPE = "psc.client.type";
     public final static String PSC_CLIENT_TYPE_CONSUMER = "consumer";
     public final static String PSC_CLIENT_TYPE_PRODUCER = "producer";
-    private final static String[] PSC_VALID_CLIENT_TYPES = {PSC_CLIENT_TYPE_CONSUMER, PSC_CLIENT_TYPE_PRODUCER};
+    public final static String PSC_CLIENT_TYPE_METADATA = "metadata";
+    private final static String[] PSC_VALID_CLIENT_TYPES = {PSC_CLIENT_TYPE_CONSUMER, PSC_CLIENT_TYPE_PRODUCER, PSC_CLIENT_TYPE_METADATA};
 
     private PscConfiguration pscConfiguration;
     private Deserializer keyDeserializer, valueDeserializer;
@@ -139,6 +140,9 @@ public class PscConfigurationInternal {
                 break;
             case PSC_CLIENT_TYPE_PRODUCER:
                 validateProducerConfiguration(isLenient, isLogConfiguration);
+                break;
+            case PSC_CLIENT_TYPE_METADATA:
+                validateMetadataClientConfiguration(isLenient, isLogConfiguration);
                 break;
             default:
                 throw new ConfigurationException("Valid client type expected: " + String.join(", ", PSC_VALID_CLIENT_TYPES));
@@ -483,6 +487,24 @@ public class PscConfigurationInternal {
         return configuration.get(expectedType, configKey);
     }
 
+    private void validateMetadataClientConfiguration(boolean isLenient, boolean isLogConfiguration) throws ConfigurationException {
+        PscConfiguration metadataConfiguration = new PscConfiguration();
+        metadataConfiguration.copy(pscConfiguration.subset(PscConfiguration.PSC_METADATA));
+        Map<String, Exception> invalidConfigs = new HashMap<>();
+        verifyConfigHasValue(metadataConfiguration, PscConfiguration.CLIENT_ID, String.class, invalidConfigs);
+        if (isLogConfiguration)
+            logConfiguration();
+
+        if (invalidConfigs.isEmpty() || isLenient)
+            return;
+
+        StringBuilder stringBuilder = new StringBuilder();
+        invalidConfigs.forEach((error, exception) ->
+                stringBuilder.append(String.format("\t%s: %s\n", error, exception == null ? "" : exception.getMessage()))
+        );
+        throw new ConfigurationException("Invalid metadataClient configuration\n" + stringBuilder.toString());
+    }
+
     private void validateProducerConfiguration(boolean isLenient, boolean isLogConfiguration) throws ConfigurationException {
         PscConfiguration producerConfiguration = new PscConfiguration();
         producerConfiguration.copy(pscConfiguration.subset(PscConfiguration.PSC_PRODUCER));
@@ -748,5 +770,9 @@ public class PscConfigurationInternal {
 
     public MetricsReporterConfiguration getMetricsReporterConfiguration() {
         return metricsReporterConfiguration;
+    }
+
+    public String getMetadataClientId() {
+        return pscConfiguration.getString(PscConfiguration.PSC_METADATA_CLIENT_ID);
     }
 }

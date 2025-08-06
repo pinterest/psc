@@ -17,24 +17,29 @@
 
 package com.pinterest.flink.streaming.connectors.psc;
 
+import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscDeserializationSchemaWrapper;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import kafka.server.KafkaServer;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.networking.NetworkFailuresProxy;
+import org.apache.flink.connector.kafka.source.KafkaSourceBuilder;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.operators.StreamSink;
 import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
+import org.apache.flink.streaming.connectors.kafka.KafkaDeserializationSchema;
+import org.apache.flink.streaming.connectors.kafka.internals.KafkaDeserializationSchemaWrapper;
 
-import java.util.ArrayList;
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -46,6 +51,18 @@ import java.util.Properties;
  */
 public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     public static String PSC_TEST_TOPIC_URI_PREFIX = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
+    public static String PSC_TEST_TOPIC_URI_SECURE_PREFIX = "secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
+    public static TopicUri PSC_TEST_CLUSTER_URI;
+    public static TopicUri PSC_TEST_CLUSTER_URI_SECURE;
+
+    static {
+        try {
+            PSC_TEST_CLUSTER_URI = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_PREFIX);
+            PSC_TEST_CLUSTER_URI_SECURE = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_SECURE_PREFIX);
+        } catch (TopicUriSyntaxException e) {
+            throw new RuntimeException("Unable to validate clusterUri", e);
+        }
+    }
 
     /**
      * Configuration class for {@link PscTestEnvironmentWithKafkaAsPubSub}.
@@ -54,7 +71,6 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
         private int kafkaServersNumber = 1;
         private Properties kafkaServerProperties = null;
         private boolean secureMode = false;
-        private boolean hideKafkaBehindProxy = false;
 
         /**
          * Please use {@link PscTestEnvironmentWithKafkaAsPubSub#createConfig()} method.
@@ -89,19 +105,12 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
             return this;
         }
 
-        public boolean isHideKafkaBehindProxy() {
-            return hideKafkaBehindProxy;
-        }
-
         public Config setHideKafkaBehindProxy(boolean hideKafkaBehindProxy) {
-            this.hideKafkaBehindProxy = hideKafkaBehindProxy;
             return this;
         }
     }
 
     protected static final String KAFKA_HOST = "localhost";
-
-    protected final List<NetworkFailuresProxy> networkFailuresProxies = new ArrayList<>();
 
     public static Config createConfig() {
         return new Config();
@@ -110,17 +119,14 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     public abstract void prepare(Config config) throws Exception;
 
     public void shutdown() throws Exception {
-        for (NetworkFailuresProxy proxy : networkFailuresProxies) {
-            proxy.close();
-        }
     }
 
     public abstract void deleteTestTopic(String topic);
 
-    public abstract void createTestTopic(String topic, int numberOfPartitions, int replicationFactor, Properties properties);
+    public abstract void createTestTopic(String topicUriString, int numberOfPartitions, int replicationFactor, Properties properties);
 
-    public void createTestTopic(String topic, int numberOfPartitions, int replicationFactor) {
-        this.createTestTopic(topic, numberOfPartitions, replicationFactor, new Properties());
+    public void createTestTopic(String topicUriString, int numberOfPartitions, int replicationFactor) {
+        this.createTestTopic(topicUriString, numberOfPartitions, replicationFactor, new Properties());
     }
 
     public abstract Properties getStandardKafkaProperties();
@@ -165,6 +171,25 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     }
 
     public abstract <T> FlinkPscConsumerBase<T> getPscConsumer(List<String> topicUris, PscDeserializationSchema<T> readSchema, Properties configuration);
+
+    public <T> PscSourceBuilder<T> getSourceBuilder(
+            List<String> topics, DeserializationSchema<T> deserializationSchema, Properties props) {
+        return getSourceBuilder(
+                topics, new PscDeserializationSchemaWrapper<T>(deserializationSchema), props);
+    }
+
+    public <T> PscSourceBuilder<T> getSourceBuilder(
+            String topic, PscDeserializationSchema<T> readSchema, Properties props) {
+        return getSourceBuilder(Collections.singletonList(topic), readSchema, props);
+    }
+
+    public <T> PscSourceBuilder<T> getSourceBuilder(
+            String topic, DeserializationSchema<T> deserializationSchema, Properties props) {
+        return getSourceBuilder(Collections.singletonList(topic), deserializationSchema, props);
+    }
+
+    public abstract <T> PscSourceBuilder<T> getSourceBuilder(
+            List<String> topics, PscDeserializationSchema<T> readSchema, Properties props);
 
     public abstract <K, V> Collection<PscConsumerMessage<K, V>> getAllMessagesFromTopicUri(
             Properties configuration,
@@ -223,24 +248,6 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
 
     public abstract boolean isSecureRunSupported();
 
-    public void blockProxyTraffic() {
-        for (NetworkFailuresProxy proxy : networkFailuresProxies) {
-            proxy.blockTraffic();
-        }
-    }
-
-    public void unblockProxyTraffic() {
-        for (NetworkFailuresProxy proxy : networkFailuresProxies) {
-            proxy.unblockTraffic();
-        }
-    }
-
-    protected NetworkFailuresProxy createProxy(String remoteHost, int remotePort) {
-        NetworkFailuresProxy proxy = new NetworkFailuresProxy(0, remoteHost, remotePort);
-        networkFailuresProxies.add(proxy);
-        return proxy;
-    }
-
     protected void maybePrintDanglingThreadStacktrace(String threadNameKeyword) {
         for (Map.Entry<Thread, StackTraceElement[]> threadEntry : Thread.getAllStackTraces().entrySet()) {
             if (threadEntry.getKey().getName().contains(threadNameKeyword)) {
@@ -255,5 +262,5 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     public abstract void produceToKafka(String topicUri,
                                         int numMessagesPerPartition,
                                         int numPartitions,
-                                        String basePayload) throws ProducerException, ConfigurationException;
+                                        String basePayload) throws ProducerException, ConfigurationException, IOException;
 }
