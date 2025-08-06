@@ -89,7 +89,8 @@ public class AbstractFetcherTest {
     @Test
     public void testSkipCorruptedRecord() throws Exception {
         Map<PscTopicUriPartition, Long> originalPartitions = new HashMap<>();
-        originalPartitions.put(new PscTopicUriPartition(TOPIC_URI, 1), PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
+        PscTopicUriPartition ptup = new PscTopicUriPartition(TOPIC_URI, 1);
+        originalPartitions.put(ptup, PscTopicUriPartitionStateSentinel.LATEST_OFFSET);
 
         TestSourceContext<Long> sourceContext = new TestSourceContext<>();
 
@@ -100,7 +101,7 @@ public class AbstractFetcherTest {
                 new TestProcessingTimeService(),
                 0);
 
-        final PscTopicUriPartitionState<Long, Object> partitionStateHolder = fetcher.subscribedPartitionStates().get(0);
+        final PscTopicUriPartitionState<Long, Object> partitionStateHolder = fetcher.subscribedPartitionStates().get(ptup);
 
         emitRecord(fetcher, 1L, partitionStateHolder, 1L);
         emitRecord(fetcher, 2L, partitionStateHolder, 2L);
@@ -211,7 +212,7 @@ public class AbstractFetcherTest {
         @Override
         public void runFetchLoop() throws Exception {
             if (fetchLoopWaitLatch != null) {
-                for (PscTopicUriPartitionState<?, ?> ignored : subscribedPartitionStates()) {
+                for (PscTopicUriPartitionState<?, ?> ignored : subscribedPartitionStates().values()) {
                     fetchLoopWaitLatch.trigger();
                     stateIterationBlockLatch.await();
                 }

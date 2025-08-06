@@ -20,6 +20,7 @@ package com.pinterest.flink.streaming.connectors.psc.internals;
 
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUriPartition;
+import com.pinterest.psc.common.event.PscEvent;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.config.PscConfigurationUtils;
@@ -30,9 +31,13 @@ import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.consumer.WakeupException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
+import com.pinterest.psc.interceptor.TypePreservingInterceptor;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Queue;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -190,6 +195,8 @@ public class PscConsumerThread<T> extends Thread {
         this.running = true;
         this.hasInitializedMetrics = false;
         this.pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(pscProperties, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+
+        initializeInterceptor();
     }
 
     // ------------------------------------------------------------------------
@@ -214,17 +221,16 @@ public class PscConsumerThread<T> extends Thread {
             return;
         }
 
+        // The latest bulk of records. May carry across the loop if the thread is woken up
+        // from blocking on the handover
+        PscConsumerPollMessageIterator<byte[], byte[]> records = null;
+
         // from here on, the consumer is guaranteed to be closed properly
         try {
             // early exit check
             if (!running) {
                 return;
             }
-
-            // the latest bulk of records. May carry across the loop if the thread is woken
-            // up
-            // from blocking on the handover
-            PscConsumerPollMessageIterator<byte[], byte[]> records = null;
 
             // reused variable to hold found unassigned new partitions.
             // found partitions are not carried across loops using this variable;
@@ -294,6 +300,10 @@ public class PscConsumerThread<T> extends Thread {
                     handover.produce(records);
                     records = null;
                 } catch (Handover.WakeupException e) {
+                    Queue<PscEvent> events = handover.getEventQueue();
+                    while (!events.isEmpty()) {
+                        consumer.onEvent(events.poll());
+                    }
                     // fall through the loop
                 }
             }
@@ -307,6 +317,14 @@ public class PscConsumerThread<T> extends Thread {
         } finally {
             // make sure the handover is closed if it is not already closed or has an error
             handover.close();
+
+            if (records != null) {
+                try {
+                    records.close();
+                } catch (IOException ioe) {
+                    // pass through; best effort close
+                }
+            }
 
             // make sure the PscConsumer is closed
             try {
@@ -342,6 +360,16 @@ public class PscConsumerThread<T> extends Thread {
                 subtaskMetricGroup.gauge(metric.getKey().name(), new PscMetricWrapper(metric.getValue()));
               }
             }
+        }
+    }
+
+    private void initializeInterceptor() {
+        TypePreservingInterceptor<byte[], byte[]> eventInterceptor = new PscFlinkConsumerEventInterceptor<>(handover);
+        Object interceptors = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_INTERCEPTORS_RAW_CLASSES);
+        if (interceptors == null) {
+            pscProperties.put(PscConfiguration.PSC_CONSUMER_INTERCEPTORS_RAW_CLASSES, eventInterceptor);
+        } else {
+            pscProperties.put(PscConfiguration.PSC_CONSUMER_INTERCEPTORS_RAW_CLASSES, Arrays.asList(interceptors, eventInterceptor));
         }
     }
 

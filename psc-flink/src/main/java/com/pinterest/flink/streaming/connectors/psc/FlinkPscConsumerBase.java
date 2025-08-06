@@ -752,11 +752,10 @@ public abstract class FlinkPscConsumerBase<T> extends RichParallelSourceFunction
                 LOG.info("Consumer subtask {} initially has no partitions to read from.",
                         getRuntimeContext().getIndexOfThisSubtask());
             }
-
-            this.deserializer.open(RuntimeContextInitializationContextAdapters.deserializationAdapter(this.getRuntimeContext(), (metricGroup) -> {
-                return metricGroup.addGroup("user");
-            }));
         }
+        this.deserializer.open(RuntimeContextInitializationContextAdapters.deserializationAdapter(this.getRuntimeContext(), (metricGroup) -> {
+            return metricGroup.addGroup("user");
+        }));
     }
 
     @Override
