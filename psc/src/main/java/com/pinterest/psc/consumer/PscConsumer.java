@@ -1866,6 +1866,14 @@ public class PscConsumer<K, V> implements AutoCloseable {
         return topicUriPartition;
     }
 
+    private Set<TopicUriPartition> validateTopicUriPartitions(Set<TopicUriPartition> topicUriPartitions)
+            throws ConsumerException {
+        for (TopicUriPartition tup: topicUriPartitions) {
+            tup = validateTopicUriPartition(tup);
+        }
+        return topicUriPartitions;
+    }
+
     private Set<TopicUriPartition> validateTopicUriPartitions(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
         if (topicUriPartitions == null)
             throw new ConsumerException("Null topic URI partitions was passed to the consumer API");

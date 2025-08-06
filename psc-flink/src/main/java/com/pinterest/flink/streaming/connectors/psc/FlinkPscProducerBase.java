@@ -35,6 +35,7 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.RuntimeContext;
+import org.apache.flink.api.common.serialization.RuntimeContextInitializationContextAdapters;
 import org.apache.flink.api.java.ClosureCleaner;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
@@ -46,6 +47,7 @@ import com.pinterest.flink.streaming.connectors.psc.internals.KeyedSerialization
 import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscMetricWrapper;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
+import org.apache.flink.streaming.connectors.kafka.internals.metrics.KafkaMetricWrapper;
 import org.apache.flink.util.PropertiesUtil;
 import org.apache.flink.util.SerializableObject;
 import org.slf4j.Logger;
@@ -55,6 +57,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -227,7 +230,9 @@ public abstract class FlinkPscProducerBase<IN> extends RichSinkFunction<IN> impl
     public void open(org.apache.flink.configuration.Configuration configuration) throws Exception {
         if (schema instanceof KeyedSerializationSchemaWrapper) {
             ((KeyedSerializationSchemaWrapper<IN>) schema).getSerializationSchema()
-                    .open(() -> getRuntimeContext().getMetricGroup().addGroup("user"));
+                .open(RuntimeContextInitializationContextAdapters.serializationAdapter(this.getRuntimeContext(), (metricGroup) -> {
+                  return metricGroup.addGroup("user");
+                }));
         }
         pscProducer = getPscProducer(this.producerConfig);
 
@@ -239,6 +244,18 @@ public abstract class FlinkPscProducerBase<IN> extends RichSinkFunction<IN> impl
 
         LOG.info("Starting FlinkKafkaProducer ({}/{}) to produce into default topic {}",
                 ctx.getIndexOfThisSubtask() + 1, ctx.getNumberOfParallelSubtasks(), defaultTopicUri);
+
+        if (!Boolean.parseBoolean(this.producerConfig.getProperty("flink.disable-metrics", "false"))) {
+            Map<MetricName, ? extends Metric> metrics = this.pscProducer.metrics();
+            if (metrics == null) {
+                LOG.info("Producer implementation does not support metrics");
+            } else {
+                MetricGroup pscMetricGroup = this.getRuntimeContext().getMetricGroup().addGroup("PscProducer");
+                for (Map.Entry<MetricName, ? extends Metric> metric: metrics.entrySet()) {
+                    pscMetricGroup.gauge((metric.getKey()).name(), new PscMetricWrapper(metric.getValue()));
+                }
+            }
+        }
 
         if (flushOnCheckpoint && !((StreamingRuntimeContext) this.getRuntimeContext()).isCheckpointingEnabled()) {
             LOG.warn("Flushing on checkpoint is enabled, but checkpointing is not enabled. Disabling flushing.");

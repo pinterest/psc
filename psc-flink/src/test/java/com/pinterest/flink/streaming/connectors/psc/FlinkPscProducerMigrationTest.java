@@ -19,11 +19,11 @@
 package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.psc.config.PscConfiguration;
+import org.apache.flink.FlinkVersion;
 import org.apache.flink.api.common.typeutils.base.IntSerializer;
 import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.streaming.api.operators.StreamSink;
 import org.apache.flink.streaming.util.OneInputStreamOperatorTestHarness;
-import org.apache.flink.testutils.migration.MigrationVersion;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
@@ -41,13 +41,18 @@ import java.util.Properties;
 @RunWith(Parameterized.class)
 public class FlinkPscProducerMigrationTest extends PscMigrationTestBase {
     @Parameterized.Parameters(name = "Migration Savepoint: {0}")
-    public static Collection<MigrationVersion> parameters() {
+    public static Collection<FlinkVersion> parameters() {
         return Arrays.asList(
                 // Flink PSC connector support starts from Flink 1.11
-                MigrationVersion.v1_11);
+                FlinkVersion.v1_11,
+                FlinkVersion.v1_12,
+                FlinkVersion.v1_13,
+                FlinkVersion.v1_14,
+                FlinkVersion.v1_15
+        );
     }
 
-    public FlinkPscProducerMigrationTest(MigrationVersion testMigrateVersion) {
+    public FlinkPscProducerMigrationTest(FlinkVersion testMigrateVersion) {
         super(testMigrateVersion);
     }
 

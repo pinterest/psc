@@ -30,8 +30,8 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
-import org.apache.flink.shaded.guava18.com.google.common.collect.ImmutableMap;
-import org.apache.flink.shaded.guava18.com.google.common.collect.Iterables;
+import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableMap;
+import org.apache.flink.shaded.guava30.com.google.common.collect.Iterables;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
@@ -61,6 +61,7 @@ import static org.apache.flink.streaming.api.TimeCharacteristic.ProcessingTime;
 import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PARTITION_NUMBER;
 import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PRODUCER_PARALLELISM;
 import static org.apache.flink.test.util.TestUtils.tryExecute;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 /**
@@ -222,9 +223,9 @@ public class PscShuffleITCase extends PscShuffleTestBase {
                 PscShuffleElement element = deserializer.deserialize(consumerRecord);
                 if (element.isRecord()) {
                     PscShuffleRecord<Tuple3<Integer, Long, Integer>> record = element.asRecord();
-                    Assert.assertEquals(record.getValue().f1.longValue(),
+                    assertEquals(record.getValue().f1.longValue(),
                             INIT_TIMESTAMP + record.getValue().f0);
-                    Assert.assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
+                    assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
                 } else if (element.isWatermark()) {
                     PscShuffleWatermark watermark = element.asWatermark();
                     watermarks.computeIfAbsent(watermark.getSubtask(), k -> new ArrayList<>());
@@ -249,13 +250,13 @@ public class PscShuffleITCase extends PscShuffleTestBase {
             // Besides, watermarks from the same producer sub task should keep in order.
             for (List<PscShuffleWatermark> subTaskWatermarks : watermarks.values()) {
                 int index = 0;
-                Assert.assertEquals(numElementsPerProducer + 1, subTaskWatermarks.size());
+                assertEquals(numElementsPerProducer + 1, subTaskWatermarks.size());
                 for (PscShuffleWatermark watermark : subTaskWatermarks) {
                     if (index == numElementsPerProducer) {
                         // the last element is the watermark that signifies end-of-event-time
-                        Assert.assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
+                        assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
                     } else {
-                        Assert.assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + index++);
+                        assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + index++);
                     }
                 }
             }
@@ -375,8 +376,9 @@ public class PscShuffleITCase extends PscShuffleTestBase {
 
         switch (timeCharacteristic) {
             case ProcessingTime:
-                // NonTimestampContext, no watermark
-                Assert.assertEquals(records.size(), numElementsPerProducer);
+                // NonTimestampContext, no intermediate watermarks, and one end-of-event-time
+                // watermark
+                assertEquals(records.size(), numElementsPerProducer + 1);
                 break;
             case IngestionTime:
                 // IngestionTime uses AutomaticWatermarkContext and it emits a watermark after
@@ -388,7 +390,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
                 // ManualWatermarkContext
                 // `numElementsPerProducer` records, `numElementsPerProducer` watermarks, and
                 // one end-of-event-time watermark
-                Assert.assertEquals(records.size(), numElementsPerProducer * 2 + 1);
+                assertEquals(records.size(), numElementsPerProducer * 2 + 1);
                 break;
             default:
                 fail("unknown TimeCharacteristic type");
@@ -414,30 +416,34 @@ public class PscShuffleITCase extends PscShuffleTestBase {
                         Assert.assertNotNull(record.getTimestamp());
                         break;
                     case EventTime:
-                        Assert.assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
+                        assertEquals(record.getTimestamp().longValue(), record.getValue().f1.longValue());
                         break;
                     default:
                         fail("unknown TimeCharacteristic type");
                 }
-                Assert.assertEquals(record.getValue().f0.intValue(), recordIndex);
-                Assert.assertEquals(record.getValue().f1.longValue(), INIT_TIMESTAMP + recordIndex);
-                Assert.assertEquals(record.getValue().f2.intValue(), 0);
+                assertEquals(record.getValue().f0.intValue(), recordIndex);
+                assertEquals(record.getValue().f1.longValue(), INIT_TIMESTAMP + recordIndex);
+                assertEquals(record.getValue().f2.intValue(), 0);
                 recordIndex++;
             } else if (element.isWatermark()) {
+                PscShuffleWatermark watermark = element.asWatermark();
                 switch (timeCharacteristic) {
                     case ProcessingTime:
-                        fail("Watermarks should not be generated in the case of ProcessingTime");
+                        assertEquals(watermark.getSubtask(), 0);
+                        // the last element is the watermark that signifies end-of-event-time
+                        assertEquals(numElementsPerProducer, recordIndex);
+                        assertEquals(
+                                watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
                         break;
                     case IngestionTime:
                         break;
                     case EventTime:
-                        PscShuffleWatermark watermark = element.asWatermark();
-                        Assert.assertEquals(watermark.getSubtask(), 0);
+                        assertEquals(watermark.getSubtask(), 0);
                         if (watermarkIndex == recordIndex) {
                             // the last element is the watermark that signifies end-of-event-time
-                            Assert.assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
+                            assertEquals(watermark.getWatermark(), Watermark.MAX_WATERMARK.getTimestamp());
                         } else {
-                            Assert.assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + watermarkIndex);
+                            assertEquals(watermark.getWatermark(), INIT_TIMESTAMP + watermarkIndex);
                         }
                         break;
                     default:

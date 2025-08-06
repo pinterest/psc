@@ -65,7 +65,7 @@ import org.apache.flink.runtime.client.JobCancellationException;
 import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.state.CheckpointListener;
-import org.apache.flink.shaded.guava18.com.google.common.collect.Iterables;
+import org.apache.flink.shaded.guava30.com.google.common.collect.Iterables;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.checkpoint.ListCheckpointed;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -162,7 +162,6 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
             Properties pscConsumerConfiguration = new Properties();
 
             StreamExecutionEnvironment see = StreamExecutionEnvironment.getExecutionEnvironment();
-            see.getConfig().disableSysoutLogging();
             see.setRestartStrategy(RestartStrategies.noRestart());
             see.setParallelism(1);
 
@@ -1641,7 +1640,6 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final StreamExecutionEnvironment env1 = StreamExecutionEnvironment.getExecutionEnvironment();
         env1.setParallelism(1);
         env1.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-        env1.getConfig().disableSysoutLogging();
 
         Properties pscConsumerConfiguration = new Properties();
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
@@ -1679,7 +1677,6 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         env1.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
         env1.setParallelism(1);
         env1.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-        env1.getConfig().disableSysoutLogging();
 
         Properties pscConsumerConfiguration = new Properties();
         pscConsumerConfiguration.putAll(standardPscConsumerConfiguration);
@@ -1740,7 +1737,6 @@ public abstract class PscConsumerTestBaseWithKafkaAsPubSub extends PscTestBaseWi
         final StreamExecutionEnvironment env1 = StreamExecutionEnvironment.getExecutionEnvironment();
         env1.setParallelism(1);
         env1.getConfig().setRestartStrategy(RestartStrategies.noRestart());
-        env1.getConfig().disableSysoutLogging();
         env1.disableOperatorChaining(); // let the source read everything into the network buffers
 
         TypeInformationSerializationSchema<Tuple2<Integer, Integer>> schema = new TypeInformationSerializationSchema<>(

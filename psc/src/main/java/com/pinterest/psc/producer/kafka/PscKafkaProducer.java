@@ -109,6 +109,12 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
     private KafkaProducer<byte[], byte[]> getNewKafkaProducer(boolean bumpRef) {
         properties.setProperty(ProducerConfig.CLIENT_ID_CONFIG, configuredPscProducerId + "-" + UUID.randomUUID());
         kafkaProducer = new KafkaProducer<>(properties);
+        // we set PID and epoch explicitly here to avoid ProducerFencedException when a new producer is created
+        // they must be -1 in order for initTransaction to succeed - we don't yet know why
+        // in some cases they are not -1 even though they should be initialized to -1 on calling the KafkaProducer
+        // constructor
+        setProducerId(-1);
+        setEpoch((short) -1);
         updateStatus(kafkaProducer, true);
         PscMetricRegistryManager.getInstance().incrementBackendCounterMetric(
                 null,
@@ -797,10 +803,26 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
         return (long) PscCommon.getField(producerIdAndEpoch, "producerId");
     }
 
-    private short getEpoch() {
+    private void setProducerId(long producerId) {
+        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
+        if (transactionManager != null) {
+            Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
+            PscCommon.setField(producerIdAndEpoch, "producerId", producerId);
+        }
+    }
+
+    public short getEpoch() {
         Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
         Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
         return (short) PscCommon.getField(producerIdAndEpoch, "epoch");
+    }
+
+    private void setEpoch(short epoch) {
+        Object transactionManager = PscCommon.getField(kafkaProducer, "transactionManager");
+        if (transactionManager != null) {
+            Object producerIdAndEpoch = PscCommon.getField(transactionManager, "producerIdAndEpoch");
+            PscCommon.setField(producerIdAndEpoch, "epoch", epoch);
+        }
     }
 
     @VisibleForTesting

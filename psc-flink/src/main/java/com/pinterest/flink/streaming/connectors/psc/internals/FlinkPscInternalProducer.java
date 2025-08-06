@@ -32,7 +32,7 @@ import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.producer.PscProducerTransactionalProperties;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
-import org.apache.flink.shaded.guava18.com.google.common.base.Joiner;
+import org.apache.flink.shaded.guava30.com.google.common.base.Joiner;
 import org.apache.kafka.clients.producer.internals.TransactionalRequestResult;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;

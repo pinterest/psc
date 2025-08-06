@@ -57,9 +57,12 @@ public class TestMultiKafkaClusterBackends {
     @RegisterExtension
     public static final SharedKafkaTestResource sharedKafkaTestResource1 = new SharedKafkaTestResource()
             .withBrokers(1).registerListener(new PlainListener().onPorts(9092));
-    @RegisterExtension
-    public static final SharedKafkaTestResource sharedKafkaTestResource2 = new SharedKafkaTestResource()
-            .withBrokers(1).registerListener(new PlainListener().onPorts(9093));
+
+    // TODO: junit5 3.2.3 does not support multi-cluster setup
+
+//    @RegisterExtension
+//    public static final SharedKafkaTestResource sharedKafkaTestResource2 = new SharedKafkaTestResource()
+//            .withBrokers(1).registerListener(new PlainListener().onPorts(9093));
 
     private static final int TEST_TIMEOUT_SECONDS = 60;
     private static final int PSC_CONSUME_TIMEOUT_MS = 10000;
@@ -90,12 +93,12 @@ public class TestMultiKafkaClusterBackends {
         topicUriStr1 = String.format("%s:%s%s:kafka:env:cloud_%s::%s:%s",
                 kafkaCluster1.getTransport(), TopicUri.SEPARATOR, TopicUri.STANDARD, kafkaCluster1.getRegion(), kafkaCluster1.getCluster(), topic1);
 
-        kafkaCluster2 = new KafkaCluster("plaintext", "region2", "cluster2", 9093);
+        kafkaCluster2 = new KafkaCluster("plaintext", "region2", "cluster2", 9092);
         topicUriStr2 = String.format("%s:%s%s:kafka:env:cloud_%s::%s:%s",
                 kafkaCluster2.getTransport(), TopicUri.SEPARATOR, TopicUri.STANDARD, kafkaCluster2.getRegion(), kafkaCluster2.getCluster(), topic2);
 
         PscTestUtils.createTopicAndVerify(sharedKafkaTestResource1, topic1, partitions1);
-        PscTestUtils.createTopicAndVerify(sharedKafkaTestResource2, topic2, partitions2);
+        PscTestUtils.createTopicAndVerify(sharedKafkaTestResource1, topic2, partitions2);
         // add a delay to make sure topics are created
         Thread.sleep(1000);
     }
@@ -110,7 +113,7 @@ public class TestMultiKafkaClusterBackends {
     @AfterEach
     public void tearDown() throws ExecutionException, InterruptedException {
         PscTestUtils.deleteTopicAndVerify(sharedKafkaTestResource1, topic1);
-        PscTestUtils.deleteTopicAndVerify(sharedKafkaTestResource2, topic2);
+        PscTestUtils.deleteTopicAndVerify(sharedKafkaTestResource1, topic2);
         // add a delay to make sure topics are deleted
         Thread.sleep(1000);
     }
@@ -142,7 +145,7 @@ public class TestMultiKafkaClusterBackends {
         int messageCount1 = 1000;
         PscTestUtils.produceKafkaMessages(messageCount1, sharedKafkaTestResource1, kafkaCluster1, topic1);
         int messageCount2 = 2000;
-        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource2, kafkaCluster2, topic2);
+        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource1, kafkaCluster2, topic2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
@@ -186,7 +189,7 @@ public class TestMultiKafkaClusterBackends {
         int messageCount1 = 1000;
         PscTestUtils.produceKafkaMessages(messageCount1, sharedKafkaTestResource1, kafkaCluster1, topic1);
         int messageCount2 = 2000;
-        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource2, kafkaCluster2, topic2);
+        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource1, kafkaCluster2, topic2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
@@ -252,7 +255,7 @@ public class TestMultiKafkaClusterBackends {
         PscTestUtils.produceKafkaMessages(messageCount1, sharedKafkaTestResource1, kafkaCluster1, topic1);
 
         int messageCount2 = 2000;
-        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource2, kafkaCluster2, topic2);
+        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource1, kafkaCluster2, topic2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
@@ -325,7 +328,7 @@ public class TestMultiKafkaClusterBackends {
 
         int messageCount2 = 2000;
         int targetPartition2 = 2;
-        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource2, kafkaCluster2, topic2, targetPartition2);
+        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource1, kafkaCluster2, topic2, targetPartition2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
@@ -411,7 +414,7 @@ public class TestMultiKafkaClusterBackends {
 
         int messageCount2 = 2000;
         int targetPartition2 = 2;
-        PscTestUtils.produceKafkaMessages(messageCount2, sharedKafkaTestResource2, kafkaCluster2, topic2, targetPartition2);
+        PscTestUtils.produceKafkaMessages(messageCount2, sharedKafkaTestResource1, kafkaCluster2, topic2, targetPartition2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
@@ -478,7 +481,7 @@ public class TestMultiKafkaClusterBackends {
         PscTestUtils.produceKafkaMessages(messageCount1, sharedKafkaTestResource1, kafkaCluster1, topic1);
 
         int messageCount2 = 2000;
-        PscTestUtils.produceKafkaMessages(messageCount2, sharedKafkaTestResource2, kafkaCluster2, topic2);
+        PscTestUtils.produceKafkaMessages(messageCount2, sharedKafkaTestResource1, kafkaCluster2, topic2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
@@ -509,7 +512,7 @@ public class TestMultiKafkaClusterBackends {
     @Test
     public void testWakeup() throws InterruptedException, SerializerException {
         PscTestUtils.produceKafkaMessages(1000, sharedKafkaTestResource1, kafkaCluster1, topic1);
-        PscTestUtils.produceKafkaMessages(0, sharedKafkaTestResource2, kafkaCluster2, topic2);
+        PscTestUtils.produceKafkaMessages(0, sharedKafkaTestResource1, kafkaCluster2, topic2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());
@@ -561,7 +564,7 @@ public class TestMultiKafkaClusterBackends {
         int messageCount1 = 1000;
         PscTestUtils.produceKafkaMessages(messageCount1, sharedKafkaTestResource1, kafkaCluster1, topic1);
         int messageCount2 = 2000;
-        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource2, kafkaCluster2, topic2);
+        PscTestUtils.produceKafkaMessages(messageCount2, messageCount1, sharedKafkaTestResource1, kafkaCluster2, topic2);
 
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET_EARLIEST);
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_KEY_DESERIALIZER, StringDeserializer.class.getName());

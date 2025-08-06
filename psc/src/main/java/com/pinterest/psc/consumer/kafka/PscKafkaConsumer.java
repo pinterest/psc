@@ -420,6 +420,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                             }));
 
                             offsetCommitCallback.onCompletion(pscOffsets, e == null ? null : new ConsumerException(e));
+                            // TODO: to verify
                             if (e != null) {
                                 getConsumerInterceptors().onCommit(messageIds);
                             }

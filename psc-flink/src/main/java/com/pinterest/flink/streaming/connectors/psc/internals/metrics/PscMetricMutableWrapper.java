@@ -35,7 +35,8 @@ public class PscMetricMutableWrapper implements Gauge<Double> {
 
     @Override
     public Double getValue() {
-        return (Double) pscMetric.metricValue();
+        final Object metricValue = pscMetric.metricValue();
+        return metricValue instanceof Double ? (Double) metricValue : 0.0;
     }
 
     public void setPscMetric(Metric pscMetric) {

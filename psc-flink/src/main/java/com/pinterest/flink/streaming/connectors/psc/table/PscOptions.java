@@ -78,8 +78,8 @@ public class PscOptions {
             .stringType()
             .defaultValue("group-offsets")
             .withDescription("Optional startup mode for PSC consumer, valid enumerations are "
-                    + "\"earliest-offset\", \"latest-offset\", \"group-offsets\", \"timestamp\"\n"
-                    + "or \"specific-offsets\"");
+                                     + "\"earliest-offset\", \"latest-offset\", \"group-offsets\", \"timestamp\"\n"
+                                     + "or \"specific-offsets\"");
 
     public static final ConfigOption<String> SCAN_STARTUP_SPECIFIC_OFFSETS = ConfigOptions
             .key("scan.startup.specific-offsets")
@@ -102,10 +102,10 @@ public class PscOptions {
             .stringType()
             .noDefaultValue()
             .withDescription("Optional output partitioning from Flink's partitions\n"
-                    + "into PSC's topic URI partitions valid enumerations are\n"
-                    + "\"fixed\": (each Flink partition ends up in at most one PSC partition),\n"
-                    + "\"round-robin\": (a Flink partition is distributed to PSC partitions round-robin)\n"
-                    + "\"custom class name\": (use a custom FlinkPscPartitioner subclass)");
+                                     + "into PSC's topic URI partitions valid enumerations are\n"
+                                     + "\"fixed\": (each Flink partition ends up in at most one PSC partition),\n"
+                                     + "\"round-robin\": (a Flink partition is distributed to PSC partitions round-robin)\n"
+                                     + "\"custom class name\": (use a custom FlinkPscPartitioner subclass)");
 
     // --------------------------------------------------------------------------------------------
     // Option enumerations
@@ -151,48 +151,48 @@ public class PscOptions {
 
     private static void validateScanStartupMode(ReadableConfig tableOptions) {
         tableOptions.getOptional(SCAN_STARTUP_MODE)
-                .map(String::toLowerCase)
-                .ifPresent(mode -> {
-                    if (!SCAN_STARTUP_MODE_ENUMS.contains(mode)) {
-                        throw new ValidationException(
-                                String.format("Invalid value for option '%s'. Supported values are %s, but was: %s",
-                                        SCAN_STARTUP_MODE.key(),
-                                        "[earliest-offset, latest-offset, group-offsets, specific-offsets, timestamp]",
-                                        mode));
-                    }
+                    .map(String::toLowerCase)
+                    .ifPresent(mode -> {
+                        if (!SCAN_STARTUP_MODE_ENUMS.contains(mode)) {
+                            throw new ValidationException(
+                                    String.format("Invalid value for option '%s'. Supported values are %s, but was: %s",
+                                                  SCAN_STARTUP_MODE.key(),
+                                                  "[earliest-offset, latest-offset, group-offsets, specific-offsets, timestamp]",
+                                                  mode));
+                        }
 
-                    if (mode.equals(SCAN_STARTUP_MODE_VALUE_TIMESTAMP)) {
-                        if (!tableOptions.getOptional(SCAN_STARTUP_TIMESTAMP_MILLIS).isPresent()) {
-                            throw new ValidationException(String.format("'%s' is required in '%s' startup mode"
-                                            + " but missing.",
-                                    SCAN_STARTUP_TIMESTAMP_MILLIS.key(),
-                                    SCAN_STARTUP_MODE_VALUE_TIMESTAMP));
+                        if (mode.equals(SCAN_STARTUP_MODE_VALUE_TIMESTAMP)) {
+                            if (!tableOptions.getOptional(SCAN_STARTUP_TIMESTAMP_MILLIS).isPresent()) {
+                                throw new ValidationException(String.format("'%s' is required in '%s' startup mode"
+                                                                                    + " but missing.",
+                                                                            SCAN_STARTUP_TIMESTAMP_MILLIS.key(),
+                                                                            SCAN_STARTUP_MODE_VALUE_TIMESTAMP));
+                            }
                         }
-                    }
-                    if (mode.equals(SCAN_STARTUP_MODE_VALUE_SPECIFIC_OFFSETS)) {
-                        if (!tableOptions.getOptional(SCAN_STARTUP_SPECIFIC_OFFSETS).isPresent()) {
-                            throw new ValidationException(String.format("'%s' is required in '%s' startup mode"
-                                            + " but missing.",
-                                    SCAN_STARTUP_SPECIFIC_OFFSETS.key(),
-                                    SCAN_STARTUP_MODE_VALUE_SPECIFIC_OFFSETS));
+                        if (mode.equals(SCAN_STARTUP_MODE_VALUE_SPECIFIC_OFFSETS)) {
+                            if (!tableOptions.getOptional(SCAN_STARTUP_SPECIFIC_OFFSETS).isPresent()) {
+                                throw new ValidationException(String.format("'%s' is required in '%s' startup mode"
+                                                                                    + " but missing.",
+                                                                            SCAN_STARTUP_SPECIFIC_OFFSETS.key(),
+                                                                            SCAN_STARTUP_MODE_VALUE_SPECIFIC_OFFSETS));
+                            }
+                            String specificOffsets = tableOptions.get(SCAN_STARTUP_SPECIFIC_OFFSETS);
+                            parseSpecificOffsets(specificOffsets, SCAN_STARTUP_SPECIFIC_OFFSETS.key());
                         }
-                        String specificOffsets = tableOptions.get(SCAN_STARTUP_SPECIFIC_OFFSETS);
-                        parseSpecificOffsets(specificOffsets, SCAN_STARTUP_SPECIFIC_OFFSETS.key());
-                    }
-                });
+                    });
     }
 
     private static void validateSinkPartitioner(ReadableConfig tableOptions) {
         tableOptions.getOptional(SINK_PARTITIONER)
-                .ifPresent(partitioner -> {
-                    if (!SINK_PARTITIONER_ENUMS.contains(partitioner.toLowerCase())) {
-                        if (partitioner.isEmpty()) {
-                            throw new ValidationException(
-                                    String.format("Option '%s' should be a non-empty string.",
-                                            SINK_PARTITIONER.key()));
+                    .ifPresent(partitioner -> {
+                        if (!SINK_PARTITIONER_ENUMS.contains(partitioner.toLowerCase())) {
+                            if (partitioner.isEmpty()) {
+                                throw new ValidationException(
+                                        String.format("Option '%s' should be a non-empty string.",
+                                                      SINK_PARTITIONER.key()));
+                            }
                         }
-                    }
-                });
+                    });
     }
 
     // --------------------------------------------------------------------------------------------
@@ -204,28 +204,28 @@ public class PscOptions {
             String topicUri) {
         final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
         final StartupMode startupMode = tableOptions.getOptional(SCAN_STARTUP_MODE)
-                .map(modeString -> {
-                    switch (modeString) {
-                        case SCAN_STARTUP_MODE_VALUE_EARLIEST:
-                            return StartupMode.EARLIEST;
+                                                    .map(modeString -> {
+                                                        switch (modeString) {
+                                                            case SCAN_STARTUP_MODE_VALUE_EARLIEST:
+                                                                return StartupMode.EARLIEST;
 
-                        case SCAN_STARTUP_MODE_VALUE_LATEST:
-                            return StartupMode.LATEST;
+                                                            case SCAN_STARTUP_MODE_VALUE_LATEST:
+                                                                return StartupMode.LATEST;
 
-                        case SCAN_STARTUP_MODE_VALUE_GROUP_OFFSETS:
-                            return StartupMode.GROUP_OFFSETS;
+                                                            case SCAN_STARTUP_MODE_VALUE_GROUP_OFFSETS:
+                                                                return StartupMode.GROUP_OFFSETS;
 
-                        case SCAN_STARTUP_MODE_VALUE_SPECIFIC_OFFSETS:
-                            buildSpecificOffsets(tableOptions, topicUri, specificOffsets);
-                            return StartupMode.SPECIFIC_OFFSETS;
+                                                            case SCAN_STARTUP_MODE_VALUE_SPECIFIC_OFFSETS:
+                                                                buildSpecificOffsets(tableOptions, topicUri, specificOffsets);
+                                                                return StartupMode.SPECIFIC_OFFSETS;
 
-                        case SCAN_STARTUP_MODE_VALUE_TIMESTAMP:
-                            return StartupMode.TIMESTAMP;
+                                                            case SCAN_STARTUP_MODE_VALUE_TIMESTAMP:
+                                                                return StartupMode.TIMESTAMP;
 
-                        default:
-                            throw new TableException("Unsupported startup mode. Validator should have checked that.");
-                    }
-                }).orElse(StartupMode.GROUP_OFFSETS);
+                                                            default:
+                                                                throw new TableException("Unsupported startup mode. Validator should have checked that.");
+                                                        }
+                                                    }).orElse(StartupMode.GROUP_OFFSETS);
         final StartupOptions options = new StartupOptions();
         options.startupMode = startupMode;
         options.specificOffsets = specificOffsets;
@@ -254,12 +254,12 @@ public class PscOptions {
 
         if (hasPscClientProperties(tableOptions)) {
             tableOptions.keySet().stream()
-                    .filter(key -> key.startsWith(PROPERTIES_PREFIX))
-                    .forEach(key -> {
-                        final String value = tableOptions.get(key);
-                        final String subKey = key.substring((PROPERTIES_PREFIX).length());
-                        pscProperties.put(subKey, value);
-                    });
+                        .filter(key -> key.startsWith(PROPERTIES_PREFIX))
+                        .forEach(key -> {
+                            final String value = tableOptions.get(key);
+                            final String subKey = key.substring((PROPERTIES_PREFIX).length());
+                            pscProperties.put(subKey, value);
+                        });
         }
         return pscProperties;
     }
@@ -271,17 +271,17 @@ public class PscOptions {
             ReadableConfig tableOptions,
             ClassLoader classLoader) {
         return tableOptions.getOptional(SINK_PARTITIONER)
-                .flatMap((String partitioner) -> {
-                    switch (partitioner) {
-                        case SINK_PARTITIONER_VALUE_FIXED:
-                            return Optional.of(new FlinkFixedPartitioner<>());
-                        case SINK_PARTITIONER_VALUE_ROUND_ROBIN:
-                            return Optional.empty();
-                        // Default fallback to full class name of the partitioner.
-                        default:
-                            return Optional.of(initializePartitioner(partitioner, classLoader));
-                    }
-                });
+                           .flatMap((String partitioner) -> {
+                               switch (partitioner) {
+                                   case SINK_PARTITIONER_VALUE_FIXED:
+                                       return Optional.of(new FlinkFixedPartitioner<>());
+                                   case SINK_PARTITIONER_VALUE_ROUND_ROBIN:
+                                       return Optional.empty();
+                                   // Default fallback to full class name of the partitioner.
+                                   default:
+                                       return Optional.of(initializePartitioner(partitioner, classLoader));
+                               }
+                           });
     }
 
     /**
@@ -351,8 +351,8 @@ public class PscOptions {
             if (!FlinkPscPartitioner.class.isAssignableFrom(clazz)) {
                 throw new ValidationException(
                         String.format("Sink partitioner class '%s' should extend from the required class %s",
-                                name,
-                                FlinkPscPartitioner.class.getName()));
+                                      name,
+                                      FlinkPscPartitioner.class.getName()));
             }
             @SuppressWarnings("unchecked") final FlinkPscPartitioner<T> pscPartitioner = InstantiationUtil.instantiate(name, FlinkPscPartitioner.class, classLoader);
 

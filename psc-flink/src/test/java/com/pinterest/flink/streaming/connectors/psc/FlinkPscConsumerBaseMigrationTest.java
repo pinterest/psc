@@ -29,6 +29,7 @@ import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetricsUtils;
+import org.apache.flink.FlinkVersion;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.core.testutils.OneShotLatch;
 import org.apache.flink.metrics.MetricGroup;
@@ -40,7 +41,6 @@ import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.util.AbstractStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.OperatorSnapshotUtil;
-import org.apache.flink.testutils.migration.MigrationVersion;
 import org.apache.flink.util.SerializedValue;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -50,6 +50,7 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -82,7 +83,7 @@ public class FlinkPscConsumerBaseMigrationTest {
      * and remove all @Ignore annotations on writeSnapshot() methods to generate savepoints
      * Note: You should generate the savepoint based on the release branch instead of the master.
      */
-    private final MigrationVersion flinkGenerateSavepointVersion = null;
+    private final FlinkVersion flinkGenerateSavepointVersion = null;
 
     private static final HashMap<PscTopicUriPartition, Long> TOPIC_URI_PARTITION_STATE = new HashMap<>();
 
@@ -107,17 +108,21 @@ public class FlinkPscConsumerBaseMigrationTest {
             .distinct()
             .collect(Collectors.toList());
 
-    private final MigrationVersion testMigrateVersion;
+    private final FlinkVersion testMigrateVersion;
 
     @Parameterized.Parameters(name = "Migration Savepoint: {0}")
-    public static Collection<MigrationVersion> parameters() {
+    public static Collection<FlinkVersion> parameters() {
         // PSC integration started with Flink 1.11
-        return Collections.singletonList(
-                MigrationVersion.v1_11
+        return Arrays.asList(
+                FlinkVersion.v1_11,
+                FlinkVersion.v1_12,
+                FlinkVersion.v1_13,
+                FlinkVersion.v1_14,
+                FlinkVersion.v1_15
         );
     }
 
-    public FlinkPscConsumerBaseMigrationTest(MigrationVersion testMigrateVersion) {
+    public FlinkPscConsumerBaseMigrationTest(FlinkVersion testMigrateVersion) {
         this.testMigrateVersion = testMigrateVersion;
     }
 
