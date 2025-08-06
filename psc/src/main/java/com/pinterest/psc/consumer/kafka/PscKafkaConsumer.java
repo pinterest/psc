@@ -135,6 +135,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
             logger.info("Defaulting to native KafkaConsumer class", e);
             kafkaConsumer = new KafkaConsumer<>(properties);
         }
+        logger.info("Proactive SSL reset enabled: {}", pscConfigurationInternal.isProactiveSslResetEnabled());
     }
 
     @Override
@@ -1143,6 +1144,11 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         if (pscConfigurationInternal.isProactiveSslResetEnabled() &&
                 isSslEnabledInAnyActiveSusbcriptionOrAssignment &&
                 (System.currentTimeMillis() >= sslCertificateExpiryTimeInMillis)) {
+            if (!pscConfigurationInternal.isProactiveSslResetEnabled()) {
+                logger.info("Skipping reset of client even though SSL certificate is approaching expiry at {}" +
+                        " because proactive reset is disabled", sslCertificateExpiryTimeInMillis);
+                return;
+            }
             if (KafkaSslUtils.keyStoresExist(properties)) {
                 logger.info("Resetting backend Kafka client due to cert expiry at " +
                         sslCertificateExpiryTimeInMillis);
