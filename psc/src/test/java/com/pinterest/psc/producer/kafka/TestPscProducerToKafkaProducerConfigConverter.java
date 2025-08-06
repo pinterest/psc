@@ -26,7 +26,7 @@ public class TestPscProducerToKafkaProducerConfigConverter {
         pscConfiguration.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "client-id");
         pscConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         pscConfiguration.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         TopicUri secureUri = TopicUri.validate("secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region::cluster:topic");
         TopicUri plaintextUri = TopicUri.validate("plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region::cluster:topic");
         PscProducerToBackendProducerConfigConverter converter = new PscProducerToKafkaProducerConfigConverter();

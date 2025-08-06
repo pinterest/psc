@@ -34,7 +34,7 @@ import java.util.Map;
  * Context providing information to assist constructing a {@link
  * com.pinterest.psc.producer.PscProducerMessage}.
  */
-class DefaultPscSinkContext implements PscRecordSerializationSchema.PscSinkContext {
+public class DefaultPscSinkContext implements PscRecordSerializationSchema.PscSinkContext {
 
     private final int subtaskId;
     private final int numberOfParallelInstances;

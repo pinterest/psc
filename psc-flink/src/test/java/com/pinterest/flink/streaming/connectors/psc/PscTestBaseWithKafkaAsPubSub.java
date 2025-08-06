@@ -17,9 +17,9 @@
 
 package com.pinterest.flink.streaming.connectors.psc;
 
-import com.pinterest.psc.common.BaseTopicUri;
-import com.pinterest.psc.common.TopicUri;
-import com.pinterest.psc.common.kafka.KafkaTopicUri;
+import com.google.common.base.MoreObjects;
+import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
+import com.pinterest.flink.connector.psc.testutils.PscTestUtils;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.PscConsumerMessage;
@@ -31,10 +31,10 @@ import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.IntegerDeserializer;
 import com.pinterest.psc.serde.Serializer;
 import org.apache.flink.client.program.ProgramInvocationException;
-import org.apache.flink.configuration.ConfigConstants;
 import org.apache.flink.configuration.MemorySize;
+import org.apache.flink.configuration.MetricOptions;
 import org.apache.flink.configuration.TaskManagerOptions;
-import org.apache.flink.metrics.jmx.JMXReporter;
+import org.apache.flink.metrics.jmx.JMXReporterFactory;
 import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.util.TestStreamEnvironment;
@@ -50,6 +50,7 @@ import org.slf4j.LoggerFactory;
 import scala.concurrent.duration.FiniteDuration;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -81,6 +82,8 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
 
     protected static final int NUMBER_OF_KAFKA_SERVERS = 3;
 
+    private static int numKafkaClusters = 1;
+
     protected static String brokerConnectionStrings;
 
     protected static Properties standardKafkaProperties;
@@ -101,6 +104,9 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
 
     protected static PscTestEnvironmentWithKafkaAsPubSub pscTestEnvWithKafka;
 
+    public static List<ClusterTestEnvMetadata> pubsubClusters = new ArrayList<>();
+    public static final List<String> clusterUris = Arrays.asList(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER1_URI_PREFIX);
+
     @ClassRule
     public static TemporaryFolder tempFolder = new TemporaryFolder();
 
@@ -118,7 +124,7 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
         LOG.info("    Starting PscTestBaseWithKafkaAsPubSub ");
         LOG.info("-------------------------------------------------------------------------");
 
-        startClusters(false, hideKafkaBehindProxy);
+        startClusters(false, numKafkaClusters, hideKafkaBehindProxy);
     }
 
     @AfterClass
@@ -140,7 +146,8 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
     protected static org.apache.flink.configuration.Configuration getFlinkConfiguration() {
         org.apache.flink.configuration.Configuration flinkConfig = new org.apache.flink.configuration.Configuration();
         flinkConfig.set(TaskManagerOptions.MANAGED_MEMORY_SIZE, MemorySize.parse("16m"));
-        flinkConfig.setString(ConfigConstants.METRICS_REPORTER_PREFIX + "my_reporter." + ConfigConstants.METRICS_REPORTER_CLASS_SUFFIX, JMXReporter.class.getName());
+        MetricOptions.forReporter(flinkConfig, "my_reporter")
+                .set(MetricOptions.REPORTER_FACTORY_CLASS, JMXReporterFactory.class.getName());
         return flinkConfig;
     }
 
@@ -148,11 +155,33 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
         startClusters(PscTestEnvironmentWithKafkaAsPubSub.createConfig().setKafkaServersNumber(NUMBER_OF_KAFKA_SERVERS));
     }
 
-    protected static void startClusters(boolean secureMode, boolean hideKafkaBehindProxy) throws Exception {
+    protected static void startClusters(boolean secureMode, int numKafkaClusters, boolean hideKafkaBehindProxy) throws Exception {
         startClusters(PscTestEnvironmentWithKafkaAsPubSub.createConfig()
-                .setKafkaServersNumber(NUMBER_OF_KAFKA_SERVERS)
-                .setSecureMode(secureMode)
-                .setHideKafkaBehindProxy(hideKafkaBehindProxy));
+                        .setSecureMode(secureMode)
+                        .setHideKafkaBehindProxy(hideKafkaBehindProxy), numKafkaClusters);
+    }
+
+
+    public static void startClusters(
+            PscTestEnvironmentWithKafkaAsPubSub.Config environmentConfig, int numKafkaClusters) throws Exception {
+        for (int i = 0; i < numKafkaClusters; i++) {
+            startClusters(environmentConfig);
+            Properties standardProps = new Properties();
+            Properties secureProps = new Properties();
+            standardProps.putAll(standardPscConsumerConfiguration);
+            secureProps.putAll(securePscConsumerConfiguration);
+
+            PscTestUtils.putDiscoveryProperties(standardProps, brokerConnectionStrings, clusterUris.get(i));
+            PscTestUtils.putDiscoveryProperties(secureProps, brokerConnectionStrings, clusterUris.get(i));
+            standardProps.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, clusterUris.get(i));
+            secureProps.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, clusterUris.get(i));
+
+            ClusterTestEnvMetadata kafkaClusterTestEnvMetadata =
+                    new ClusterTestEnvMetadata(
+                            i, clusterUris.get(i), pscTestEnvWithKafka, standardProps, brokerConnectionStrings, secureProps);
+            pubsubClusters.add(kafkaClusterTestEnvMetadata);
+            LOG.info("Created Kafka cluster with configuration: {}", kafkaClusterTestEnvMetadata);
+        }
     }
 
     protected static void startClusters(PscTestEnvironmentWithKafkaAsPubSub.Config environmentConfig) throws Exception {
@@ -193,6 +222,13 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
 
         if (pscTestEnvWithKafka != null) {
             pscTestEnvWithKafka.shutdown();
+        }
+
+        if (pubsubClusters != null && !pubsubClusters.isEmpty()) {
+            for (ClusterTestEnvMetadata value : pubsubClusters) {
+                value.getPscTestEnvironmentWithKafkaAsPubSub().shutdown();
+            }
+            pubsubClusters.clear();
         }
     }
 
@@ -235,7 +271,7 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
         props.setProperty(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, keySerializerClass.getName());
         props.setProperty(
                 PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, valueSerializerClass.getName());
-        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        putDiscoveryProperties(props, brokerConnectionStrings, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         AtomicReference<Throwable> sendingError = new AtomicReference<>();
         Callback callback =
@@ -351,6 +387,71 @@ public abstract class PscTestBaseWithKafkaAsPubSub extends TestLogger {
             return String.format("number of elements: <%s>", elements.size());
         } else {
             return String.format("elements: <%s>", elements);
+        }
+    }
+
+    public static void setNumKafkaClusters(int size) {
+        numKafkaClusters = size;
+    }
+
+    /** Metadata generated by this test utility. */
+    public static class ClusterTestEnvMetadata {
+
+        private final String clusterId;
+        private final PscTestEnvironmentWithKafkaAsPubSub pscTestEnvironmentWithKafkaAsPubSub;
+        private final Properties standardProperties;
+        private final String brokerConnectionStrings;
+        private final Properties secureProperties;
+        private final String clusterUriStr;
+
+        private ClusterTestEnvMetadata(
+                int clusterIdx,
+                String clusterUriStr,
+                PscTestEnvironmentWithKafkaAsPubSub pscTestEnvironmentWithKafkaAsPubSub,
+                Properties standardProperties,
+                String brokerConnectionStrings,
+                Properties secureProperties) {
+            this.clusterId = "pubsub-cluster-" + clusterIdx;
+            this.clusterUriStr = clusterUriStr;
+            this.pscTestEnvironmentWithKafkaAsPubSub = pscTestEnvironmentWithKafkaAsPubSub;
+            this.standardProperties = standardProperties;
+            this.brokerConnectionStrings = brokerConnectionStrings;
+            this.secureProperties = secureProperties;
+        }
+
+        public String getPubSubClusterId() {
+            return clusterId;
+        }
+
+        public String getClusterUriStr() {
+            return clusterUriStr;
+        }
+
+        public PscTestEnvironmentWithKafkaAsPubSub getPscTestEnvironmentWithKafkaAsPubSub() {
+            return pscTestEnvironmentWithKafkaAsPubSub;
+        }
+
+        public Properties getStandardProperties() {
+            return standardProperties;
+        }
+
+        public String getBrokerConnectionStrings() {
+            return brokerConnectionStrings;
+        }
+
+        public Properties getSecureProperties() {
+            return secureProperties;
+        }
+
+        @Override
+        public String toString() {
+            return MoreObjects.toStringHelper(this)
+                    .add("clusterId", clusterId)
+                    .add("pscTestEnvironmentWithKafkaAsPubSub", pscTestEnvironmentWithKafkaAsPubSub)
+                    .add("standardProperties", standardProperties)
+                    .add("brokerConnectionStrings", brokerConnectionStrings)
+                    .add("secureProperties", secureProperties)
+                    .toString();
         }
     }
 }

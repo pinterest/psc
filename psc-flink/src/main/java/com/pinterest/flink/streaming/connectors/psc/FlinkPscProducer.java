@@ -19,10 +19,12 @@ package com.pinterest.flink.streaming.connectors.psc;
 
 import com.pinterest.flink.streaming.connectors.psc.internals.FlinkPscInternalProducer;
 import com.pinterest.flink.streaming.connectors.psc.internals.PscSerializationSchemaWrapper;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscSimpleTypeSerializerSnapshot;
 import com.pinterest.flink.streaming.connectors.psc.internals.TransactionalIdsGenerator;
 import com.pinterest.flink.streaming.connectors.psc.internals.metrics.FlinkPscStateRecoveryMetricConstants;
+import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscMetricMutableWrapper;
+import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
+import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -52,6 +54,7 @@ import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.common.typeutils.SimpleTypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.TypeSerializerSnapshot;
 import org.apache.flink.api.common.typeutils.base.TypeSerializerSingleton;
 import org.apache.flink.api.java.ClosureCleaner;
@@ -61,13 +64,9 @@ import org.apache.flink.core.memory.DataOutputView;
 import org.apache.flink.metrics.MetricGroup;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
-import org.apache.flink.shaded.guava30.com.google.common.collect.Lists;
 import org.apache.flink.streaming.api.functions.sink.TwoPhaseCommitSinkFunction;
 import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
-import com.pinterest.flink.streaming.connectors.psc.internals.metrics.PscMetricMutableWrapper;
-import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkFixedPartitioner;
-import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
 import org.apache.flink.util.ExceptionUtils;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TemporaryClassLoaderContext;
@@ -734,7 +733,7 @@ public class FlinkPscProducer<IN>
             );
             try {
                 PscMetricRegistryManager.getInstance().initialize(
-                        new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER, true)
+                        new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER, true)
                 );
             } catch (ConfigurationException configurationException) {
                 throw new IllegalArgumentException(configurationException);
@@ -985,7 +984,7 @@ public class FlinkPscProducer<IN>
             });
 
             if (pscConfigurationInternal == null) {
-                pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+                pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
             }
 
             if (pscMetricsInitialized != null && pscMetricsInitialized.compareAndSet(true, false))
@@ -1288,7 +1287,7 @@ public class FlinkPscProducer<IN>
         }
 
         if (pscConfigurationInternal == null) {
-            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+            pscConfigurationInternal = PscConfigurationUtils.propertiesToPscConfigurationInternal(producerConfig, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         }
 
         if (context.getOperatorStateStore()
@@ -1337,8 +1336,9 @@ public class FlinkPscProducer<IN>
                 ListState<FlinkKafkaProducer.NextTransactionalIdHint> oldNextTransactionalIdHintState =
                         context.getOperatorStateStore().getUnionListState((ListStateDescriptor<FlinkKafkaProducer.NextTransactionalIdHint>) PscCommon.getField(FlinkKafkaProducer.class, "NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR"));
 
-                ArrayList<FlinkKafkaProducer.NextTransactionalIdHint> oldTransactionalIdHints =
-                        Lists.newArrayList(oldNextTransactionalIdHintState.get());
+                ArrayList<FlinkKafkaProducer.NextTransactionalIdHint> oldTransactionalIdHints = new ArrayList<>();
+                oldNextTransactionalIdHintState.get().forEach(oldTransactionalIdHints::add);
+
                 if (!oldTransactionalIdHints.isEmpty()) {
                     nextKafkaTransactionalIdHintState.addAll(oldTransactionalIdHints);
                     //clear old state
@@ -1406,8 +1406,8 @@ public class FlinkPscProducer<IN>
         if (semantic != Semantic.EXACTLY_ONCE) {
             nextTransactionalIdHint = null;
         } else {
-            ArrayList<NextTransactionalIdHint> transactionalIdHints =
-                    Lists.newArrayList(nextTransactionalIdHintState.get());
+            ArrayList<NextTransactionalIdHint> transactionalIdHints = new ArrayList<>();
+            nextTransactionalIdHintState.get().forEach(transactionalIdHints::add);
             if (transactionalIdHints.size() > 1) {
                 throw new IllegalStateException(
                         "There should be at most one next transactional id hint written by the first subtask");
@@ -1858,7 +1858,8 @@ public class FlinkPscProducer<IN>
                 NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR);
         nextTransactionalIdHintState = context.getOperatorStateStore().getUnionListState(NEXT_TRANSACTIONAL_ID_HINT_DESCRIPTOR_V2);
 
-        ArrayList<NextTransactionalIdHint> oldTransactionalIdHints = Lists.newArrayList(oldNextTransactionalIdHintState.get());
+        ArrayList<NextTransactionalIdHint> oldTransactionalIdHints = new ArrayList<>();
+        oldNextTransactionalIdHintState.get().forEach(oldTransactionalIdHints::add);
         if (!oldTransactionalIdHints.isEmpty()) {
             nextTransactionalIdHintState.addAll(oldTransactionalIdHints);
             //clear old state
@@ -2141,7 +2142,7 @@ public class FlinkPscProducer<IN>
          */
         @SuppressWarnings("WeakerAccess")
         public static final class TransactionStateSerializerSnapshot extends
-                PscSimpleTypeSerializerSnapshot<PscTransactionState> {
+                SimpleTypeSerializerSnapshot<PscTransactionState> {
 
             public TransactionStateSerializerSnapshot() {
                 super(TransactionStateSerializer::new);
@@ -2236,7 +2237,7 @@ public class FlinkPscProducer<IN>
          * Serializer configuration snapshot for compatibility and format evolution.
          */
         @SuppressWarnings("WeakerAccess")
-        public static final class ContextStateSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<PscTransactionContext> {
+        public static final class ContextStateSerializerSnapshot extends SimpleTypeSerializerSnapshot<PscTransactionContext> {
 
             public ContextStateSerializerSnapshot() {
                 super(ContextStateSerializer::new);
@@ -2361,7 +2362,7 @@ public class FlinkPscProducer<IN>
          * Serializer configuration snapshot for compatibility and format evolution.
          */
         @SuppressWarnings("WeakerAccess")
-        public static final class NextTransactionalIdHintSerializerSnapshot extends PscSimpleTypeSerializerSnapshot<NextTransactionalIdHint> {
+        public static final class NextTransactionalIdHintSerializerSnapshot extends SimpleTypeSerializerSnapshot<NextTransactionalIdHint> {
 
             public NextTransactionalIdHintSerializerSnapshot() {
                 super(NextTransactionalIdHintSerializer::new);

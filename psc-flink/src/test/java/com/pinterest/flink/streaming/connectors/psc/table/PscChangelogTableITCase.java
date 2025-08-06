@@ -56,7 +56,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     @Test
     public void testPscDebeziumChangelogSource() throws Exception {
         final String topic = "changelog_topic";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // enables MiniBatch processing to verify MiniBatch + FLIP-95, see FLINK-18769
@@ -102,8 +102,8 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'debezium-json'"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps);
         String sinkDDL =
                 "CREATE TABLE sink ("
                         + " origin_topic STRING,"
@@ -171,13 +171,13 @@ public class PscChangelogTableITCase extends PscTableTestBase {
          */
         List<String> expected =
                 Arrays.asList(
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, scooter, 3.140]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, car battery, 8.100]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, 12-pack drill bits, 0.800]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, hammer, 2.625]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, rocks, 5.100]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, jacket, 0.600]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_topic, products, spare tire, 22.200]");
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, scooter, 3.140]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, car battery, 8.100]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, 12-pack drill bits, 0.800]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, hammer, 2.625]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, rocks, 5.100]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, jacket, 0.600]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_topic, products, spare tire, 22.200]");
 
         waitingExpectedResults("sink", expected, Duration.ofSeconds(10));
 
@@ -190,7 +190,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     @Test
     public void testPscCanalChangelogSource() throws Exception {
         final String topic = "changelog_canal";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // configure time zone of  the Canal Json metadata "ingestion-timestamp"
@@ -243,8 +243,8 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'canal-json'"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps);
         String sinkDDL =
                 "CREATE TABLE sink ("
                         + " origin_topic STRING,"
@@ -319,13 +319,13 @@ public class PscChangelogTableITCase extends PscTableTestBase {
 
         List<String> expected =
                 Arrays.asList(
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, 12-pack drill bits]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, spare tire]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:06.301, 2020-05-13T12:39:06, hammer]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:09.489, 2020-05-13T12:39:09, rocks]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:18.230, 2020-05-13T12:39:18, jacket]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, car battery]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, scooter]");
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, 12-pack drill bits]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:38:35.477, 2020-05-13T12:38:35, spare tire]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:06.301, 2020-05-13T12:39:06, hammer]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:09.489, 2020-05-13T12:39:09, rocks]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:39:18.230, 2020-05-13T12:39:18, jacket]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, car battery]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_canal, inventory, products2, {name=12, weight=7, description=12, id=4}, [id], 2020-05-13T12:42:33.939, 2020-05-13T12:42:33, scooter]");
 
         waitingExpectedResults("sink", expected, Duration.ofSeconds(10));
 
@@ -338,7 +338,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
     @Test
     public void testPscMaxwellChangelogSource() throws Exception {
         final String topic = "changelog_maxwell";
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // configure time zone of  the Maxwell Json metadata "ingestion-timestamp"
@@ -388,8 +388,8 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'maxwell-json'"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER_URI,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps);
         String sinkDDL =
                 "CREATE TABLE sink ("
                         + " origin_topic STRING,"
@@ -462,13 +462,13 @@ public class PscChangelogTableITCase extends PscTableTestBase {
 
         List<String> expected =
                 Arrays.asList(
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, 12-pack drill bits]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, spare tire]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:53, hammer]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:34:57, rocks]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:35:06, jacket]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, car battery]",
-                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster1:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, scooter]");
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, 12-pack drill bits]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:43, spare tire]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:53, hammer]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:34:57, rocks]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:35:06, jacket]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, car battery]",
+                        "+I[plaintext:/rn:kafka:env:cloud_region1::cluster0:changelog_maxwell, test, product, null, 2020-08-06T03:35:28, scooter]");
 
         waitingExpectedResults("sink", expected, Duration.ofSeconds(10));
 
@@ -494,7 +494,7 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                         .setValueSerializationSchema(serSchema)
                                         .setPartitioner(partitioner)
                                         .build())
-                        .setDeliverGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
+                        .setDeliveryGuarantee(DeliveryGuarantee.EXACTLY_ONCE)
                         .setPscProducerConfig(producerProperties)
                         .build());
         env.execute("Write sequence");

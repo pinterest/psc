@@ -21,11 +21,18 @@ package com.pinterest.flink.streaming.connectors.psc.table;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.flink.streaming.connectors.psc.partitioner.FlinkPscPartitioner;
 import com.pinterest.psc.config.PscConfiguration;
+import org.apache.flink.api.common.restartstrategy.RestartStrategies;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.core.execution.JobClient;
+import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.core.testutils.FlinkAssertions;
+import org.apache.flink.runtime.jobgraph.SavepointConfigOptions;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.table.api.TableResult;
+import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.api.config.TableConfigOptions;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.utils.EncodingUtils;
@@ -41,6 +48,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,6 +64,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.collectAllRows;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.collectRows;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscTableTestUtils.readLines;
 import static org.apache.flink.core.testutils.CommonTestUtils.waitUtil;
@@ -63,9 +72,9 @@ import static org.apache.flink.table.api.config.ExecutionConfigOptions.TABLE_EXE
 import static org.apache.flink.table.utils.TableTestMatchers.deepEqualTo;
 import static org.apache.flink.util.CollectionUtil.entry;
 import static org.apache.flink.util.CollectionUtil.map;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.fail;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.HamcrestCondition.matching;
 
 /** Basic IT cases for the Kafka table source and sink. */
 @RunWith(Parameterized.class)
@@ -94,7 +103,7 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "tstopic_" + format + "_" + UUID.randomUUID();
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into PSC -------------------
@@ -127,8 +136,8 @@ public class PscTableITCase extends PscTableTestBase {
                                 + ")",
                         PscDynamicTableFactory.IDENTIFIER,
                         topicUri,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
                         bootstraps,
                         groupId,
                         formatOptions());
@@ -181,7 +190,134 @@ public class PscTableITCase extends PscTableTestBase {
                         "+I(2019-12-12 00:00:05.000,2019-12-12,00:00:03,2019-12-12 00:00:04.004,3,50.00)",
                         "+I(2019-12-12 00:00:10.000,2019-12-12,00:00:05,2019-12-12 00:00:06.006,2,5.33)");
 
-        assertEquals(expected, TestingSinkFunction.rows);
+        assertThat(TestingSinkFunction.rows).isEqualTo(expected);
+
+        // ------------- cleanup -------------------
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testPscSourceSinkWithBoundedSpecificOffsets() throws Exception {
+        // we always use a different topic name for each parameterized topic,
+        // in order to make sure the topic can be created.
+        final String topic = "bounded_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        // ---------- Produce an event time stream into Kafka -------------------
+        String groupId = getStandardProps().getProperty("group.id");
+        String bootstraps = getBootstrapServers();
+
+        final String createTable =
+                String.format(
+                        "CREATE TABLE kafka (\n"
+                                + "  `user_id` INT,\n"
+                                + "  `item_id` INT,\n"
+                                + "  `behavior` STRING\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  'scan.bounded.mode' = 'specific-offsets',\n"
+                                + "  'scan.bounded.specific-offsets' = 'partition:0,offset:2',\n"
+                                + "  %s\n"
+                                + ")\n",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        groupId,
+                        formatOptions());
+
+        tEnv.executeSql(createTable);
+
+        List<Row> values =
+                Arrays.asList(
+                        Row.of(1, 1102, "behavior 1"),
+                        Row.of(2, 1103, "behavior 2"),
+                        Row.of(3, 1104, "behavior 3"));
+        tEnv.fromValues(values).insertInto("kafka").execute().await();
+
+        // ---------- Consume stream from Kafka -------------------
+
+        List<Row> results = collectAllRows(tEnv.sqlQuery("SELECT * from kafka"));
+
+        assertThat(results)
+                .containsExactly(Row.of(1, 1102, "behavior 1"), Row.of(2, 1103, "behavior 2"));
+
+        // ------------- cleanup -------------------
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testPscSourceSinkWithBoundedTimestamp() throws Exception {
+        // we always use a different topic name for each parameterized topic,
+        // in order to make sure the topic can be created.
+        final String topic = "bounded_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        // ---------- Produce an event time stream into Kafka -------------------
+        String groupId = getStandardProps().getProperty("group.id");
+        String bootstraps = getBootstrapServers();
+
+        final String createTable =
+                String.format(
+                        "CREATE TABLE kafka (\n"
+                                + "  `user_id` INT,\n"
+                                + "  `item_id` INT,\n"
+                                + "  `behavior` STRING,\n"
+                                + "  `event_time` TIMESTAMP_LTZ(3) METADATA FROM 'timestamp'"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  'scan.bounded.mode' = 'timestamp',\n"
+                                + "  'scan.bounded.timestamp-millis' = '5',\n"
+                                + "  %s\n"
+                                + ")\n",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        groupId,
+                        formatOptions());
+
+        tEnv.executeSql(createTable);
+
+        List<Row> values =
+                Arrays.asList(
+                        Row.of(1, 1102, "behavior 1", Instant.ofEpochMilli(0L)),
+                        Row.of(2, 1103, "behavior 2", Instant.ofEpochMilli(3L)),
+                        Row.of(3, 1104, "behavior 3", Instant.ofEpochMilli(7L)));
+        tEnv.fromValues(values).insertInto("kafka").execute().await();
+
+        // ---------- Consume stream from Kafka -------------------
+
+        List<Row> results = collectAllRows(tEnv.sqlQuery("SELECT * from kafka"));
+
+        assertThat(results)
+                .containsExactly(
+                        Row.of(1, 1102, "behavior 1", Instant.ofEpochMilli(0L)),
+                        Row.of(2, 1103, "behavior 2", Instant.ofEpochMilli(3L)));
 
         // ------------- cleanup -------------------
 
@@ -217,7 +353,7 @@ public class PscTableITCase extends PscTableTestBase {
                                         String.format(
                                                 "%s_%s_%s", currency, format, UUID.randomUUID()))
                         .collect(Collectors.toList());
-        List<String> topicUris = topics.stream().map(t -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + t).collect(Collectors.toList());
+        List<String> topicUris = topics.stream().map(t -> PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + t).collect(Collectors.toList());
         // Because psc connector currently doesn't support write data into multiple topic
         // together,
         // we have to create multiple sink tables.
@@ -231,8 +367,8 @@ public class PscTableITCase extends PscTableTestBase {
                                             currencies.get(index).toLowerCase(),
                                             PscDynamicTableFactory.IDENTIFIER,
                                             topicUris.get(index),
-                                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
-                                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                                            PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
                                             bootstraps,
                                             groupId,
                                             formatOptions()));
@@ -244,8 +380,8 @@ public class PscTableITCase extends PscTableTestBase {
                         "currencies_topic_list",
                         PscDynamicTableFactory.IDENTIFIER,
                         String.join(";", topicUris),
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
                         bootstraps,
                         groupId,
                         formatOptions()));
@@ -285,7 +421,7 @@ public class PscTableITCase extends PscTableTestBase {
         }
         List<String> expected = Arrays.asList("+I(Dollar)", "+I(Dummy)", "+I(Euro)", "+I(Yen)");
         TestingSinkFunction.rows.sort(Comparator.naturalOrder());
-        assertEquals(expected, TestingSinkFunction.rows);
+        assertThat(TestingSinkFunction.rows).isEqualTo(expected);
 
         // ------------- cleanup -------------------
         topics.forEach(super::deleteTestTopic);
@@ -296,7 +432,7 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "metadata_topic_" + format + "_" + UUID.randomUUID();
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -330,8 +466,8 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  %s\n"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, formatOptions());
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, groupId, formatOptions());
         tEnv.executeSql(createTable);
 
         String initialValues =
@@ -377,7 +513,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 topicUri,
                                 true));
 
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
 
         // ------------- cleanup -------------------
 
@@ -389,7 +525,7 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_partial_value_topic_" + format + "_" + UUID.randomUUID();
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -424,7 +560,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'EXCEPT_KEY'\n"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, groupId, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -464,7 +600,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 43,
                                 "payload 3"));
 
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
 
         // ------------- cleanup -------------------
 
@@ -476,7 +612,7 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "key_full_value_topic_" + format + "_" + UUID.randomUUID();
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -511,7 +647,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'ALL'\n"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, format, format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, groupId, format, format);
 
         tEnv.executeSql(createTable);
 
@@ -548,7 +684,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 102L,
                                 "payload 3"));
 
-        assertThat(result, deepEqualTo(expected, true));
+        assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
 
         // ------------- cleanup -------------------
 
@@ -566,12 +702,12 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String orderTopic = "temporal_join_topic_order_" + format + "_" + UUID.randomUUID();
-        final String orderTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + orderTopic;
+        final String orderTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + orderTopic;
         createTestTopic(orderTopic, 1, 1);
 
         final String productTopic =
                 "temporal_join_topic_product_" + format + "_" + UUID.randomUUID();
-        final String productTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + productTopic;
+        final String productTopicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + productTopic;
         createTestTopic(productTopic, 1, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -601,7 +737,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'format' = '%s'\n"
                                 + ")",
-                        orderTopicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, format);
+                        orderTopicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, groupId, format);
         tEnv.executeSql(orderTableDDL);
         String orderInitialValues =
                 "INSERT INTO ordersTable\n"
@@ -638,7 +774,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'value.format' = 'debezium-json'\n"
                                 + ")",
-                        productTopicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId);
+                        productTopicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, groupId);
         tEnv.executeSql(productTableDDL);
 
         // use raw format to initial the changelog data
@@ -676,7 +812,7 @@ public class PscTableITCase extends PscTableTestBase {
                         "+I[o_005, 2020-10-01T18:00, p_001, 2020-10-01T18:00, 11.9900, Leonard, scooter, 10, 119.9000]",
                         "+I[o_006, 2020-10-01T18:00, null, null, null, Leonard, null, 10, null]");
 
-        assertEquals(expected, result);
+        assertThat(result).isEqualTo(expected);
 
         // ------------- cleanup -------------------
 
@@ -702,7 +838,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'format' = 'raw'\n"
                                 + ")",
-                        topic, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps);
+                        topic, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps);
         tEnv.executeSql(productChangelogDDL);
         String[] allChangelog = readLines("product_changelog.txt").toArray(new String[0]);
 
@@ -721,7 +857,7 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "per_partition_watermark_topic_" + format + "_" + UUID.randomUUID();
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 4, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -749,7 +885,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'sink.partitioner' = '%s',\n"
                                 + "  'format' = '%s'\n"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, TestPartitioner.class.getName(), format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, groupId, TestPartitioner.class.getName(), format);
 
         tEnv.executeSql(createTable);
 
@@ -817,7 +953,7 @@ public class PscTableITCase extends PscTableTestBase {
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         final String topic = "idle_partition_watermark_topic_" + format + "_" + UUID.randomUUID();
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topic, 4, 1);
 
         // ---------- Produce an event time stream into Kafka -------------------
@@ -846,7 +982,7 @@ public class PscTableITCase extends PscTableTestBase {
                                 + "  'sink.partitioner' = '%s',\n"
                                 + "  'format' = '%s'\n"
                                 + ")",
-                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX, bootstraps, groupId, TestPartitioner.class.getName(), format);
+                        topicUri, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX, bootstraps, groupId, TestPartitioner.class.getName(), format);
 
         tEnv.executeSql(createTable);
 
@@ -886,6 +1022,151 @@ public class PscTableITCase extends PscTableTestBase {
 
         final List<String> expected = Arrays.asList("+I[0, 2]", "+I[1, 2]");
         PscTableTestUtils.waitingExpectedResults("MySink", expected, Duration.ofSeconds(5));
+
+        // ------------- cleanup -------------------
+
+        tableResult.getJobClient().ifPresent(JobClient::cancel);
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testLatestOffsetStrategyResume() throws Exception {
+        // we always use a different topic name for each parameterized topic,
+        // in order to make sure the topic can be created.
+        final String topic = "latest_offset_resume_topic_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 6, 1);
+        env.setParallelism(1);
+
+        // ---------- Produce data into Kafka's partition 0-6 -------------------
+
+        String groupId = getStandardProps().getProperty("psc.consumer.group.id");
+        String bootstraps = getBootstrapServers();
+
+        final String createTable =
+                String.format(
+                        "CREATE TABLE kafka (\n"
+                                + "  `partition_id` INT,\n"
+                                + "  `value` INT\n"
+                                + ") WITH (\n"
+                                + "  'connector' = 'psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'latest-offset',\n"
+                                + "  'sink.partitioner' = '%s',\n"
+                                + "  'format' = '%s'\n"
+                                + ")",
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        groupId,
+                        TestPartitioner.class.getName(),
+                        format
+                );
+
+        tEnv.executeSql(createTable);
+
+        String initialValues =
+                "INSERT INTO kafka VALUES (0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0)";
+        tEnv.executeSql(initialValues).await();
+
+        // ---------- Consume stream from Kafka -------------------
+
+        String createSink =
+                "CREATE TABLE MySink(\n"
+                        + "  `id` INT,\n"
+                        + "  `value` INT\n"
+                        + ") WITH (\n"
+                        + "  'connector' = 'values'\n"
+                        + ")";
+        tEnv.executeSql(createSink);
+
+        String executeInsert = "INSERT INTO MySink SELECT `partition_id`, `value` FROM kafka";
+        TableResult tableResult = tEnv.executeSql(executeInsert);
+
+        // ---------- Produce data into Kafka's partition 0-2 -------------------
+
+        String moreValues = "INSERT INTO kafka VALUES (0, 1), (1, 1), (2, 1)";
+        tEnv.executeSql(moreValues).await();
+
+        final List<String> expected = Arrays.asList("+I[0, 1]", "+I[1, 1]", "+I[2, 1]");
+        PscTableTestUtils.waitingExpectedResults("MySink", expected, Duration.ofSeconds(5));
+
+        // ---------- Stop the consume job with savepoint  -------------------
+
+        String savepointBasePath = getTempDirPath(topic + "-savepoint");
+        assert tableResult.getJobClient().isPresent();
+        JobClient client = tableResult.getJobClient().get();
+        String savepointPath =
+                client.stopWithSavepoint(false, savepointBasePath, SavepointFormatType.DEFAULT)
+                        .get();
+
+        // ---------- Produce data into Kafka's partition 0-5 -------------------
+
+        String produceValuesBeforeResume =
+                "INSERT INTO kafka VALUES (0, 2), (1, 2), (2, 2), (3, 1), (4, 1), (5, 1)";
+        tEnv.executeSql(produceValuesBeforeResume).await();
+
+        // ---------- Resume the consume job from savepoint  -------------------
+
+        Configuration configuration = new Configuration();
+        configuration.set(SavepointConfigOptions.SAVEPOINT_PATH, savepointPath);
+        configuration.set(CoreOptions.DEFAULT_PARALLELISM, 1);
+        StreamExecutionEnvironment env =
+                StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+        StreamTableEnvironment tEnv = StreamTableEnvironment.create(env);
+        env.getConfig().setRestartStrategy(RestartStrategies.noRestart());
+
+        tEnv.executeSql(createTable);
+        tEnv.executeSql(createSink);
+        tableResult = tEnv.executeSql(executeInsert);
+
+        final List<String> afterResumeExpected =
+                Arrays.asList(
+                        "+I[0, 1]",
+                        "+I[1, 1]",
+                        "+I[2, 1]",
+                        "+I[0, 2]",
+                        "+I[1, 2]",
+                        "+I[2, 2]",
+                        "+I[3, 1]",
+                        "+I[4, 1]",
+                        "+I[5, 1]");
+        PscTableTestUtils.waitingExpectedResults(
+                "MySink", afterResumeExpected, Duration.ofSeconds(5));
+
+        // ---------- Produce data into Kafka's partition 0-5 -------------------
+
+        String produceValuesAfterResume =
+                "INSERT INTO kafka VALUES (0, 3), (1, 3), (2, 3), (3, 2), (4, 2), (5, 2)";
+        this.tEnv.executeSql(produceValuesAfterResume).await();
+
+        final List<String> afterProduceExpected =
+                Arrays.asList(
+                        "+I[0, 1]",
+                        "+I[1, 1]",
+                        "+I[2, 1]",
+                        "+I[0, 2]",
+                        "+I[1, 2]",
+                        "+I[2, 2]",
+                        "+I[3, 1]",
+                        "+I[4, 1]",
+                        "+I[5, 1]",
+                        "+I[0, 3]",
+                        "+I[1, 3]",
+                        "+I[2, 3]",
+                        "+I[3, 2]",
+                        "+I[4, 2]",
+                        "+I[5, 2]");
+        PscTableTestUtils.waitingExpectedResults(
+                "MySink", afterProduceExpected, Duration.ofSeconds(5));
 
         // ------------- cleanup -------------------
 
@@ -938,7 +1219,7 @@ public class PscTableITCase extends PscTableTestBase {
     private TableResult startFromGroupOffset(
             String tableName, String topic, String groupId, String resetStrategy, String sinkName)
             throws ExecutionException, InterruptedException {
-        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         // we always use a different topic name for each parameterized topic,
         // in order to make sure the topic can be created.
         createTestTopic(topic, 4, 1);
@@ -972,8 +1253,8 @@ public class PscTableITCase extends PscTableTestBase {
                         createTableSql,
                         tableName,
                         topicUri,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
                         bootstraps,
                         groupId,
                         resetStrategy,

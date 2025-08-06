@@ -31,13 +31,10 @@ import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import kafka.server.KafkaServer;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
-import org.apache.flink.connector.kafka.source.KafkaSourceBuilder;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSink;
 import org.apache.flink.streaming.api.operators.StreamSink;
 import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSchema;
-import org.apache.flink.streaming.connectors.kafka.KafkaDeserializationSchema;
-import org.apache.flink.streaming.connectors.kafka.internals.KafkaDeserializationSchemaWrapper;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -50,15 +47,26 @@ import java.util.Properties;
  * Abstract class providing a Kafka test environment.
  */
 public abstract class PscTestEnvironmentWithKafkaAsPubSub {
-    public static String PSC_TEST_TOPIC_URI_PREFIX = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
-    public static String PSC_TEST_TOPIC_URI_SECURE_PREFIX = "secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
-    public static TopicUri PSC_TEST_CLUSTER_URI;
-    public static TopicUri PSC_TEST_CLUSTER_URI_SECURE;
+
+    // cluster0
+    public static String PSC_TEST_CLUSTER0_URI_PREFIX = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster0:";
+    public static String PSC_TEST_CLUSTER0_URI_SECURE_PREFIX = "secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster0:";
+    public static TopicUri PSC_TEST_CLUSTER0_URI;
+    public static TopicUri PSC_TEST_CLUSTER0_URI_SECURE;
+
+    // cluster1
+    public static String PSC_TEST_CLUSTER1_URI_PREFIX = "plaintext:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
+    public static String PSC_TEST_CLUSTER1_URI_SECURE_PREFIX = "secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":kafka:env:cloud_region1::cluster1:";
+    public static TopicUri PSC_TEST_CLUSTER1_URI;
+    public static TopicUri PSC_TEST_CLUSTER1_URI_SECURE;
 
     static {
         try {
-            PSC_TEST_CLUSTER_URI = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_PREFIX);
-            PSC_TEST_CLUSTER_URI_SECURE = KafkaTopicUri.validate(PSC_TEST_TOPIC_URI_SECURE_PREFIX);
+            PSC_TEST_CLUSTER0_URI = KafkaTopicUri.validate(PSC_TEST_CLUSTER0_URI_PREFIX);
+            PSC_TEST_CLUSTER0_URI_SECURE = KafkaTopicUri.validate(PSC_TEST_CLUSTER0_URI_SECURE_PREFIX);
+            
+            PSC_TEST_CLUSTER1_URI = KafkaTopicUri.validate(PSC_TEST_CLUSTER1_URI_PREFIX);
+            PSC_TEST_CLUSTER1_URI_SECURE = KafkaTopicUri.validate(PSC_TEST_CLUSTER1_URI_SECURE_PREFIX);
         } catch (TopicUriSyntaxException e) {
             throw new RuntimeException("Unable to validate clusterUri", e);
         }
@@ -68,6 +76,7 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
      * Configuration class for {@link PscTestEnvironmentWithKafkaAsPubSub}.
      */
     public static class Config {
+        private int numKafkaClusters = 1;
         private int kafkaServersNumber = 1;
         private Properties kafkaServerProperties = null;
         private boolean secureMode = false;
@@ -146,8 +155,6 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     public abstract String getBrokerConnectionString();
 
     public abstract String getVersion();
-
-    public abstract List<KafkaServer> getBrokers();
 
     public Properties getIdempotentProducerConfig() {
         Properties configuration = new Properties();
@@ -241,6 +248,7 @@ public abstract class PscTestEnvironmentWithKafkaAsPubSub {
     // -- leader failure simulation
 
     public abstract void restartBroker(int leaderId) throws Exception;
+    public abstract void stopBroker(int brokerId) throws Exception;
 
     public abstract int getLeaderToShutDown(String topicUri) throws Exception;
 

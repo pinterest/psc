@@ -22,7 +22,6 @@ import com.pinterest.flink.streaming.util.serialization.psc.KeyedSerializationSc
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.serde.StringDeserializer;
 import com.pinterest.psc.serde.StringSerializer;
-import kafka.server.KafkaServer;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.serialization.TypeInformationSerializationSchema;
 import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
@@ -97,7 +96,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
      * This tests checks whether there is some resource leak in form of growing threads number.
      */
     public void resourceCleanUp(FlinkPscProducer.Semantic semantic) throws Exception {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX +
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX +
                 "flink-kafka-producer-resource-cleanup-" + semantic;
 
         final int allowedEpsilonThreadCountGrow = 50;
@@ -128,7 +127,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testRestoreToCheckpointAfterExceedingProducersPool() throws Exception {
         String topic = "flink-kafka-producer-fail-before-notify";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         try (OneInputStreamOperatorTestHarness<Integer, Object> testHarness1 = createTestHarness(topicUri)) {
             testHarness1.setup();
@@ -171,7 +170,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testFlinkPscProducerFailBeforeNotify() throws Exception {
         String topic = "flink-kafka-producer-fail-before-notify";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         OneInputStreamOperatorTestHarness<Integer, Object> testHarness = createTestHarness(topicUri);
 
@@ -206,6 +205,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
 
         assertExactlyOnceForTopicUri(createProperties(), topicUri, 0, Arrays.asList(42, 43));
 
+        Thread.sleep(5000); // wait for broker to start up before deleting topic
         deleteTestTopic(topic);
         checkProducerLeak();
     }
@@ -218,7 +218,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testFailBeforeNotifyAndResumeWorkAfterwards() throws Exception {
         String topic = "flink-kafka-producer-fail-before-notify";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         OneInputStreamOperatorTestHarness<Integer, Object> testHarness1 = createTestHarness(topicUri);
         checkProducerLeak();
@@ -270,7 +270,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testFailAndRecoverSameCheckpointTwice() throws Exception {
         String topic = "flink-kafka-producer-fail-and-recover-same-checkpoint-twice";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         OperatorSubtaskState snapshot1;
         try (OneInputStreamOperatorTestHarness<Integer, Object> testHarness = createTestHarness(topicUri)) {
@@ -325,7 +325,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testScaleDownBeforeFirstCheckpoint() throws Exception {
         String topic = "scale-down-before-first-checkpoint";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         List<AutoCloseable> operatorsToClose = new ArrayList<>();
         int preScaleDownParallelism = Math.max(2, FlinkPscProducer.SAFE_SCALE_DOWN_FACTOR);
@@ -394,7 +394,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testScaleUpAfterScalingDown() throws Exception {
         String topic = "scale-up-after-scaling-down";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         final int parallelism1 = 4;
         final int parallelism2 = 2;
@@ -498,7 +498,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testRecoverCommittedTransaction() throws Exception {
         String topic = "flink-kafka-producer-recover-committed-transaction";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         OneInputStreamOperatorTestHarness<Integer, Object> testHarness = createTestHarness(topicUri);
 
@@ -525,7 +525,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testRunOutOfProducersInThePool() throws Exception {
         String topic = "flink-kafka-run-out-of-producers";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         try (OneInputStreamOperatorTestHarness<Integer, Object> testHarness = createTestHarness(topicUri)) {
 
@@ -548,7 +548,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testMigrateFromAtLeastOnceToExactlyOnce() throws Exception {
         String topic = "testMigrateFromAtLeastOnceToExactlyOnce";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         testRecoverWithChangeSemantics(topicUri, FlinkPscProducer.Semantic.AT_LEAST_ONCE, FlinkPscProducer.Semantic.EXACTLY_ONCE);
         assertExactlyOnceForTopicUri(createProperties(), topicUri, 0, Arrays.asList(42, 43, 44, 45));
         deleteTestTopic(topic);
@@ -557,7 +557,7 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     @Test
     public void testMigrateFromAtExactlyOnceToAtLeastOnce() throws Exception {
         String topic = "testMigrateFromExactlyOnceToAtLeastOnce";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         testRecoverWithChangeSemantics(topicUri, FlinkPscProducer.Semantic.EXACTLY_ONCE, FlinkPscProducer.Semantic.AT_LEAST_ONCE);
         assertExactlyOnceForTopicUri(createProperties(), topicUri, 0, Arrays.asList(42, 43, 45, 46, 47));
         deleteTestTopic(topic);
@@ -595,29 +595,8 @@ public class FlinkPscProducerITCase extends PscTestBaseWithKafkaAsPubSub {
     // -----------------------------------------------------------------------------------------------------------------
 
     // shut down a Kafka broker
-    private void failBroker(int brokerId) {
-        KafkaServer toShutDown = null;
-        for (KafkaServer server : pscTestEnvWithKafka.getBrokers()) {
-
-            if (pscTestEnvWithKafka.getBrokerId(server) == brokerId) {
-                toShutDown = server;
-                break;
-            }
-        }
-
-        if (toShutDown == null) {
-            StringBuilder listOfBrokers = new StringBuilder();
-            for (KafkaServer server : pscTestEnvWithKafka.getBrokers()) {
-                listOfBrokers.append(pscTestEnvWithKafka.getBrokerId(server));
-                listOfBrokers.append(" ; ");
-            }
-
-            throw new IllegalArgumentException("Cannot find broker to shut down: " + brokerId
-                    + " ; available brokers: " + listOfBrokers.toString());
-        } else {
-            toShutDown.shutdown();
-            toShutDown.awaitShutdown();
-        }
+    private void failBroker(int brokerId) throws Exception {
+        pscTestEnvWithKafka.stopBroker(brokerId);
     }
 
     private void closeIgnoringProducerFenced(AutoCloseable autoCloseable) throws Exception {

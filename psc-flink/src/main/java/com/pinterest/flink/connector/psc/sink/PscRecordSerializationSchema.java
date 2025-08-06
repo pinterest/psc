@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 
+import javax.annotation.Nullable;
 import java.io.Serializable;
 
 /**
@@ -53,8 +54,9 @@ public interface PscRecordSerializationSchema<T> extends Serializable {
      * @param element element to be serialized
      * @param context context to possibly determine target partition
      * @param timestamp timestamp
-     * @return PSC {@link PscProducerMessage}
+     * @return PSC {@link PscProducerMessage} or null if the element cannot be serialized
      */
+    @Nullable
     PscProducerMessage<byte[], byte[]> serialize(T element, PscSinkContext context, Long timestamp);
 
     /** Context providing information of the PSC record target location. */

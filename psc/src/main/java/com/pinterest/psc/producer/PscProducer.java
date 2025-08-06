@@ -92,7 +92,7 @@ public class PscProducer<K, V> implements Closeable {
     public PscProducer(String customPscConfigurationFilePath) throws ConfigurationException, ProducerException {
         if (customPscConfigurationFilePath == null)
             throw new ProducerException("Null parameter was passed to API PscProducer(String)");
-        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         initialize();
     }
 
@@ -110,7 +110,7 @@ public class PscProducer<K, V> implements Closeable {
     public PscProducer(Configuration configuration) throws ConfigurationException, ProducerException {
         if (configuration == null)
             throw new ProducerException("Null parameter was passed to API PscProducer(Configuration)");
-        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         initialize();
     }
 
@@ -125,7 +125,7 @@ public class PscProducer<K, V> implements Closeable {
     public PscProducer(PscConfiguration pscConfiguration) throws ConfigurationException, ProducerException {
         if (pscConfiguration == null)
             throw new ProducerException("Null parameter was passed to API PscProducer(PscConfiguration)");
-        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_PRODUCER);
+        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER);
         initialize();
     }
 

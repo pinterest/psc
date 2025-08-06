@@ -217,6 +217,26 @@ public abstract class PscBackendConsumer<K, V> extends PscBackendClient<K, V> {
     public abstract void seekToEnd(Set<TopicUriPartition> topicUriPartitions) throws ConsumerException;
 
     /**
+     * Suspend fetching from the specified partitions. Future calls to {@link #poll(Duration)} will not return any
+     * records from these partitions until they are resumed using {@link #resume(Collection)}. Note that this method
+     * does not affect partition subscription.
+     *
+     * @param topicUriPartitions the set of topic URI partitions to pause fetching from.
+     * @throws ConsumerException if there are validation issues or backend failures.
+     */
+    public abstract void pause(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException;
+
+    /**
+     * Resume fetching from the specified partitions. Future calls to {@link #poll(Duration)} will return records from
+     * these partitions if there are any to return. If the consumer was not previously paused, this method has no
+     * effect.
+     *
+     * @param topicUriPartitions the set of topic URI partitions to resume fetching from.
+     * @throws ConsumerException if there are validation issues or backend failures.
+     */
+    public abstract void resume(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException;
+
+    /**
      * Commits the consumption coordinate of the consumer for the given message ids. This is a synchronous commit.
      *
      * @return a set of message ids that represent the latest committed offsets for underlying topic uri partition.

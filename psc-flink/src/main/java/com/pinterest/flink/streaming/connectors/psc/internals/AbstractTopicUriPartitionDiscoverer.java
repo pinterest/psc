@@ -18,6 +18,8 @@
 package com.pinterest.flink.streaming.connectors.psc.internals;
 
 import org.apache.flink.annotation.Internal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.Iterator;
@@ -42,6 +44,8 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  */
 @Internal
 public abstract class AbstractTopicUriPartitionDiscoverer {
+
+    private static final Logger LOG = LoggerFactory.getLogger(AbstractTopicUriPartitionDiscoverer.class);
 
     /**
      * Describes whether we are discovering partitions for fixed topics or a topic pattern.

@@ -61,7 +61,7 @@ class TestInterleavingPscConsumerMessages {
         pscConfiguration.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "group-id");
         pscConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         pscConfiguration.setProperty(PscConfiguration.PSC_METRIC_REPORTING_ENABLED, "false");
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         ConsumerInterceptors<String, String> consumerInterceptors = new ConsumerInterceptors<>(
                 null, pscConfigurationInternal, keyDeserializer, valueDeserializer
         );

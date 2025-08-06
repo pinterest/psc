@@ -7,6 +7,7 @@ import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.config.PscMetadataClientToKafkaAdminClientConfigConverter;
 import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.logging.PscLogger;
@@ -54,7 +55,7 @@ public class PscKafkaMetadataClient extends PscBackendMetadataClient {
             PscConfigurationInternal pscConfigurationInternal
     ) throws ConfigurationException {
         super.initialize(topicUri, env, pscConfigurationInternal);
-        Properties properties = PscConfigurationUtils.pscConfigurationInternalToProperties(pscConfigurationInternal);
+        Properties properties = new PscMetadataClientToKafkaAdminClientConfigConverter().convert(pscConfigurationInternal, topicUri);
         properties.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, discoveryConfig.getConnect());
         properties.put(AdminClientConfig.CLIENT_ID_CONFIG, pscConfigurationInternal.getMetadataClientId());
         this.kafkaAdminClient = AdminClient.create(properties);

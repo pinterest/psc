@@ -17,6 +17,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.flink.connector.psc.sink.TwoPhaseCommittingStatefulSink;
 import org.apache.flink.api.common.operators.ProcessingTimeService;
 import org.apache.flink.api.connector.sink2.StatefulSink;
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -27,6 +28,7 @@ import org.apache.flink.types.RowKind;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,10 +40,11 @@ import static org.apache.flink.types.RowKind.UPDATE_AFTER;
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
-class ReducingUpsertWriter<WriterState>
-        implements StatefulSink.StatefulSinkWriter<RowData, WriterState> {
+class ReducingUpsertWriter<WriterState, Comm>
+        implements TwoPhaseCommittingStatefulSink.PrecommittingStatefulSinkWriter<RowData, WriterState, Comm> {
 
-    private final StatefulSink.StatefulSinkWriter<RowData, WriterState> wrappedWriter;
+    private final TwoPhaseCommittingStatefulSink.PrecommittingStatefulSinkWriter<
+            RowData, WriterState, Comm> wrappedWriter;
     private final WrappedContext wrappedContext = new WrappedContext();
     private final int batchMaxRowNums;
     private final Function<RowData, RowData> valueCopyFunction;
@@ -54,7 +57,9 @@ class ReducingUpsertWriter<WriterState>
     private long lastFlush = System.currentTimeMillis();
 
     ReducingUpsertWriter(
-            StatefulSink.StatefulSinkWriter<RowData, WriterState> wrappedWriter,
+            TwoPhaseCommittingStatefulSink.PrecommittingStatefulSinkWriter<
+                    RowData, WriterState, Comm>
+                    wrappedWriter,
             DataType physicalDataType,
             int[] keyProjection,
             SinkBufferFlushMode bufferFlushMode,
@@ -86,7 +91,8 @@ class ReducingUpsertWriter<WriterState>
 
     @Override
     public void flush(boolean endOfInput) throws IOException, InterruptedException {
-        flush();
+        sinkBuffer();
+        wrappedWriter.flush(endOfInput);
     }
 
     @Override
@@ -108,7 +114,7 @@ class ReducingUpsertWriter<WriterState>
         reduceBuffer.put(key, new Tuple2<>(changeFlag(value), timestamp));
 
         if (reduceBuffer.size() >= batchMaxRowNums) {
-            flush();
+            sinkBuffer();
         }
     }
 
@@ -120,7 +126,7 @@ class ReducingUpsertWriter<WriterState>
                 lastFlush + batchIntervalMs,
                 (t) -> {
                     if (t >= lastFlush + batchIntervalMs) {
-                        flush();
+                        sinkBuffer();
                     }
                     registerFlush();
                 });
@@ -139,13 +145,18 @@ class ReducingUpsertWriter<WriterState>
         return value;
     }
 
-    private void flush() throws IOException, InterruptedException {
+    private void sinkBuffer() throws IOException, InterruptedException {
         for (Tuple2<RowData, Long> value : reduceBuffer.values()) {
             wrappedContext.setTimestamp(value.f1);
             wrappedWriter.write(value.f0, wrappedContext);
         }
         lastFlush = System.currentTimeMillis();
         reduceBuffer.clear();
+    }
+
+    @Override
+    public Collection<Comm> prepareCommit() throws IOException, InterruptedException {
+        return wrappedWriter.prepareCommit();
     }
 
     /**
@@ -156,7 +167,7 @@ class ReducingUpsertWriter<WriterState>
      * ReducingUpsertWriter} will emit the records in the buffer with memorized timestamp.
      */
     private static class WrappedContext implements Context {
-        private long timestamp;
+        private Long timestamp;
         private Context context;
 
         @Override
@@ -167,11 +178,10 @@ class ReducingUpsertWriter<WriterState>
 
         @Override
         public Long timestamp() {
-            checkNotNull(timestamp, "timestamp must to be set before retrieving it.");
             return timestamp;
         }
 
-        public void setTimestamp(long timestamp) {
+        public void setTimestamp(Long timestamp) {
             this.timestamp = timestamp;
         }
 

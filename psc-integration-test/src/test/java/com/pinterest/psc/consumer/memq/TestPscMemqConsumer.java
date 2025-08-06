@@ -359,7 +359,7 @@ public class TestPscMemqConsumer {
         pscConfiguration.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(
                 pscConfiguration,
-                PscConfiguration.PSC_CLIENT_TYPE_CONSUMER
+                PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER
         );
         pscConfigurationInternal.overrideDefaultConfigurations(PscConfiguration.PSC_METRICS_REPORTER_CLASS,
                 TestUtils.DEFAULT_METRICS_REPORTER);

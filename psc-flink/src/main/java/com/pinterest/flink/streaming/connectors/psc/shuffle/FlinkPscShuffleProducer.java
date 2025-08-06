@@ -18,6 +18,7 @@
 package com.pinterest.flink.streaming.connectors.psc.shuffle;
 
 import com.pinterest.flink.streaming.connectors.psc.FlinkPscErrorCode;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscTopicUriPartitionAssigner;
 import com.pinterest.psc.exception.producer.ProducerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.producer.PscProducerMessage;
@@ -34,6 +35,8 @@ import org.apache.flink.util.PropertiesUtil;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -45,6 +48,7 @@ public class FlinkPscShuffleProducer<IN, KEY> extends FlinkPscProducer<IN> {
     private final PscSerializer<IN> pscSerializer;
     private final KeySelector<IN, KEY> keySelector;
     private final int numberOfPartitions;
+    private final Map<Integer, Integer> subtaskToPartitionMap;
 
     FlinkPscShuffleProducer(
             String defaultTopicUri,
@@ -62,6 +66,7 @@ public class FlinkPscShuffleProducer<IN, KEY> extends FlinkPscProducer<IN> {
                 configuration.getProperty(FlinkPscShuffle.PARTITION_NUMBER) != null,
                 "Missing partition number for PSC Shuffle");
         numberOfPartitions = PropertiesUtil.getInt(configuration, FlinkPscShuffle.PARTITION_NUMBER, Integer.MIN_VALUE);
+        subtaskToPartitionMap = new HashMap<>();
     }
 
     /**
@@ -83,8 +88,9 @@ public class FlinkPscShuffleProducer<IN, KEY> extends FlinkPscProducer<IN> {
         int[] partitions = getPartitions(transaction);
         int partitionIndex;
         try {
-            partitionIndex = KeyGroupRangeAssignment
+            int subtaskIndex = KeyGroupRangeAssignment
                     .assignKeyToParallelOperator(keySelector.getKey(next), partitions.length, partitions.length);
+            partitionIndex = subtaskToPartitionMap.get(subtaskIndex);
         } catch (Exception e) {
             throw new RuntimeException("Fail to assign a partition number to record", e);
         }
@@ -149,6 +155,12 @@ public class FlinkPscShuffleProducer<IN, KEY> extends FlinkPscProducer<IN> {
         if (partitions == null) {
             partitions = getPartitionsByTopicUri(defaultTopicUri, transaction.getProducer());
             topicUriPartitionsMap.put(defaultTopicUri, partitions);
+            for (int i = 0; i < partitions.length; i++) {
+                subtaskToPartitionMap.put(
+                        PscTopicUriPartitionAssigner.assign(
+                                defaultTopicUri, partitions[i], partitions.length),
+                        partitions[i]);
+            }
         }
 
         Preconditions.checkArgument(partitions.length == numberOfPartitions);

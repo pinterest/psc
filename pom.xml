@@ -5,12 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.pinterest.psc</groupId>
     <artifactId>psc-java-oss</artifactId>
-    <version>3.3.2</version>
-    <packaging>pom</packaging>
-    <name>psc-java-oss</name>
     <description>PubSub Client (PSC)</description>
     <url>https://github.com/pinterest/psc</url>
-
+    <version>4.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>psc-java-oss</name>
     <modules>
         <module>psc</module>
         <module>psc-examples</module>
@@ -45,21 +44,18 @@
             <organization>Pinterest Logging Platform</organization>
         </developer>
     </developers>
-
     <licenses>
         <license>
             <name>The Apache Software License, Version 2.0</name>
             <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
         </license>
     </licenses>
-
     <scm>
         <connection>scm:git:git@pinterest/psc.git</connection>
         <developerConnection>scm:git:git@github.com:pinterest/psc.git</developerConnection>
         <url>https://github.com/pinterest/psc</url>
         <tag>HEAD</tag>
     </scm>
-
     <distributionManagement>
         <repository>
             <id>ossrh</id>

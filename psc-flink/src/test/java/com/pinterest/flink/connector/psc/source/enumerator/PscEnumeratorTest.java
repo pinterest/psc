@@ -36,9 +36,9 @@ import com.pinterest.psc.metadata.client.PscMetadataClient;
 import com.pinterest.psc.serde.StringDeserializer;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.connector.source.ReaderInfo;
+import org.apache.flink.api.connector.source.SplitsAssignment;
 import org.apache.flink.api.connector.source.mocks.MockSplitEnumeratorContext;
 import org.apache.flink.mock.Whitebox;
-
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.junit.AfterClass;
@@ -57,25 +57,25 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /** Unit tests for {@link PscSourceEnumerator}. */
 public class PscEnumeratorTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String DYNAMIC_TOPIC_NAME = "dynamic_topic";
-    private static final String DYNAMIC_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + DYNAMIC_TOPIC_NAME;
+    private static final String DYNAMIC_TOPIC_URI = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + DYNAMIC_TOPIC_NAME;
     private static final int NUM_PARTITIONS_DYNAMIC_TOPIC = 4;
 
     private static final String TOPIC1 = "topic";
-    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
+    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "pattern-topic";
-    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC2;
 
     private static final int READER0 = 0;
     private static final int READER1 = 1;
+    private static final int READER2 = 2;
     private static final Set<String> PRE_EXISTING_TOPIC_URIS =
             new HashSet<>(Arrays.asList(TOPIC_URI1, TOPIC_URI2));
     private static final Set<String> PRE_EXISTING_TOPICS =
@@ -108,11 +108,14 @@ public class PscEnumeratorTest {
             // Start the enumerator and it should schedule a one time task to discover and assign
             // partitions.
             enumerator.start();
-            assertTrue(context.getPeriodicCallables().isEmpty());
-            assertEquals(
-                    "A one time partition discovery callable should have been scheduled",
-                    1,
-                    context.getOneTimeCallables().size());
+            assertThat(context.getPeriodicCallables()).isEmpty();
+            assertThat(context.getOneTimeCallables())
+                    .as("A one time partition discovery callable should have been scheduled")
+                    .hasSize(1);
+
+            // enumerator just start noMoreNewPartitionSplits will be false
+            assertThat((Boolean) Whitebox.getInternalState(enumerator, "noMoreNewPartitionSplits"))
+                    .isFalse();
         }
     }
 
@@ -126,11 +129,14 @@ public class PscEnumeratorTest {
             // Start the enumerator and it should schedule a one time task to discover and assign
             // partitions.
             enumerator.start();
-            assertTrue(context.getOneTimeCallables().isEmpty());
-            assertEquals(
-                    "A periodic partition discovery callable should have been scheduled",
-                    1,
-                    context.getPeriodicCallables().size());
+            assertThat(context.getOneTimeCallables()).isEmpty();
+            assertThat(context.getPeriodicCallables())
+                    .as("A periodic partition discovery callable should have been scheduled")
+                    .hasSize(1);
+
+            // enumerator just start noMoreNewPartitionSplits will be false
+            assertThat((Boolean) Whitebox.getInternalState(enumerator, "noMoreNewPartitionSplits"))
+                    .isFalse();
         }
     }
 
@@ -148,7 +154,7 @@ public class PscEnumeratorTest {
             // register reader 0.
             registerReader(context, enumerator, READER0);
             registerReader(context, enumerator, READER1);
-            assertTrue(context.getSplitsAssignmentSequence().isEmpty());
+            assertThat(context.getSplitsAssignmentSequence()).isEmpty();
 
             // Run the partition discover callable and check the partition assignment.
             runOneTimePartitionDiscovery(context);
@@ -170,7 +176,7 @@ public class PscEnumeratorTest {
             // partitions.
             enumerator.start();
             runOneTimePartitionDiscovery(context);
-            assertTrue(context.getSplitsAssignmentSequence().isEmpty());
+            assertThat(context.getSplitsAssignmentSequence()).isEmpty();
 
             registerReader(context, enumerator, READER0);
             verifyLastReadersAssignments(
@@ -182,6 +188,78 @@ public class PscEnumeratorTest {
         }
     }
 
+    @Test
+    public void testRunWithDiscoverPartitionsOnceToCheckNoMoreSplit() throws Throwable {
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
+                     new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
+             PscSourceEnumerator enumerator =
+                     createEnumerator(context, DISABLE_PERIODIC_PARTITION_DISCOVERY)) {
+
+            // Start the enumerator and it should schedule a one time task to discover and assign
+            // partitions.
+            enumerator.start();
+            assertThat(context.getOneTimeCallables())
+                    .as("A one time partition discovery callable should have been scheduled")
+                    .hasSize(1);
+            assertThat(context.getPeriodicCallables()).isEmpty();
+            // Run the partition discover callable and check the partition assignment.
+            runOneTimePartitionDiscovery(context);
+
+            // enumerator noMoreNewPartitionSplits first will be false, when execute
+            // handlePartitionSplitChanges will be set true
+            assertThat((Boolean) Whitebox.getInternalState(enumerator, "noMoreNewPartitionSplits"))
+                    .isTrue();
+        }
+    }
+
+    @Test
+    public void testRunWithPeriodicPartitionDiscoveryOnceToCheckNoMoreSplit() throws Throwable {
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
+                     new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
+             PscSourceEnumerator enumerator =
+                     createEnumerator(context, ENABLE_PERIODIC_PARTITION_DISCOVERY)) {
+
+            // Start the enumerator and it should schedule a one time task to discover and assign
+            // partitions.
+            enumerator.start();
+            assertThat(context.getOneTimeCallables()).isEmpty();
+            assertThat(context.getPeriodicCallables())
+                    .as("A periodic partition discovery callable should have been scheduled")
+                    .hasSize(1);
+            // Run the partition discover callable and check the partition assignment.
+            runPeriodicPartitionDiscovery(context);
+
+            // enumerator noMoreNewPartitionSplits first will be false, even when execute
+            // handlePartitionSplitChanges it still be false
+            assertThat((Boolean) Whitebox.getInternalState(enumerator, "noMoreNewPartitionSplits"))
+                    .isFalse();
+        }
+    }
+
+    @Test
+    public void testRunWithDiscoverPartitionsOnceWithZeroMsToCheckNoMoreSplit() throws Throwable {
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
+                     new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
+             // Disable periodic partition discovery
+             PscSourceEnumerator enumerator = createEnumerator(context, false)) {
+
+            // Start the enumerator, and it should schedule a one time task to discover and assign
+            // partitions.
+            enumerator.start();
+            assertThat(context.getOneTimeCallables())
+                    .as("A one time partition discovery callable should have been scheduled")
+                    .hasSize(1);
+            assertThat(context.getPeriodicCallables()).isEmpty();
+            // Run the partition discover callable and check the partition assignment.
+            runOneTimePartitionDiscovery(context);
+
+            // enumerator noMoreNewPartitionSplits first will be false, when execute
+            // handlePartitionSplitChanges will be set true
+            assertThat((Boolean) Whitebox.getInternalState(enumerator, "noMoreNewPartitionSplits"))
+                    .isTrue();
+        }
+    }
+
     @Test(timeout = 30000L)
     public void testDiscoverPartitionsPeriodically() throws Throwable {
         try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
@@ -190,17 +268,17 @@ public class PscEnumeratorTest {
                         createEnumerator(
                                 context,
                                 ENABLE_PERIODIC_PARTITION_DISCOVERY,
-                                INCLUDE_DYNAMIC_TOPIC);
+                                INCLUDE_DYNAMIC_TOPIC,
+                                OffsetsInitializer.latest());
                 AdminClient adminClient = PscSourceTestEnv.getAdminClient()) {
 
             startEnumeratorAndRegisterReaders(context, enumerator);
 
             // invoke partition discovery callable again and there should be no new assignments.
             runPeriodicPartitionDiscovery(context);
-            assertEquals(
-                    "No assignments should be made because there is no partition change",
-                    2,
-                    context.getSplitsAssignmentSequence().size());
+            assertThat(context.getSplitsAssignmentSequence())
+                    .as("No assignments should be made because there is no partition change")
+                    .hasSize(2);
 
             // create the dynamic topic.
             adminClient
@@ -227,6 +305,18 @@ public class PscEnumeratorTest {
                     Arrays.asList(READER0, READER1),
                     Collections.singleton(DYNAMIC_TOPIC_URI),
                     3);
+
+            // new partitions use EARLIEST_OFFSET, while initial partitions use LATEST_OFFSET
+            List<PscTopicUriPartitionSplit> initialPartitionAssign =
+                    getAllAssignSplits(context, PRE_EXISTING_TOPIC_URIS);
+            assertThat(initialPartitionAssign)
+                    .extracting(PscTopicUriPartitionSplit::getStartingOffset)
+                    .containsOnly((long) PscSourceTestEnv.NUM_RECORDS_PER_PARTITION);
+            List<PscTopicUriPartitionSplit> newPartitionAssign =
+                    getAllAssignSplits(context, Collections.singleton(DYNAMIC_TOPIC_URI));
+            assertThat(newPartitionAssign)
+                    .extracting(PscTopicUriPartitionSplit::getStartingOffset)
+                    .containsOnly(PscTopicUriPartitionSplit.EARLIEST_OFFSET);
         } finally {
             try (AdminClient adminClient = PscSourceTestEnv.getAdminClient()) {
                 adminClient.deleteTopics(Collections.singleton(DYNAMIC_TOPIC_NAME)).all().get();
@@ -250,10 +340,9 @@ public class PscEnumeratorTest {
             enumerator.addSplitsBack(
                     context.getSplitsAssignmentSequence().get(0).assignment().get(READER0),
                     READER0);
-            assertEquals(
-                    "The added back splits should have not been assigned",
-                    2,
-                    context.getSplitsAssignmentSequence().size());
+            assertThat(context.getSplitsAssignmentSequence())
+                    .as("The added back splits should have not been assigned")
+                    .hasSize(2);
 
             // Simulate a reader recovery.
             registerReader(context, enumerator, READER0);
@@ -279,14 +368,16 @@ public class PscEnumeratorTest {
                 PscSourceEnumerator enumerator =
                         createEnumerator(
                                 context2,
-                                ENABLE_PERIODIC_PARTITION_DISCOVERY,
+                                OffsetsInitializer.earliest(),
                                 PRE_EXISTING_TOPICS,
                                 preexistingAssignments,
+                                Collections.emptySet(),
+                                true,
                                 new Properties())) {
             enumerator.start();
             runPeriodicPartitionDiscovery(context2);
             registerReader(context2, enumerator, READER0);
-            assertTrue(context2.getSplitsAssignmentSequence().isEmpty());
+            assertThat(context2.getSplitsAssignmentSequence()).isEmpty();
 
             registerReader(context2, enumerator, READER1);
             verifyLastReadersAssignments(
@@ -307,18 +398,20 @@ public class PscEnumeratorTest {
                 PscSourceEnumerator enumerator =
                         createEnumerator(
                                 context,
-                                ENABLE_PERIODIC_PARTITION_DISCOVERY,
+                                OffsetsInitializer.earliest(),
                                 PRE_EXISTING_TOPIC_URIS,
                                 Collections.emptySet(),
+                                Collections.emptySet(),
+                                false,
                                 properties)) {
             enumerator.start();
 
             PscMetadataClient pscMetadataClient =
                     (PscMetadataClient) Whitebox.getInternalState(enumerator, "metadataClient");
-            assertNotNull(pscMetadataClient);
+            assertThat(pscMetadataClient).isNotNull();
             PscConfigurationInternal pscConfigurationInternal = (PscConfigurationInternal) Whitebox.getInternalState(pscMetadataClient, "pscConfigurationInternal");
-            assertNotNull(pscConfigurationInternal);
-            assertTrue(pscConfigurationInternal.getMetadataClientId().startsWith(clientIdPrefix));
+            assertThat(pscConfigurationInternal).isNotNull();
+            assertThat(pscConfigurationInternal.getMetadataClientId()).isNotNull().startsWith(clientIdPrefix);
             // TODO: potentially test defaultApiTimeoutMs when it is exposed (it is currently not exposed)
         }
     }
@@ -330,20 +423,49 @@ public class PscEnumeratorTest {
                 PscSourceEnumerator enumerator = createEnumerator(context, false)) {
             enumerator.start();
 
-            // No reader is registered, so the state should be empty
+            // Step1: Before first discovery, so the state should be empty
             final PscSourceEnumState state1 = enumerator.snapshotState(1L);
-            assertTrue(state1.assignedPartitions().isEmpty());
+            assertThat(state1.assignedPartitions()).isEmpty();
+            assertThat(state1.unassignedInitialPartitions()).isEmpty();
+            assertThat(state1.initialDiscoveryFinished()).isFalse();
 
             registerReader(context, enumerator, READER0);
             registerReader(context, enumerator, READER1);
-            runOneTimePartitionDiscovery(context);
 
-            // The state should contain splits assigned to READER0 and READER1
-            final PscSourceEnumState state2 = enumerator.snapshotState(1L);
+            // Step2: First partition discovery after start, but no assignments to readers
+            context.runNextOneTimeCallable();
+            final PscSourceEnumState state2 = enumerator.snapshotState(2L);
+            assertThat(state2.assignedPartitions()).isEmpty();
+            assertThat(state2.unassignedInitialPartitions()).isNotEmpty();
+            assertThat(state2.initialDiscoveryFinished()).isTrue();
+
+            // Step3: Assign partials partitions to reader0 and reader1
+            context.runNextOneTimeCallable();
+
+            // The state should contain splits assigned to READER0 and READER1, but no READER2
+            // register.
+            // Thus, both assignedPartitions and unassignedInitialPartitions are not empty.
+            final PscSourceEnumState state3 = enumerator.snapshotState(3L);
             verifySplitAssignmentWithPartitions(
                     getExpectedAssignments(
                             new HashSet<>(Arrays.asList(READER0, READER1)), PRE_EXISTING_TOPIC_URIS),
-                    state2.assignedPartitions());
+                    state3.assignedPartitions());
+            assertThat(state3.unassignedInitialPartitions()).isNotEmpty();
+            assertThat(state3.initialDiscoveryFinished()).isTrue();
+            // total partitions of state2 and state3  are equal
+            // state2 only includes unassignedInitialPartitions
+            // state3 includes unassignedInitialPartitions + assignedPartitions
+            Set<TopicUriPartition> allPartitionOfState3 = new HashSet<>();
+            allPartitionOfState3.addAll(state3.unassignedInitialPartitions());
+            allPartitionOfState3.addAll(state3.assignedPartitions());
+            assertThat(state2.unassignedInitialPartitions()).isEqualTo(allPartitionOfState3);
+
+            // Step4: register READER2, then all partitions are assigned
+            registerReader(context, enumerator, READER2);
+            final PscSourceEnumState state4 = enumerator.snapshotState(4L);
+            assertThat(state4.assignedPartitions()).isEqualTo(allPartitionOfState3);
+            assertThat(state4.unassignedInitialPartitions()).isEmpty();
+            assertThat(state4.initialDiscoveryFinished()).isTrue();
         }
     }
 
@@ -379,8 +501,35 @@ public class PscEnumeratorTest {
                 expectedRemovedPartitions.add(new TopicUriPartition(KafkaTopicUri.validate(BaseTopicUri.validate(TOPIC_URI2)), i));
             }
 
-            assertEquals(expectedNewPartitions, partitionChange.getNewPartitions());
-            assertEquals(expectedRemovedPartitions, partitionChange.getRemovedPartitions());
+            assertThat(partitionChange.getNewPartitions()).isEqualTo(expectedNewPartitions);
+            assertThat(partitionChange.getRemovedPartitions()).isEqualTo(expectedRemovedPartitions);
+        }
+    }
+
+    @Test
+    public void testEnablePartitionDiscoveryByDefault() throws Throwable {
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
+                     new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
+             PscSourceEnumerator enumerator = createEnumerator(context, new Properties())) {
+            enumerator.start();
+            long partitionDiscoveryIntervalMs =
+                    (long) Whitebox.getInternalState(enumerator, "partitionDiscoveryIntervalMs");
+            assertThat(partitionDiscoveryIntervalMs)
+                    .isEqualTo(PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.defaultValue());
+            assertThat(context.getPeriodicCallables()).isNotEmpty();
+        }
+    }
+
+    @Test
+    public void testDisablePartitionDiscovery() throws Throwable {
+        Properties props = new Properties();
+        props.setProperty(
+                PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(), String.valueOf(0));
+        try (MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context =
+                     new MockSplitEnumeratorContext<>(NUM_SUBTASKS);
+             PscSourceEnumerator enumerator = createEnumerator(context, props)) {
+            enumerator.start();
+            assertThat(context.getPeriodicCallables()).isEmpty();
         }
     }
 
@@ -396,7 +545,7 @@ public class PscEnumeratorTest {
 
         // register reader 0 before the partition discovery.
         registerReader(context, enumerator, READER0);
-        assertTrue(context.getSplitsAssignmentSequence().isEmpty());
+        assertThat(context.getSplitsAssignmentSequence()).isEmpty();
 
         // Run the partition discover callable and check the partition assignment.
         runPeriodicPartitionDiscovery(context);
@@ -415,23 +564,58 @@ public class PscEnumeratorTest {
             MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext,
             boolean enablePeriodicPartitionDiscovery) {
         return createEnumerator(
-                enumContext, enablePeriodicPartitionDiscovery, EXCLUDE_DYNAMIC_TOPIC);
+                enumContext,
+                enablePeriodicPartitionDiscovery,
+                EXCLUDE_DYNAMIC_TOPIC,
+                OffsetsInitializer.earliest());
+    }
+
+    private PscSourceEnumerator createEnumerator(
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext, Properties properties) {
+        return createEnumerator(
+                enumContext, properties, EXCLUDE_DYNAMIC_TOPIC, OffsetsInitializer.earliest());
     }
 
     private PscSourceEnumerator createEnumerator(
             MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext,
             boolean enablePeriodicPartitionDiscovery,
-            boolean includeDynamicTopic) {
+            boolean includeDynamicTopic,
+            OffsetsInitializer startingOffsetsInitializer) {
+        List<String> topics = new ArrayList<>(PRE_EXISTING_TOPICS);
+        if (includeDynamicTopic) {
+            topics.add(DYNAMIC_TOPIC_NAME);
+        }
+        Properties props = new Properties();
+        props.setProperty(
+                PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
+                enablePeriodicPartitionDiscovery ? "1" : "-1");
+        return createEnumerator(
+                enumContext,
+                startingOffsetsInitializer,
+                topics,
+                Collections.emptySet(),
+                Collections.emptySet(),
+                false,
+                props);
+    }
+
+    private PscSourceEnumerator createEnumerator(
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext,
+            Properties props,
+            boolean includeDynamicTopic,
+            OffsetsInitializer startingOffsetsInitializer) {
         List<String> topics = new ArrayList<>(PRE_EXISTING_TOPICS);
         if (includeDynamicTopic) {
             topics.add(DYNAMIC_TOPIC_NAME);
         }
         return createEnumerator(
                 enumContext,
-                enablePeriodicPartitionDiscovery,
+                startingOffsetsInitializer,
                 topics,
                 Collections.emptySet(),
-                new Properties());
+                Collections.emptySet(),
+                false,
+                props);
     }
 
     /**
@@ -440,9 +624,11 @@ public class PscEnumeratorTest {
      */
     private PscSourceEnumerator createEnumerator(
             MockSplitEnumeratorContext<PscTopicUriPartitionSplit> enumContext,
-            boolean enablePeriodicPartitionDiscovery,
+            OffsetsInitializer startingOffsetsInitializer,
             Collection<String> topicsToSubscribe,
             Set<TopicUriPartition> assignedPartitions,
+            Set<TopicUriPartition> unassignedInitialPartitions,
+            boolean initialDiscoveryFinished,
             Properties overrideProperties) {
         // Use a TopicPatternSubscriber so that no exception if a subscribed topic hasn't been
         // created yet.
@@ -451,17 +637,12 @@ public class PscEnumeratorTest {
         Pattern topicPattern = Pattern.compile(topicNameJoiner.toString());
         PscSubscriber subscriber = PscSubscriber.getTopicPatternSubscriber(topicPattern);
 
-        OffsetsInitializer startingOffsetsInitializer = OffsetsInitializer.earliest();
         OffsetsInitializer stoppingOffsetsInitializer = new NoStoppingOffsetsInitializer();
 
         Properties props =
                 new Properties(PscSourceTestEnv.getConsumerProperties(StringDeserializer.class));
         PscSourceEnumerator.deepCopyProperties(overrideProperties, props);
-        String partitionDiscoverInterval = enablePeriodicPartitionDiscovery ? "1" : "-1";
-        props.setProperty(
-                PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(),
-                partitionDiscoverInterval);
-        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX);
+        props.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
         return new PscSourceEnumerator(
                 subscriber,
@@ -470,8 +651,8 @@ public class PscEnumeratorTest {
                 props,
                 enumContext,
                 Boundedness.CONTINUOUS_UNBOUNDED,
-                assignedPartitions);
-    }
+                new PscSourceEnumState(
+                        assignedPartitions, unassignedInitialPartitions, initialDiscoveryFinished));    }
 
     // ---------------------
 
@@ -502,11 +683,11 @@ public class PscEnumeratorTest {
                 (reader, splits) -> {
                     Set<TopicUriPartition> expectedAssignmentsForReader =
                             expectedAssignments.get(reader);
-                    assertNotNull(expectedAssignmentsForReader);
-                    assertEquals(expectedAssignmentsForReader.size(), splits.size());
+                    assertThat(expectedAssignmentsForReader).isNotNull();
+                    assertThat(splits.size()).isEqualTo(expectedAssignmentsForReader.size());
                     for (PscTopicUriPartitionSplit split : splits) {
-                        assertTrue(
-                                expectedAssignmentsForReader.contains(split.getTopicUriPartition()));
+                        assertThat(expectedAssignmentsForReader)
+                                .contains(split.getTopicUriPartition());
                     }
                 });
     }
@@ -544,7 +725,27 @@ public class PscEnumeratorTest {
         expectedAssignment.forEach(
                 (reader, topicPartitions) ->
                         allTopicUriPartitionsFromAssignment.addAll(topicPartitions));
-        assertEquals(allTopicUriPartitionsFromAssignment, actualTopicUriPartitions);
+        assertThat(actualTopicUriPartitions).isEqualTo(allTopicUriPartitionsFromAssignment);
+    }
+
+
+    /** get all assigned partition splits of topicUris. */
+    private List<PscTopicUriPartitionSplit> getAllAssignSplits(
+            MockSplitEnumeratorContext<PscTopicUriPartitionSplit> context, Set<String> topicUris) {
+
+        List<PscTopicUriPartitionSplit> allSplits = new ArrayList<>();
+        List<SplitsAssignment<PscTopicUriPartitionSplit>> splitsAssignmentSequence =
+                context.getSplitsAssignmentSequence();
+        for (SplitsAssignment<PscTopicUriPartitionSplit> splitsAssignment : splitsAssignmentSequence) {
+            List<PscTopicUriPartitionSplit> splitsOfOnceAssignment =
+                    splitsAssignment.assignment().values().stream()
+                            .flatMap(splits -> splits.stream())
+                            .filter(split -> topicUris.contains(split.getTopicUri()))
+                            .collect(Collectors.toList());
+            allSplits.addAll(splitsOfOnceAssignment);
+        }
+
+        return allSplits;
     }
 
     private Set<TopicUriPartition> asEnumState(Map<Integer, List<PscTopicUriPartitionSplit>> assignments) {
@@ -572,25 +773,6 @@ public class PscEnumeratorTest {
         // Initialize offsets for discovered partitions
         if (!context.getOneTimeCallables().isEmpty()) {
             context.runNextOneTimeCallable();
-        }
-    }
-
-    // -------------- private class ----------------
-
-    private static class BlockingClosingContext
-            extends MockSplitEnumeratorContext<PscTopicUriPartitionSplit> {
-
-        public BlockingClosingContext(int parallelism) {
-            super(parallelism);
-        }
-
-        @Override
-        public void close() {
-            try {
-                Thread.sleep(Long.MAX_VALUE);
-            } catch (InterruptedException e) {
-                // let it go.
-            }
         }
     }
 }

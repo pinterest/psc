@@ -110,7 +110,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(String customPscConfigurationFilePath) throws ConfigurationException, ConsumerException {
         if (customPscConfigurationFilePath == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(String)");
-        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(customPscConfigurationFilePath, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -128,7 +128,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(Configuration configuration) throws ConfigurationException, ConsumerException {
         if (configuration == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(Configuration)");
-        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(configuration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -143,7 +143,7 @@ public class PscConsumer<K, V> implements AutoCloseable {
     public PscConsumer(PscConfiguration pscConfiguration) throws ConfigurationException, ConsumerException {
         if (pscConfiguration == null)
             throw new ConsumerException("Null parameter was passed to API PscConsumer(PscConfiguration)");
-        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        pscConfigurationInternal = new PscConfigurationInternal(pscConfiguration, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
         initialize();
     }
 
@@ -1365,6 +1365,54 @@ public class PscConsumer<K, V> implements AutoCloseable {
     }
 
     /**
+     * Suspend fetching from the specified partitions. Future calls to {@link #poll(Duration)} will not return any
+     * records from these partitions until they are resumed using {@link #resume(Collection)}. Note that this method
+     * does not affect partition subscription.
+     *
+     * @param topicUriPartitions the set of topic URI partitions to pause fetching from.
+     * @throws ConsumerException if there are validation issues or backend failures.
+     */
+    public void pause(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
+        acquireAndEnsureOpen();
+        try {
+            topicUriPartitions = validateTopicUriPartitions(topicUriPartitions);
+            validateAssignment(topicUriPartitions);
+
+            for (Map.Entry<PscBackendConsumer<K, V>, Set<TopicUriPartition>> entry :
+                    getConsumerToTopicUriPartitions(topicUriPartitions).entrySet())
+                entry.getKey().pause(entry.getValue());
+        } catch (ConsumerException e) {
+            logger.error("[PSC] Error pausing partitions", e);
+        } finally {
+            release();
+        }
+    }
+
+    /**
+     * Resume fetching from the specified partitions. Future calls to {@link #poll(Duration)} will return records from
+     * these partitions if there are any to return. If the consumer was not previously paused, this method has no
+     * effect.
+     *
+     * @param topicUriPartitions the set of topic URI partitions to resume fetching from.
+     * @throws ConsumerException if there are validation issues or backend failures.
+     */
+    public void resume(Collection<TopicUriPartition> topicUriPartitions) throws ConsumerException {
+        acquireAndEnsureOpen();
+        try {
+            topicUriPartitions = validateTopicUriPartitions(topicUriPartitions);
+            validateAssignment(topicUriPartitions);
+
+            for (Map.Entry<PscBackendConsumer<K, V>, Set<TopicUriPartition>> entry :
+                    getConsumerToTopicUriPartitions(topicUriPartitions).entrySet())
+                entry.getKey().resume(entry.getValue());
+        } catch (ConsumerException e) {
+            logger.error("[PSC] Error resuming partitions", e);
+        } finally {
+            release();
+        }
+    }
+
+    /**
      * Retrieves all partitions associated with the given URI. The PscConsumer does not need to be subscribed to the
      * URI to call this API. This API is not thread-safe.
      *
@@ -1854,7 +1902,9 @@ public class PscConsumer<K, V> implements AutoCloseable {
         ensureOpen();
         Map<MetricName, Metric> metrics = new ConcurrentHashMap<>();
         for (PscBackendConsumer<K, V> backendConsumer : backendConsumers) {
-            metrics.putAll(backendConsumer.metrics());
+            synchronized (backendConsumer.metrics()) {
+                metrics.putAll(backendConsumer.metrics());
+            }
         }
         return metrics;
     }

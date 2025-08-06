@@ -83,12 +83,21 @@ public class PscTopicUriPartitionSplitReader
             Properties props,
             SourceReaderContext context,
             PscSourceReaderMetrics pscSourceReaderMetrics) throws ConfigurationException, ClientException {
+        this(props, context, pscSourceReaderMetrics, null);
+    }
+
+    public PscTopicUriPartitionSplitReader(
+            Properties props,
+            SourceReaderContext context,
+            PscSourceReaderMetrics pscSourceReaderMetrics,
+            String rackIdSupplier) throws ConfigurationException, ConsumerException {
         this.props = props;
         this.subtaskId = context.getIndexOfSubtask();
         this.pscSourceReaderMetrics = pscSourceReaderMetrics;
         Properties consumerProps = new Properties();
         consumerProps.putAll(props);
         consumerProps.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, createConsumerClientId(props));
+        setConsumerClientRack(consumerProps, rackIdSupplier);
         this.consumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(consumerProps));
         this.stoppingOffsets = new HashMap<>();
         this.groupId = consumerProps.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
@@ -234,7 +243,11 @@ public class PscTopicUriPartitionSplitReader
             throw new RuntimeException("Failed to handle split changes", e);
         }
 
-        maybeLogSplitChangesHandlingResult(splitsChange);
+        try {
+            maybeLogSplitChangesHandlingResult(splitsChange);
+        } catch (ConsumerException e) {
+            throw new RuntimeException("Failed to log split changes handling result", e);
+        }
     }
 
     @Override
@@ -245,6 +258,24 @@ public class PscTopicUriPartitionSplitReader
     @Override
     public void close() throws Exception {
         consumer.close();
+    }
+
+    @Override
+    public void pauseOrResumeSplits(
+            Collection<PscTopicUriPartitionSplit> splitsToPause,
+            Collection<PscTopicUriPartitionSplit> splitsToResume) {
+        try {
+            consumer.resume(
+                    splitsToResume.stream()
+                            .map(PscTopicUriPartitionSplit::getTopicUriPartition)
+                            .collect(Collectors.toList()));
+            consumer.pause(
+                    splitsToPause.stream()
+                            .map(PscTopicUriPartitionSplit::getTopicUriPartition)
+                            .collect(Collectors.toList()));
+        } catch (ConsumerException e) {
+            throw new RuntimeException("Failed to pause/resume", e);
+        }
     }
 
     // ---------------
@@ -261,6 +292,21 @@ public class PscTopicUriPartitionSplitReader
     }
 
     // --------------- private helper method ----------------------
+
+    /**
+     * This Method performs Null and empty Rack Id validation and sets the rack id to the
+     * client.rack Consumer Config.
+     *
+     * @param consumerProps Consumer Property.
+     * @param rackId Rack Id's.
+     */
+    @VisibleForTesting
+    void setConsumerClientRack(Properties consumerProps, String rackId) {
+        if (rackId != null && !rackId.isEmpty()) {
+            // this is going to pass through to backend consumer config
+            consumerProps.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_RACK, rackId);
+        }
+    }
 
     private void parseStartingOffsets(
             PscTopicUriPartitionSplit split,
@@ -395,10 +441,15 @@ public class PscTopicUriPartitionSplitReader
     }
 
     private void maybeLogSplitChangesHandlingResult(
-            SplitsChange<PscTopicUriPartitionSplit> splitsChange) {
+            SplitsChange<PscTopicUriPartitionSplit> splitsChange) throws ConsumerException {
         if (LOG.isDebugEnabled()) {
             StringJoiner splitsInfo = new StringJoiner(",");
+            Set<TopicUriPartition> assignment = consumer.assignment();
             for (PscTopicUriPartitionSplit split : splitsChange.splits()) {
+                if (!assignment.contains(split.getTopicUriPartition())) {
+                    continue;
+                }
+
                 long startingOffset =
                         retryOnWakeup(
                                 () -> {

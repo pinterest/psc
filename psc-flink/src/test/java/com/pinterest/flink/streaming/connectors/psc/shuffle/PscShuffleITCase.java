@@ -17,6 +17,11 @@
 
 package com.pinterest.flink.streaming.connectors.psc.shuffle;
 
+import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElement;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElementDeserializer;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleRecord;
+import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleWatermark;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
@@ -30,18 +35,11 @@ import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.typeutils.TupleTypeInfo;
-import org.apache.flink.shaded.guava30.com.google.common.collect.ImmutableMap;
-import org.apache.flink.shaded.guava30.com.google.common.collect.Iterables;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.watermark.Watermark;
-import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElement;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleElementDeserializer;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleRecord;
-import com.pinterest.flink.streaming.connectors.psc.internals.PscShuffleFetcher.PscShuffleWatermark;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -53,19 +51,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PARTITION_NUMBER;
+import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PRODUCER_PARALLELISM;
 import static org.apache.flink.streaming.api.TimeCharacteristic.EventTime;
 import static org.apache.flink.streaming.api.TimeCharacteristic.IngestionTime;
 import static org.apache.flink.streaming.api.TimeCharacteristic.ProcessingTime;
-import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PARTITION_NUMBER;
-import static com.pinterest.flink.streaming.connectors.psc.shuffle.FlinkPscShuffle.PRODUCER_PARALLELISM;
 import static org.apache.flink.test.util.TestUtils.tryExecute;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 /**
- * Simple End to End Test for Kafka.
+ * Simple End to End Test for PSC.
  */
 public class PscShuffleITCase extends PscShuffleTestBase {
 
@@ -206,7 +205,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         Map<Integer, Collection<PscConsumerMessage<byte[], byte[]>>> results = testPscShuffleProducer(
-                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic("test_watermark_broadcast", EventTime),
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic("test_watermark_broadcast", EventTime),
                 env, numberOfPartitions, producerParallelism, numElementsPerProducer, EventTime
         );
         TypeSerializer<Tuple3<Integer, Long, Integer>> typeSerializer = createTypeSerializer(env);
@@ -273,7 +272,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testKafkaShuffle(int numElementsPerProducer,
                                   TimeCharacteristic timeCharacteristic) throws Exception {
         String topic = topic("test_simple", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 1;
         final int producerParallelism = 1;
 
@@ -304,7 +303,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testAssignedToPartition(int numElementsPerProducer,
                                          TimeCharacteristic timeCharacteristic) throws Exception {
         String topic = topic("test_assigned_to_partition", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 3;
         final int producerParallelism = 2;
 
@@ -339,7 +338,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
     private void testWatermarkIncremental(int numElementsPerProducer) throws Exception {
         TimeCharacteristic timeCharacteristic = EventTime;
         String topic = topic("test_watermark_incremental", timeCharacteristic);
-        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUriStr = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         final int numberOfPartitions = 3;
         final int producerParallelism = 2;
 
@@ -368,11 +367,17 @@ public class PscShuffleITCase extends PscShuffleTestBase {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         // Records in a single partition are kept in order
-        Collection<PscConsumerMessage<byte[], byte[]>> records = Iterables
-                .getOnlyElement(testPscShuffleProducer(
-                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic("test_serde", timeCharacteristic),
-                        env, 1, 1, numElementsPerProducer, timeCharacteristic).values()
-                );
+        Collection<PscConsumerMessage<byte[], byte[]>> records = testPscShuffleProducer(
+                PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX
+                        + topic("test_serde-" + UUID.randomUUID(), timeCharacteristic),
+                env,
+                1,
+                1,
+                numElementsPerProducer,
+                timeCharacteristic)
+                .values()
+                .iterator()
+                .next();
 
         switch (timeCharacteristic) {
             case ProcessingTime:
@@ -493,8 +498,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
         FlinkPscShuffle.writeKeyBy(input, topicUriStr, pscProducerProperties, 0);
 
         env.execute("Write to " + topicUriStr);
-        ImmutableMap.Builder<Integer, Collection<PscConsumerMessage<byte[], byte[]>>> results = ImmutableMap
-                .builder();
+        Map<Integer, Collection<PscConsumerMessage<byte[], byte[]>>> results = new HashMap<>();
 
         for (int p = 0; p < numberOfPartitions; p++) {
             Collection<PscConsumerMessage<byte[], byte[]>> allMessagesFromTopicUri = pscTestEnvWithKafka
@@ -510,7 +514,7 @@ public class PscShuffleITCase extends PscShuffleTestBase {
 
         deleteTestTopic(topicUri.getTopic());
 
-        return results.build();
+        return results;
     }
 
     private StreamExecutionEnvironment createEnvironment(int producerParallelism,

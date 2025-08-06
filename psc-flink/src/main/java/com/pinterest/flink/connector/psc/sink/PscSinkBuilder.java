@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Properties;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -47,7 +48,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * }</pre>
  *
  * <p>One can also configure different {@link DeliveryGuarantee} by using {@link
- * #setDeliverGuarantee(DeliveryGuarantee)} but keep in mind when using {@link
+ * #setDeliveryGuarantee(DeliveryGuarantee)} but keep in mind when using {@link
  * DeliveryGuarantee#EXACTLY_ONCE} one must set the transactionalIdPrefix {@link
  * #setTransactionalIdPrefix(String)}.
  *
@@ -59,15 +60,29 @@ public class PscSinkBuilder<IN> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscSinkBuilder.class);
     private static final Duration DEFAULT_PSC_TRANSACTION_TIMEOUT = Duration.ofHours(1);
+    private static final String[] warnKeys =
+            new String[] {
+                    PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER,
+                    PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER
+            };
     private static final int MAXIMUM_PREFIX_BYTES = 64000;
 
     private DeliveryGuarantee deliveryGuarantee = DeliveryGuarantee.NONE;
     private String transactionalIdPrefix = "psc-sink";
 
-    private Properties pscProducerConfig;
+    private final Properties pscProducerConfig;
     private PscRecordSerializationSchema<IN> recordSerializer;
 
-    PscSinkBuilder() {}
+    PscSinkBuilder() {
+        pscProducerConfig = new Properties();
+        pscProducerConfig.put(
+                PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER, ByteArraySerializer.class.getName());
+        pscProducerConfig.put(
+                PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER, ByteArraySerializer.class.getName());
+        pscProducerConfig.put(
+                PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS,
+                (int) DEFAULT_PSC_TRANSACTION_TIMEOUT.toMillis());
+    }
 
     /**
      * Sets the wanted the {@link DeliveryGuarantee}. The default delivery guarantee is {@link
@@ -76,6 +91,20 @@ public class PscSinkBuilder<IN> {
      * @param deliveryGuarantee
      * @return {@link PscSinkBuilder}
      */
+    public PscSinkBuilder<IN> setDeliveryGuarantee(DeliveryGuarantee deliveryGuarantee) {
+        this.deliveryGuarantee = checkNotNull(deliveryGuarantee, "deliveryGuarantee");
+        return this;
+    }
+
+    /**
+     * Sets the wanted the {@link DeliveryGuarantee}. The default delivery guarantee is {@link
+     * #deliveryGuarantee}.
+     *
+     * @param deliveryGuarantee
+     * @return {@link PscSinkBuilder}
+     * @deprecated Will be removed in future versions. Use {@link #setDeliveryGuarantee} instead.
+     */
+    @Deprecated
     public PscSinkBuilder<IN> setDeliverGuarantee(DeliveryGuarantee deliveryGuarantee) {
         this.deliveryGuarantee = checkNotNull(deliveryGuarantee, "deliveryGuarantee");
         return this;
@@ -85,43 +114,26 @@ public class PscSinkBuilder<IN> {
      * Sets the configuration which used to instantiate all used {@link
      * com.pinterest.psc.producer.PscProducer}.
      *
-     * @param pscProducerConfig
+     * @param props
      * @return {@link PscSinkBuilder}
      */
-    public PscSinkBuilder<IN> setPscProducerConfig(Properties pscProducerConfig) {
-        this.pscProducerConfig = checkNotNull(pscProducerConfig, "pscProducerConfig");
-        // set the producer configuration properties for PSC record key value serializers.
-        if (!pscProducerConfig.containsKey(PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER)) {
-            pscProducerConfig.put(
-                    PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER,
-                    ByteArraySerializer.class.getName());
-        } else {
-            LOG.warn(
-                    "Overwriting the '{}' is not recommended",
-                    PscConfiguration.PSC_PRODUCER_KEY_SERIALIZER);
-        }
+    public PscSinkBuilder<IN> setPscProducerConfig(Properties props) {
+        checkNotNull(props);
+        Arrays.stream(warnKeys)
+                .filter(props::containsKey)
+                .forEach(k -> LOG.warn("Overwriting the '{}' is not recommended", k));
 
-        if (!pscProducerConfig.containsKey(PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER)) {
-            pscProducerConfig.put(
-                    PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER,
-                    ByteArraySerializer.class.getName());
-        } else {
-            LOG.warn(
-                    "Overwriting the '{}' is not recommended",
-                    PscConfiguration.PSC_PRODUCER_VALUE_SERIALIZER);
-        }
+        pscProducerConfig.putAll(props);
+        return this;
+    }
 
-        if (!pscProducerConfig.containsKey(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS)) {
-            final long timeout = DEFAULT_PSC_TRANSACTION_TIMEOUT.toMillis();
-            checkState(
-                    timeout < Integer.MAX_VALUE && timeout > 0,
-                    "timeout does not fit into 32 bit integer");
-            pscProducerConfig.put(PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS, (int) timeout);
-            LOG.warn(
-                    "Property [{}] not specified. Setting it to {}",
-                    PscConfiguration.PSC_PRODUCER_TRANSACTION_TIMEOUT_MS,
-                    DEFAULT_PSC_TRANSACTION_TIMEOUT);
-        }
+    public PscSinkBuilder<IN> setProperty(String key, String value) {
+        checkNotNull(key);
+        Arrays.stream(warnKeys)
+                .filter(key::equals)
+                .forEach(k -> LOG.warn("Overwriting the '{}' is not recommended", k));
+
+        pscProducerConfig.setProperty(key, value);
         return this;
     }
 
@@ -167,9 +179,6 @@ public class PscSinkBuilder<IN> {
     }
 
     private void sanityCheck() {
-        if (pscProducerConfig == null) {
-            setPscProducerConfig(new Properties());
-        }
         if (deliveryGuarantee == DeliveryGuarantee.EXACTLY_ONCE) {
             checkState(
                     transactionalIdPrefix != null,

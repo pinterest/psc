@@ -411,7 +411,7 @@ public abstract class AbstractFetcher<T, TUPH> {
 
                     // the format of the ID does not matter, as long as it is unique
                     final String partitionId = pscTopicUriPartition.getTopicUriStr() + '-' + pscTopicUriPartition.getPartition();
-                    watermarkOutputMultiplexer.registerNewOutput(partitionId);
+                    watermarkOutputMultiplexer.registerNewOutput(partitionId, watermark -> {});
                     WatermarkOutput immediateOutput =
                             watermarkOutputMultiplexer.getImmediateOutput(partitionId);
                     WatermarkOutput deferredOutput =

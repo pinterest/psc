@@ -44,20 +44,16 @@ import org.apache.flink.metrics.testutils.MetricListener;
 import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
-import org.apache.flink.util.ExceptionUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.NoOffsetForPartitionException;
-import org.hamcrest.CoreMatchers;
-import org.hamcrest.MatcherAssert;
-import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EmptySource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
@@ -75,20 +71,18 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv.NUM_RECORDS_PER_PARTITION;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Unit tests for {@link PscTopicUriPartitionSplitReader}. */
 public class PscTopicUriPartitionSplitReaderTest {
     private static final int NUM_SUBTASKS = 3;
     private static final String TOPIC1 = "topic1";
-    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC1;
+    private static final String TOPIC_URI1 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC1;
     private static final String TOPIC2 = "topic2";
-    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + TOPIC2;
+    private static final String TOPIC_URI2 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC2;
+    private static final String TOPIC3 = "topic3";
+    private static final String TOPIC_URI3 = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + TOPIC3;
 
     private static Map<Integer, Map<String, PscTopicUriPartitionSplit>> splitsByOwners;
     private static Map<TopicUriPartition, Long> earliestOffsets;
@@ -100,6 +94,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         PscSourceTestEnv.setup();
         PscSourceTestEnv.setupTopic(TOPIC_URI1, true, true, PscSourceTestEnv::getRecordsForTopic);
         PscSourceTestEnv.setupTopic(TOPIC_URI2, true, true, PscSourceTestEnv::getRecordsForTopic);
+        PscSourceTestEnv.createTestTopic(TOPIC_URI3);
         splitsByOwners =
                 PscSourceTestEnv.getSplitsByOwners(Arrays.asList(TOPIC_URI1, TOPIC_URI2), NUM_SUBTASKS);
         earliestOffsets =
@@ -122,7 +117,7 @@ public class PscTopicUriPartitionSplitReaderTest {
     @Test
     public void testWakeUp() throws Exception {
         PscTopicUriPartitionSplitReader reader = createReader();
-        TopicUriPartition nonExistingTopicPartition = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "NotExist", 0);
+        TopicUriPartition nonExistingTopicPartition = new TopicUriPartition(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "NotExist", 0);
         assignSplits(
                 reader,
                 Collections.singletonMap(
@@ -145,7 +140,7 @@ public class PscTopicUriPartitionSplitReaderTest {
             reader.wakeUp();
             Thread.sleep(10);
         }
-        assertNull(error.get());
+        assertThat(error.get()).isNull();
     }
 
     @Test
@@ -189,7 +184,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         final long latestNumBytesIn = numBytesInCounter.getCount();
         // Since it's hard to know the exact number of bytes consumed, we just check if it is
         // greater than 0
-        assertThat(latestNumBytesIn, Matchers.greaterThan(0L));
+        assertThat(latestNumBytesIn).isGreaterThan(0L);
         // Add another split
         reader.handleSplitsChanges(
                 new SplitsAddition<>(
@@ -199,7 +194,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         Thread.sleep(100); // wait for metrics to be updated
         reader.fetch(); // second fetch should be no-op but it is needed to ensure numBytesIn is properly updated
         // We just check if numBytesIn is increasing
-        assertThat(numBytesInCounter.getCount(), Matchers.greaterThan(latestNumBytesIn));
+        assertThat(numBytesInCounter.getCount()).isGreaterThan(latestNumBytesIn);
     }
 
     @ParameterizedTest
@@ -231,18 +226,19 @@ public class PscTopicUriPartitionSplitReaderTest {
                         Collections.singletonList(
                                 new PscTopicUriPartitionSplit(new TopicUriPartition(topic1UriStr, 0), 0L))));
         // pendingRecords should have not been registered because of lazily registration
-        assertFalse(metricListener.getGauge(MetricNames.PENDING_RECORDS).isPresent());
+        assertThat(metricListener.getGauge(MetricNames.PENDING_RECORDS)).isNotPresent();
         // Trigger first fetch
         reader.fetch();
         final Optional<Gauge<Long>> pendingRecords =
                 metricListener.getGauge(MetricNames.PENDING_RECORDS);
-        assertTrue(pendingRecords.isPresent());
+        assertThat(pendingRecords).isPresent();
         // Validate pendingRecords
-        assertNotNull(pendingRecords);
-        assertEquals(NUM_RECORDS_PER_PARTITION - 1, (long) pendingRecords.get().getValue());
+        assertThat(pendingRecords).isNotNull();
+        assertThat((long) pendingRecords.get().getValue()).isEqualTo(NUM_RECORDS_PER_PARTITION - 1);
         for (int i = 1; i < NUM_RECORDS_PER_PARTITION; i++) {
             reader.fetch();
-            assertEquals(NUM_RECORDS_PER_PARTITION - i - 1, (long) pendingRecords.get().getValue());
+            assertThat((long) pendingRecords.get().getValue())
+                    .isEqualTo(NUM_RECORDS_PER_PARTITION - i - 1);
         }
         // Add another split
         reader.handleSplitsChanges(
@@ -252,7 +248,8 @@ public class PscTopicUriPartitionSplitReaderTest {
         // Validate pendingRecords
         for (int i = 0; i < NUM_RECORDS_PER_PARTITION; i++) {
             reader.fetch();
-            assertEquals(NUM_RECORDS_PER_PARTITION - i - 1, (long) pendingRecords.get().getValue());
+            assertThat((long) pendingRecords.get().getValue())
+                    .isEqualTo(NUM_RECORDS_PER_PARTITION - i - 1);
         }
     }
 
@@ -267,13 +264,20 @@ public class PscTopicUriPartitionSplitReaderTest {
         final PscTopicUriPartitionSplit emptySplit =
                 new PscTopicUriPartitionSplit(
                         new TopicUriPartition(TOPIC_URI2, 0),
-                        PscTopicUriPartitionSplit.LATEST_OFFSET,
-                        PscTopicUriPartitionSplit.LATEST_OFFSET);
-        reader.handleSplitsChanges(new SplitsAddition<>(Arrays.asList(normalSplit, emptySplit)));
+                        PscSourceTestEnv.NUM_RECORDS_PER_PARTITION,
+                        PscSourceTestEnv.NUM_RECORDS_PER_PARTITION);
+        final PscTopicUriPartitionSplit emptySplitWithZeroStoppingOffset =
+                new PscTopicUriPartitionSplit(new TopicUriPartition(TOPIC_URI3, 0), 0, 0);
+
+        reader.handleSplitsChanges(
+                new SplitsAddition<>(
+                        Arrays.asList(normalSplit, emptySplit, emptySplitWithZeroStoppingOffset)));
 
         // Fetch and check empty splits is added to finished splits
         RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> recordsWithSplitIds = reader.fetch();
-        assertTrue(recordsWithSplitIds.finishedSplits().contains(emptySplit.splitId()));
+        assertThat(recordsWithSplitIds.finishedSplits()).contains(emptySplit.splitId());
+        assertThat(recordsWithSplitIds.finishedSplits())
+                .contains(emptySplitWithZeroStoppingOffset.splitId());
 
         // Assign another valid split to avoid consumer.poll() blocking
         final PscTopicUriPartitionSplit anotherNormalSplit =
@@ -286,7 +290,7 @@ public class PscTopicUriPartitionSplitReaderTest {
 
         // Fetch again and check empty split set is cleared
         recordsWithSplitIds = reader.fetch();
-        assertTrue(recordsWithSplitIds.finishedSplits().isEmpty());
+        assertThat(recordsWithSplitIds.finishedSplits()).isEmpty();
     }
 
     @Test
@@ -300,9 +304,7 @@ public class PscTopicUriPartitionSplitReaderTest {
         // committed offset, and the offset reset strategy is none (Throw exception to the consumer
         // if no previous offset is found for the consumer's group);
         // So it is expected to throw an exception that missing the committed offset.
-        final RuntimeException undefinedOffsetException =
-                Assertions.assertThrows(
-                        RuntimeException.class,
+        assertThatThrownBy(
                         () ->
                                 reader.handleSplitsChanges(
                                         new SplitsAddition<>(
@@ -310,12 +312,10 @@ public class PscTopicUriPartitionSplitReaderTest {
                                                         new PscTopicUriPartitionSplit(
                                                                 new TopicUriPartition(TOPIC_URI1, 0),
                                                                 PscTopicUriPartitionSplit
-                                                                        .COMMITTED_OFFSET)))));
-        Throwable cause = ExceptionUtils.findThrowable(undefinedOffsetException, NoOffsetForPartitionException.class).get();
-        assertNotNull(cause);
-        MatcherAssert.assertThat(
-                cause.getMessage(),
-                CoreMatchers.containsString("Undefined offset with no reset policy for partition"));
+                                                                        .COMMITTED_OFFSET)))))
+                .cause()
+                .hasCauseInstanceOf(NoOffsetForPartitionException.class)
+                .hasMessageContaining("Undefined offset with no reset policy for partition");
     }
 
     @ParameterizedTest
@@ -336,7 +336,39 @@ public class PscTopicUriPartitionSplitReaderTest {
                                         partition, PscTopicUriPartitionSplit.COMMITTED_OFFSET))));
 
         // Verify that the current offset of the consumer is the expected offset
-        assertEquals(expectedOffset, reader.consumer().position(partition));
+        assertThat(reader.consumer().position(partition)).isEqualTo(expectedOffset);
+    }
+
+    @Test
+    public void testConsumerClientRackSupplier() throws ConfigurationException, ClientException {
+        String rackId = "use1-az1";
+        Properties properties = new Properties();
+        PscTopicUriPartitionSplitReader reader =
+                createReader(
+                        properties,
+                        UnregisteredMetricsGroup.createSourceReaderMetricGroup(),
+                        rackId);
+
+        // Here we call the helper function directly, because the KafkaPartitionSplitReader
+        // doesn't allow us to examine the final ConsumerConfig object
+        reader.setConsumerClientRack(properties, rackId);
+        assertThat(properties.get(PscConfiguration.PSC_CONSUMER_CLIENT_RACK)).isEqualTo(rackId);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    public void testSetConsumerClientRackIgnoresNullAndEmpty(String rackId) throws ConfigurationException, ClientException {
+        Properties properties = new Properties();
+        PscTopicUriPartitionSplitReader reader =
+                createReader(
+                        properties,
+                        UnregisteredMetricsGroup.createSourceReaderMetricGroup(),
+                        rackId);
+
+        // Here we call the helper function directly, because the KafkaPartitionSplitReader
+        // doesn't allow us to examine the final ConsumerConfig object
+        reader.setConsumerClientRack(properties, rackId);
+        assertThat(properties.containsKey(PscConfiguration.PSC_CONSUMER_CLIENT_RACK)).isFalse();
     }
 
     // ------------------
@@ -385,12 +417,12 @@ public class PscTopicUriPartitionSplitReaderTest {
                     TopicUriPartition tp = splits.get(splitId).getTopicUriPartition();
                     long earliestOffset = earliestOffsets.get(tp);
                     long expectedRecordCount = NUM_RECORDS_PER_PARTITION - earliestOffset;
-                    assertEquals(
-                            expectedRecordCount,
-                            (long) recordCount,
-                            String.format(
-                                    "%s should have %d records.",
-                                    splits.get(splitId), expectedRecordCount));
+                    assertThat((long) recordCount)
+                            .as(
+                                    String.format(
+                                            "%s should have %d records.",
+                                            splits.get(splitId), expectedRecordCount))
+                            .isEqualTo(expectedRecordCount);
                 });
     }
 
@@ -403,6 +435,13 @@ public class PscTopicUriPartitionSplitReaderTest {
 
     private PscTopicUriPartitionSplitReader createReader(
             Properties additionalProperties, SourceReaderMetricGroup sourceReaderMetricGroup) throws ConfigurationException, ClientException {
+        return createReader(additionalProperties, sourceReaderMetricGroup, null);
+    }
+
+    private PscTopicUriPartitionSplitReader createReader(
+            Properties additionalProperties,
+            SourceReaderMetricGroup sourceReaderMetricGroup,
+            String rackId) throws ConfigurationException, ClientException {
         Properties props = new Properties();
         props.putAll(PscSourceTestEnv.getConsumerProperties(ByteArrayDeserializer.class));
         props.setProperty(PscConfiguration.PSC_CONSUMER_OFFSET_AUTO_RESET, "none");
@@ -414,7 +453,8 @@ public class PscTopicUriPartitionSplitReaderTest {
         return new PscTopicUriPartitionSplitReader(
                 props,
                 new TestingReaderContext(new Configuration(), sourceReaderMetricGroup),
-                pscSourceReaderMetrics);
+                pscSourceReaderMetrics,
+                rackId);
     }
 
     private Map<String, PscTopicUriPartitionSplit> assignSplits(
@@ -435,9 +475,9 @@ public class PscTopicUriPartitionSplitReaderTest {
             int expectedValue = (int) expectedOffset;
             long expectedTimestamp = expectedOffset * 1000L;
 
-            assertEquals(expectedValue, deserializer.deserialize(record.getValue()));
-            assertEquals(expectedOffset, record.getMessageId().getOffset());
-            assertEquals(expectedTimestamp, record.getMessageId().getTimestamp());
+            assertThat(deserializer.deserialize(record.getValue())).isEqualTo(expectedValue);
+            assertThat(record.getMessageId().getOffset()).isEqualTo(expectedOffset);
+            assertThat(record.getMessageId().getTimestamp()).isEqualTo(expectedTimestamp);
 
             expectedOffset++;
         }

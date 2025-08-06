@@ -78,10 +78,10 @@ public class PscMetricTagManager {
         if (topicUri != null)
             builder.tags(topicUri.getComponents());
 
-        if (pscConfigurationInternal.getClientType().equals(PscConfiguration.PSC_CLIENT_TYPE_CONSUMER)) {
+        if (pscConfigurationInternal.getClientType().equals(PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER)) {
             builder.tag(PscMetricTag.PSC_TAG_GROUP, pscConfigurationInternal.getPscConsumerGroupId())
                     .tag(PscMetricTag.PSC_TAG_CLIENT_ID, pscConfigurationInternal.getPscConsumerClientId());
-        } else if (pscConfigurationInternal.getClientType().equals(PscConfiguration.PSC_CLIENT_TYPE_PRODUCER)) {
+        } else if (pscConfigurationInternal.getClientType().equals(PscConfigurationInternal.PSC_CLIENT_TYPE_PRODUCER)) {
             builder.tag(PscMetricTag.PSC_TAG_CLIENT_ID, pscConfigurationInternal.getPscProducerClientId());
         }
 

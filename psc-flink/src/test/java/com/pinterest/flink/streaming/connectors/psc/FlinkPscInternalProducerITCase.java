@@ -30,7 +30,6 @@ import com.pinterest.psc.producer.PscProducer;
 import com.pinterest.psc.producer.PscProducerMessage;
 import com.pinterest.psc.serde.StringDeserializer;
 import com.pinterest.psc.serde.StringSerializer;
-import kafka.server.KafkaServer;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -90,7 +89,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
     @Test(timeout = 30000L)
     public void testHappyPath() throws IOException, ProducerException, ConfigurationException, ConsumerException {
         String topic = "flink-kafka-producer-happy-path";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
 
         PscProducer<String, String> pscProducer = new FlinkPscInternalProducer<>(extraProducerProperties);
         try {
@@ -108,7 +107,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
     @Test(timeout = 30000L)
     public void testResumeTransaction() throws ProducerException, ConfigurationException, ConsumerException, IOException {
         String topic = "flink-kafka-producer-resume-transaction";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         FlinkPscInternalProducer<String, String> pscProducer = new FlinkPscInternalProducer<>(extraProducerProperties);
         try {
             PscProducerMessage<String, String> pscProducerMessage = new PscProducerMessage<>(topicUri, "42", "42");
@@ -160,21 +159,21 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
 
     @Test(timeout = 30000L, expected = IllegalStateException.class)
     public void testCommitTransactionAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "testCommitTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testCommitTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.commitTransaction();
     }
 
     @Test(timeout = 30000L, expected = ProducerException.class)
     public void testResumeTransactionAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "testAbortTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testAbortTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.resumeTransaction(pscProducer);
     }
 
     @Test(timeout = 30000L, expected = IllegalStateException.class)
     public void testAbortTransactionAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "testAbortTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testAbortTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.abortTransaction();
         pscProducer.resumeTransaction(pscProducer);
@@ -182,7 +181,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
 
     @Test(timeout = 30000L, expected = ProducerException.class)
     public void testFlushAfterClosed() throws ProducerException, ConfigurationException, IOException {
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + "testCommitTransactionAfterClosed";
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + "testCommitTransactionAfterClosed";
         FlinkPscInternalProducer<String, String> pscProducer = getClosedProducer(topicUri);
         pscProducer.flush();
     }
@@ -190,7 +189,7 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
     @Test(timeout = 30000L)
     public void testProducerWhenCommitEmptyPartitionsToOutdatedTxnCoordinator() throws Exception {
         String topic = "flink-kafka-producer-txn-coordinator-changed";
-        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_TOPIC_URI_PREFIX + topic;
+        String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
         createTestTopic(topicUri, 1, 2);
         PscProducer<String, String> pscProducer = new FlinkPscInternalProducer<>(extraProducerProperties);
         try {
@@ -236,27 +235,8 @@ public class FlinkPscInternalProducerITCase extends PscTestBaseWithKafkaAsPubSub
         }
     }
 
-    private void restartBroker(int brokerId) {
-        KafkaServer toRestart = null;
-        for (KafkaServer server : pscTestEnvWithKafka.getBrokers()) {
-            if (pscTestEnvWithKafka.getBrokerId(server) == brokerId) {
-                toRestart = server;
-            }
-        }
-
-        if (toRestart == null) {
-            StringBuilder listOfBrokers = new StringBuilder();
-            for (KafkaServer server : pscTestEnvWithKafka.getBrokers()) {
-                listOfBrokers.append(pscTestEnvWithKafka.getBrokerId(server));
-                listOfBrokers.append(" ; ");
-            }
-
-            throw new IllegalArgumentException("Cannot find broker to restart: " + brokerId
-                    + " ; available brokers: " + listOfBrokers.toString());
-        } else {
-            toRestart.shutdown();
-            toRestart.awaitShutdown();
-            toRestart.startup();
-        }
+    private void restartBroker(int brokerId) throws Exception {
+        pscTestEnvWithKafka.stopBroker(brokerId);
+        pscTestEnvWithKafka.restartBroker(brokerId);
     }
 }

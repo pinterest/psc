@@ -70,7 +70,7 @@ public class TestKafkaSslUtils {
         configuration1.setProperty(PscConfiguration.PSC_CONFIG_LOGGING_ENABLED, "false");
         configuration1.setProperty(PscConfiguration.PSC_METRICS_REPORTER_CLASS, TestUtils.DEFAULT_METRICS_REPORTER);
         configuration1.setProperty(PscConfiguration.PSC_METRICS_REPORTER_PARALLELISM, "5");
-        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(configuration1, PscConfiguration.PSC_CLIENT_TYPE_CONSUMER);
+        PscConfigurationInternal pscConfigurationInternal = new PscConfigurationInternal(configuration1, PscConfigurationInternal.PSC_CLIENT_TYPE_CONSUMER);
 
         PscMetricRegistryManager.getInstance().initialize(pscConfigurationInternal);
         TopicUri topicUri1 = KafkaTopicUri.validate(topicUriSecure1);
