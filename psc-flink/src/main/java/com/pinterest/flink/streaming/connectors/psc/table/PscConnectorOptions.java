@@ -107,8 +107,10 @@ public class PscConnectorOptions {
                                                     ValueFieldsStrategy.EXCEPT_KEY))
                                     .build());
 
+    public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
+
     // --------------------------------------------------------------------------------------------
-    // Topic options
+    // Psc specific options
     // --------------------------------------------------------------------------------------------
 
     public static final ConfigOption<List<String>> TOPIC_URI =
@@ -216,15 +218,16 @@ public class PscConnectorOptions {
                                             "Optional output partitioning from Flink's partitions into PSC's backend partitions. Valid enumerations are")
                                     .list(
                                             text(
-                                                    "'default': use the PSC default partitioner to partition records."),
+                                                    "'default' (use PSC default partitioner to partition records)"),
                                             text(
-                                                    "'fixed': each Flink partition ends up in at most one PSC backend partition."),
+                                                    "'fixed' (each Flink partition ends up in at most one PubSub partition)"),
                                             text(
-                                                    "'round-robin': a Flink partition is distributed to PSC backend partitions sticky round-robin. It only works if record's keys are not specified."),
+                                                    "'round-robin' (a Flink partition is distributed to PubSub partitions round-robin when 'key.fields' is not specified)"),
                                             text(
-                                                    "Custom FlinkPscPartitioner subclass: e.g. 'org.mycompany.MyPartitioner'."))
+                                                    "custom class name (use custom FlinkPscPartitioner subclass)"))
                                     .build());
 
+    // Disable this feature by default
     public static final ConfigOption<Integer> SINK_BUFFER_FLUSH_MAX_ROWS =
             ConfigOptions.key("sink.buffer-flush.max-rows")
                     .intType()
@@ -232,8 +235,10 @@ public class PscConnectorOptions {
                     .withDescription(
                             Description.builder()
                                     .text(
-                                            "The max number of rows to buffer for each sink subtask, over this number of "
-                                                    + "rows, asynchronous threads will flush data.")
+                                            "The max size of buffered records before flushing. "
+                                                    + "When the sink receives many updates on the same key, "
+                                                    + "the buffer will retain the last records of the same key. "
+                                                    + "This can help to reduce data shuffling and avoid possible tombstone messages to the PubSub topic.")
                                     .linebreak()
                                     .text("Can be set to '0' to disable it.")
                                     .linebreak()
