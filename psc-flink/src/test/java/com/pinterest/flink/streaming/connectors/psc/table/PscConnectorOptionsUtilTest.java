@@ -32,6 +32,10 @@ import java.util.UUID;
 import com.pinterest.psc.config.PscConfiguration;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createKeyFormatProjection;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createValueFormatProjection;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 import static org.apache.flink.table.api.DataTypes.FIELD;
 import static org.apache.flink.table.api.DataTypes.INT;
 import static org.apache.flink.table.api.DataTypes.ROW;
@@ -364,8 +368,8 @@ public class PscConnectorOptionsUtilTest {
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
 
         String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        assertNotNull(groupId);
-        assertNotEquals("AUTO_GEN", groupId);
+        assertNotNull("Group ID should not be null", groupId);
+        assertNotEquals("Group ID should not be AUTO_GEN", "AUTO_GEN", groupId);
         assertEquals("1000", pscProperties.getProperty("max.poll.records"));
     }
 
@@ -394,30 +398,6 @@ public class PscConnectorOptionsUtilTest {
     }
 
     // --------------------------------------------------------------------------------------------
-
-    private static void assertNotNull(String message, Object object) {
-        if (object == null) {
-            fail(message);
-        }
-    }
-
-    private static void assertNotEquals(String message, Object unexpected, Object actual) {
-        if (unexpected != null && unexpected.equals(actual)) {
-            fail(message + ". Expected not equal to: <" + unexpected + "> but was: <" + actual + ">");
-        }
-    }
-
-    private static void assertEquals(String expected, String actual) {
-        if (!expected.equals(actual)) {
-            fail("Expected: <" + expected + "> but was: <" + actual + ">");
-        }
-    }
-
-    private static void assertTrue(String message, boolean condition) {
-        if (!condition) {
-            fail(message);
-        }
-    }
 
     private static Map<String, String> createTestOptions() {
         final Map<String, String> options = new HashMap<>();
