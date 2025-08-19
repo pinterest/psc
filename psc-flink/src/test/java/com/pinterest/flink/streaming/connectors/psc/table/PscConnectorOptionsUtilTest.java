@@ -408,12 +408,15 @@ public class PscConnectorOptionsUtilTest {
     // --------------------------------------------------------------------------------------------
 
     @Test
-    public void testValidateAutoGenOptionsWithAllowedKeys() {
-        // Test that the function does not throw for allowed keys
+    public void testValidateAutoGenUuidOptionsWithAllowedKeys() {
+        // Test that the function does not throw for allowed keys with valid client.id.prefix
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties.client.id.prefix", "test-prefix");
+        
         try {
-            PscConnectorOptionsUtil.validateAutoGenOptions(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-            PscConnectorOptionsUtil.validateAutoGenOptions(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-            PscConnectorOptionsUtil.validateAutoGenOptions(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+            PscConnectorOptionsUtil.validateAutoGenUuidOptions(PscConfiguration.PSC_CONSUMER_CLIENT_ID, tableOptions);
+            PscConnectorOptionsUtil.validateAutoGenUuidOptions(PscConfiguration.PSC_CONSUMER_GROUP_ID, tableOptions);
+            PscConnectorOptionsUtil.validateAutoGenUuidOptions(PscConfiguration.PSC_PRODUCER_CLIENT_ID, tableOptions);
             // If we get here, all validations passed
         } catch (ValidationException e) {
             fail("Validation should not fail for allowed keys: " + e.getMessage());
@@ -421,8 +424,11 @@ public class PscConnectorOptionsUtilTest {
     }
 
     @Test
-    public void testValidateAutoGenOptionsWithNonAllowedKeys() {
+    public void testValidateAutoGenUuidOptionsWithNonAllowedKeys() {
         // Test that the function throws ValidationException for non-allowed keys
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties.client.id.prefix", "test-prefix");
+        
         String[] nonAllowedKeys = {
             "bootstrap.servers", 
             "session.timeout.ms", 
@@ -433,22 +439,25 @@ public class PscConnectorOptionsUtilTest {
         
         for (String key : nonAllowedKeys) {
             try {
-                PscConnectorOptionsUtil.validateAutoGenOptions(key);
+                PscConnectorOptionsUtil.validateAutoGenUuidOptions(key, tableOptions);
                 fail("Should have thrown ValidationException for key: " + key);
             } catch (ValidationException e) {
                 // Expected - verify error message contains the key and mentions allowed keys
                 String message = e.getMessage();
                 assertTrue("Error message should mention the invalid key", message.contains(key));
-                assertTrue("Error message should mention AUTO_GEN", message.contains("AUTO_GEN"));
+                assertTrue("Error message should mention AUTO_GEN_UUID", message.contains("AUTO_GEN_UUID"));
                 assertTrue("Error message should list allowed keys", message.contains(PscConfiguration.PSC_CONSUMER_CLIENT_ID));
             }
         }
     }
 
     @Test(expected = ValidationException.class)
-    public void testValidateAutoGenOptionsWithNull() {
+    public void testValidateAutoGenUuidOptionsWithNull() {
         // Test that null throws ValidationException
-        PscConnectorOptionsUtil.validateAutoGenOptions(null);
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties.client.id.prefix", "test-prefix");
+        
+        PscConnectorOptionsUtil.validateAutoGenUuidOptions(null, tableOptions);
     }
 
         @Test(expected = ValidationException.class) 

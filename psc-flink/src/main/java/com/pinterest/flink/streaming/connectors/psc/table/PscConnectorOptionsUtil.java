@@ -138,7 +138,7 @@ class PscConnectorOptionsUtil {
     }
 
     /**
-     * Generates a UUID with the client.id.prefix if provided.
+     * Generates a UUID with the client.id.prefix.
      *
      * @param tableOptions the table options map to get client.id.prefix from
      * @return generated UUID string with prefix
@@ -150,17 +150,7 @@ class PscConnectorOptionsUtil {
         return clientIdPrefix.trim() + "-" + uuid;
     }
 
-    /**
-     * Temporary backward compatibility method for existing tests.
-     * @deprecated Use validateAutoGenUuidOptions(String, Map<String, String>) instead
-     */
-    @Deprecated
-    public static void validateAutoGenOptions(String subKey) {
-        // For backward compatibility with existing tests, create a dummy options map
-        Map<String, String> dummyOptions = new HashMap<>();
-        dummyOptions.put("properties.client.id.prefix", "test"); // dummy value for tests
-        validateAutoGenUuidOptions(subKey, dummyOptions);
-    }
+
 
     // --------------------------------------------------------------------------------------------
     // Validation
