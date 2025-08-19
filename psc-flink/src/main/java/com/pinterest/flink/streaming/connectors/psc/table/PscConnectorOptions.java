@@ -134,22 +134,40 @@ public class PscConnectorOptions {
                     .stringType()
                     .noDefaultValue()
                     .withDescription(
-                            "Required consumer group in PSC consumer, no need for PSC producer. " +
-                            "Set to 'AUTO_GEN' to generate a UUID automatically as an ephemeral group.");
+                            Description.builder()
+                                    .text("Required consumer group in PSC consumer, no need for PSC producer. ")
+                                    .text("Set to 'AUTO_GEN_UUID' to generate a group id w/ dynamic UUID suffix automatically as an ephemeral group.")
+                                    .build());
 
     public static final ConfigOption<String> PROPS_CLIENT_ID =
             ConfigOptions.key("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID)
                     .stringType()
-                    .defaultValue("AUTO_GEN")
+                    .noDefaultValue()
                     .withDescription(
-                            "Client ID for PSC consumer. Defaults to AUTO_GEN which generates a UUID.");
+                            Description.builder()
+                                    .text("Optional client ID for PSC consumer. ")
+                                    .text("Use 'AUTO_GEN_UUID' to automatically generate a client id w/ dynamic UUID suffix.")
+                                    .build());
 
     public static final ConfigOption<String> PROPS_PRODUCER_CLIENT_ID =
             ConfigOptions.key("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID)
                     .stringType()
-                    .defaultValue("AUTO_GEN")
+                    .noDefaultValue()
                     .withDescription(
-                            "Client ID for PSC producer. Defaults to AUTO_GEN which generates a UUID.");
+                            Description.builder()
+                                    .text("Optional client ID for PSC producer. ")
+                                    .text("Use 'AUTO_GEN_UUID' to automatically generate a producer id w/ dynamic UUID suffix.")
+                                    .build());
+
+    public static final ConfigOption<String> PROPS_CLIENT_ID_PREFIX =
+            ConfigOptions.key("properties.client.id.prefix")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text("Client ID prefix used when AUTO_GEN_UUID is specified for ID options. ")
+                                    .text("Required as prefix for the generated UUID when using AUTO_GEN_UUID for client.id, group.id, or producer.id.")
+                                    .build());
 
     // --------------------------------------------------------------------------------------------
     // Scan specific options
