@@ -84,6 +84,7 @@ import java.util.Properties;
 import java.util.function.Consumer;
 
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.AVRO_CONFLUENT;
+import static org.apache.flink.core.testutils.FlinkAssertions.anyCauseMatches;
 import static org.apache.flink.core.testutils.FlinkMatchers.containsCause;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSink;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSource;
@@ -861,63 +862,77 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     }
 
     // --------------------------------------------------------------------------------------------
-    // CREATE TABLE ... LIKE Tests for AUTO_GEN Support
+    // CREATE TABLE ... LIKE Tests for AUTO_GEN_UUID Support
     // --------------------------------------------------------------------------------------------
 
     @Test
-    public void testCreateTableLikeWithAutoGenInBaseAndOverrideInDerived() {
-        // Test scenario: Base table has AUTO_GEN, derived table overrides with custom value
+    public void testCreateTableLikeWithAutoGenUuidInBaseAndOverrideInDerived() {
+        // Test scenario: Base table has AUTO_GEN_UUID, derived table overrides with custom value
         Map<String, String> modifiedOptions = getModifiedOptions(
                 getFullSinkOptions(),
                 options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN");
+                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
+                    options.put("properties.client.id.prefix", "upsert-base");
                 });
 
-        // Properties should have AUTO_GEN values replaced with UUIDs
+        // Properties should have AUTO_GEN_UUID values replaced with prefixed UUIDs
         Properties baseProperties =
                 PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
 
         assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
-                .isNotEqualTo("AUTO_GEN")
-                .matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-base-")
+                .matches("^upsert-base-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
         assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
-                .isNotEqualTo("AUTO_GEN")
-                .matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-base-")
+                .matches("^upsert-base-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     }
 
     @Test
-    public void testCreateTableLikeWithAutoGenInBaseAndAutoGenInDerived() {
-        // Test scenario: Both base and derived tables use AUTO_GEN, each should get unique UUIDs
+    public void testCreateTableLikeWithAutoGenUuidInBaseAndAutoGenUuidInDerived() {
+        // Test scenario: Both base and derived tables use AUTO_GEN_UUID, each should get unique UUIDs
         Map<String, String> baseTableOptions = getModifiedOptions(
                 getFullSinkOptions(),
                 options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN");
+                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
+                    options.put("properties.client.id.prefix", "upsert-base");
                 });
 
         Map<String, String> derivedTableOptions = getModifiedOptions(
                 getFullSinkOptions(),
                 options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN");
+                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
+                    options.put("properties.client.id.prefix", "upsert-derived");
                 });
 
-        // Both should generate different UUIDs
+        // Both should generate different UUIDs with their respective prefixes
         Properties baseProperties =
                 PscConnectorOptionsUtil.getPscProperties(baseTableOptions);
         Properties derivedProperties =
                 PscConnectorOptionsUtil.getPscProperties(derivedTableOptions);
 
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
-                .isNotEqualTo(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID));
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
-                .isNotEqualTo(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID));
+        String baseGroupId = baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String derivedGroupId = derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String baseClientId = baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        String derivedClientId = derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+
+        assertThat(baseGroupId)
+                .isNotEqualTo(derivedGroupId)
+                .startsWith("upsert-base-");
+        assertThat(baseClientId)
+                .isNotEqualTo(derivedClientId)
+                .startsWith("upsert-base-");
+        assertThat(derivedGroupId).startsWith("upsert-derived-");
+        assertThat(derivedClientId).startsWith("upsert-derived-");
     }
 
     @Test
-    public void testCreateTableLikeWithoutAutoGenInBaseAndOverrideInDerived() {
-        // Test scenario: Base table has custom values, derived table overrides with AUTO_GEN
+    public void testCreateTableLikeWithoutAutoGenUuidInBaseAndOverrideInDerived() {
+        // Test scenario: Base table has custom values, derived table overrides with AUTO_GEN_UUID
         Map<String, String> baseTableOptions = getModifiedOptions(
                 getFullSinkOptions(),
                 options -> {
@@ -928,8 +943,9 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> derivedTableOptions = getModifiedOptions(
                 getFullSinkOptions(),
                 options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN");
+                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
                     options.put("properties.psc.consumer.client.id", "base-client"); // Keep same client ID
+                    options.put("properties.client.id.prefix", "upsert-derived-prefix");
                 });
 
         Properties baseProperties =
@@ -943,11 +959,93 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
                 .isEqualTo("base-client");
 
-        // Derived should have AUTO_GEN replaced for group_id but keep custom client_id
+        // Derived should have AUTO_GEN_UUID replaced for group_id but keep custom client_id
         assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
-                .isNotEqualTo("AUTO_GEN")
-                .matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-derived-prefix-")
+                .matches("^upsert-derived-prefix-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
         assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
                 .isEqualTo("base-client");
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Validation Tests for AUTO_GEN_UUID and client.id.prefix in Upsert Tables
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testUpsertAutoGenUuidRequiresClientIdPrefix() {
+        // Test that AUTO_GEN_UUID requires client.id.prefix for upsert tables
+        assertThatThrownBy(() -> {
+            Map<String, String> options = getModifiedOptions(
+                    getFullSinkOptions(),
+                    opts -> {
+                        opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                        // Missing client.id.prefix
+                    });
+            createTableSink(SINK_SCHEMA, options);
+        }).isInstanceOf(ValidationException.class)
+          .satisfies(anyCauseMatches(ValidationException.class, 
+                  "properties.client.id.prefix must be provided when using AUTO_GEN_UUID for ID options"));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithValidClientIdPrefix() {
+        // Test that AUTO_GEN_UUID works correctly with valid client.id.prefix for upsert tables
+        Map<String, String> options = getModifiedOptions(
+                getFullSinkOptions(),
+                opts -> {
+                    opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    opts.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
+                    opts.put("properties.psc.producer.client.id", "AUTO_GEN_UUID");
+                    opts.put("properties.client.id.prefix", "upsert-factory-test");
+                });
+
+        // Should create sink successfully
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, options);
+
+        // Verify the generated properties have correct prefixes
+        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        
+        String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        assertThat(groupId)
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-factory-test-")
+                .matches("^upsert-factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+        
+        assertThat(clientId)
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-factory-test-")
+                .matches("^upsert-factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+        
+        assertThat(producerClientId)
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-factory-test-")
+                .matches("^upsert-factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+        // All generated IDs should be different
+        assertThat(groupId).isNotEqualTo(clientId).isNotEqualTo(producerClientId);
+        assertThat(clientId).isNotEqualTo(producerClientId);
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidTrimsWhitespaceFromPrefix() {
+        // Test that client.id.prefix is properly trimmed for upsert tables
+        Map<String, String> options = getModifiedOptions(
+                getFullSinkOptions(),
+                opts -> {
+                    opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    opts.put("properties.client.id.prefix", "  upsert-trimmed-prefix  ");
+                });
+
+        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        assertThat(groupId)
+                .startsWith("upsert-trimmed-prefix-")
+                .doesNotStartWith(" ")
+                .doesNotContain("  -");
     }
 }

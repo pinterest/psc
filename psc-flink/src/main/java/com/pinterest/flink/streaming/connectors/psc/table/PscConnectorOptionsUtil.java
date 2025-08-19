@@ -52,6 +52,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
+import com.pinterest.psc.config.PscConfiguration;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.DELIVERY_GUARANTEE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS_PREFIX;
@@ -89,8 +90,8 @@ class PscConnectorOptionsUtil {
     // Prefix for PSC specific properties.
     public static final String PROPERTIES_PREFIX = "properties.";
 
-    // AUTO_GEN keyword for UUID generation.
-    public static final String AUTO_GEN_VALUE = "AUTO_GEN";
+    // AUTO_GEN_UUID keyword for UUID generation.
+    public static final String AUTO_GEN_UUID_VALUE = "AUTO_GEN_UUID";
 
     // Other keywords.
     private static final String PARTITION = "partition";
@@ -99,6 +100,67 @@ class PscConnectorOptionsUtil {
     protected static final String DEBEZIUM_AVRO_CONFLUENT = "debezium-avro-confluent";
     private static final List<String> SCHEMA_REGISTRY_FORMATS =
             Arrays.asList(AVRO_CONFLUENT, DEBEZIUM_AVRO_CONFLUENT);
+
+    /**
+     * Validates if AUTO_GEN_UUID is allowed for the given property key and that app.prefix is provided.
+     * Only allows AUTO_GEN_UUID for psc.consumer.client.id, psc.consumer.group.id, and psc.producer.client.id keys.
+     * Throws ValidationException if AUTO_GEN_UUID is not allowed for the key or if app.prefix is missing/empty.
+     *
+     * @param subKey the property key (without the "properties." prefix)
+     * @param tableOptions the table options map to check for app.prefix
+     * @throws ValidationException if AUTO_GEN_UUID is not allowed for this key or app.prefix is invalid
+     */
+    public static void validateAutoGenUuidOptions(String subKey, Map<String, String> tableOptions) {
+        if (!(PscConfiguration.PSC_CONSUMER_CLIENT_ID.equals(subKey) || 
+              PscConfiguration.PSC_CONSUMER_GROUP_ID.equals(subKey) || 
+              PscConfiguration.PSC_PRODUCER_CLIENT_ID.equals(subKey))) {
+            throw new ValidationException(
+                    String.format("AUTO_GEN_UUID is not allowed for property '%s'. " +
+                    "AUTO_GEN_UUID is only supported for: %s, %s, %s", 
+                    subKey, 
+                    PscConfiguration.PSC_CONSUMER_CLIENT_ID,
+                    PscConfiguration.PSC_CONSUMER_GROUP_ID,
+                    PscConfiguration.PSC_PRODUCER_CLIENT_ID));
+        }
+        
+        // Validate that client.id.prefix is provided and non-empty when using AUTO_GEN_UUID
+        String clientIdPrefix = tableOptions.get("properties.client.id.prefix");
+        if (clientIdPrefix == null) {
+            throw new ValidationException(
+                    "properties.client.id.prefix must be provided when using AUTO_GEN_UUID for ID options");
+        }
+        
+        String trimmedClientIdPrefix = clientIdPrefix.trim();
+        if (trimmedClientIdPrefix.isEmpty()) {
+            throw new ValidationException(
+                    "properties.client.id.prefix must be non-empty (after trimming whitespace) when using AUTO_GEN_UUID for ID options");
+        }
+    }
+
+    /**
+     * Generates a UUID with the client.id.prefix if provided.
+     *
+     * @param tableOptions the table options map to get client.id.prefix from
+     * @return generated UUID string with prefix
+     */
+    private static String generateUuidWithPrefix(Map<String, String> tableOptions) {
+        String clientIdPrefix = tableOptions.get("properties.client.id.prefix");
+        String uuid = UUID.randomUUID().toString();
+        
+        return clientIdPrefix.trim() + "-" + uuid;
+    }
+
+    /**
+     * Temporary backward compatibility method for existing tests.
+     * @deprecated Use validateAutoGenUuidOptions(String, Map<String, String>) instead
+     */
+    @Deprecated
+    public static void validateAutoGenOptions(String subKey) {
+        // For backward compatibility with existing tests, create a dummy options map
+        Map<String, String> dummyOptions = new HashMap<>();
+        dummyOptions.put("properties.client.id.prefix", "test"); // dummy value for tests
+        validateAutoGenUuidOptions(subKey, dummyOptions);
+    }
 
     // --------------------------------------------------------------------------------------------
     // Validation
@@ -396,9 +458,10 @@ class PscConnectorOptionsUtil {
                                 final String value = tableOptions.get(key);
                                 final String subKey = key.substring((PROPERTIES_PREFIX).length());
                                 
-                                // Generate UUID for AUTO_GEN values
-                                if (AUTO_GEN_VALUE.equals(value)) {
-                                    pscProperties.put(subKey, UUID.randomUUID().toString());
+                                // Validate and generate UUID for AUTO_GEN_UUID values
+                                if (AUTO_GEN_UUID_VALUE.equals(value)) {
+                                    validateAutoGenUuidOptions(subKey, tableOptions);
+                                    pscProperties.put(subKey, generateUuidWithPrefix(tableOptions));
                                 } else {
                                     pscProperties.put(subKey, value);
                                 }
