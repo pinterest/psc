@@ -145,7 +145,7 @@ public class PscConnectorOptions {
                     .noDefaultValue()
                     .withDescription(
                             Description.builder()
-                                    .text("Optional client ID for PSC consumer. ")
+                                    .text("Mandatory client ID for PSC consumer. ")
                                     .text("Use 'AUTO_GEN_UUID' to automatically generate a client id w/ dynamic UUID suffix.")
                                     .build());
 
@@ -155,7 +155,7 @@ public class PscConnectorOptions {
                     .noDefaultValue()
                     .withDescription(
                             Description.builder()
-                                    .text("Optional client ID for PSC producer. ")
+                                    .text("Mandatory client ID for PSC producer. ")
                                     .text("Use 'AUTO_GEN_UUID' to automatically generate a producer id w/ dynamic UUID suffix.")
                                     .build());
 
@@ -166,7 +166,10 @@ public class PscConnectorOptions {
                     .withDescription(
                             Description.builder()
                                     .text("Client ID prefix used when AUTO_GEN_UUID is specified for ID options. ")
-                                    .text("Required as prefix for the generated UUID when using AUTO_GEN_UUID for client.id, group.id, or producer.id.")
+                                    .text(String.format("Required as prefix for the generated UUID when using AUTO_GEN_UUID for %s, %s, or %s", 
+                                    PROPS_PRODUCER_CLIENT_ID.key(), 
+                                    PROPS_CLIENT_ID.key(), 
+                                    PROPS_GROUP_ID.key()))
                                     .build());
 
     // --------------------------------------------------------------------------------------------

@@ -134,8 +134,11 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     private static final Properties UPSERT_PSC_SINK_PROPERTIES = new Properties();
 
     static {
+        UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "upsert-test-group");
+        UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-test-consumer-client");
         UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
+        UPSERT_PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "upsert-sink-test-producer-client");
         UPSERT_PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
     }
 
@@ -379,6 +382,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "dummy-client");
+        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "dummy-producer-client");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         optionModifier.accept(options);
 
@@ -695,6 +700,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SOURCE_TOPIC_URI);
+        options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "upsert-test-group");
+        options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-test-consumer-client");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         // key format options
         options.put("key.format", TestFormatFactory.IDENTIFIER);
@@ -737,6 +744,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
+        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "upsert-sink-test-producer-client");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         // key format options
         options.put("value.format", TestFormatFactory.IDENTIFIER);
@@ -859,6 +867,261 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         assertThat(provider).isInstanceOf(DataStreamScanProvider.class);
         final PscSource<?> kafkaSource = assertPscSource(provider);
         validator.accept(kafkaSource);
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // AUTO_GEN_UUID Core Functionality Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testUpsertSourceWithAutoGenUuidConsumerClientId() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-consumer-client");
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
+
+        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        assertThat(consumerClientId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-consumer-client-")
+                .matches("upsert-consumer-client-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    @Test
+    public void testUpsertSourceWithAutoGenUuidConsumerGroupId() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-consumer-group");
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
+
+        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(consumerGroupId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-consumer-group-")
+                .matches("upsert-consumer-group-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    @Test
+    public void testUpsertSourceWithAutoGenUuidBothConsumerIds() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-both");
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
+
+        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        assertThat(consumerClientId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-both-")
+                .matches("upsert-both-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+
+        assertThat(consumerGroupId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-both-")
+                .matches("upsert-both-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+                .isNotEqualTo(consumerClientId); // Should be different UUIDs
+    }
+
+    @Test
+    public void testUpsertSinkWithAutoGenUuidProducerClientId() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSinkOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-producer-client");
+                });
+
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSink) actualSink).properties;
+
+        String producerClientId = actualProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        assertThat(producerClientId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-producer-client-")
+                .matches("upsert-producer-client-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    @Test
+    public void testUpsertSinkWithAutoGenUuidAllIds() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSinkOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-all");
+                });
+
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSink) actualSink).properties;
+
+        String producerClientId = actualProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        assertThat(producerClientId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-all-")
+                .matches("upsert-all-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithTrimmedPrefix() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "  upsert-trimmed-prefix  ");
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
+
+        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        assertThat(consumerClientId)
+                .isNotNull()
+                .startsWith("upsert-trimmed-prefix-") // Should be trimmed
+                .matches("upsert-trimmed-prefix-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidMixedWithCustomValues() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "upsert-custom-group");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-mixed");
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
+
+        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Client ID should be generated with UUID
+        assertThat(consumerClientId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-mixed-")
+                .matches("upsert-mixed-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+
+        // Group ID should remain custom value
+        assertThat(consumerGroupId)
+                .isEqualTo("upsert-custom-group");
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidUniquePerTableCreation() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-unique");
+                });
+
+        // Create two separate table sources with same options
+        final DynamicTableSource actualSource1 = createTableSource(SOURCE_SCHEMA, options);
+        final DynamicTableSource actualSource2 = createTableSource(SOURCE_SCHEMA, options);
+
+        Properties properties1 = ((PscDynamicSource) actualSource1).properties;
+        Properties properties2 = ((PscDynamicSource) actualSource2).properties;
+
+        String clientId1 = properties1.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        String clientId2 = properties2.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+
+        assertThat(clientId1)
+                .isNotNull()
+                .startsWith("upsert-unique-")
+                .matches("upsert-unique-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+
+        assertThat(clientId2)
+                .isNotNull()
+                .startsWith("upsert-unique-")
+                .matches("upsert-unique-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+                .isNotEqualTo(clientId1); // Each table creation should get unique UUID
+    }
+
+    // AUTO_GEN_UUID Negative Tests
+    @Test
+    public void testUpsertAutoGenUuidWithMissingClientIdPrefix() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID"));
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class, 
+                "properties.client.id.prefix must be provided when using AUTO_GEN_UUID for ID options"));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithEmptyPrefixInSourceTest() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> {
+                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "");
+                    });
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class,
+                "properties.client.id.prefix must be non-empty"));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithWhitespacePrefixInSourceTest() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> {
+                        opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
+                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "   ");
+                    });
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class,
+                "properties.client.id.prefix must be non-empty"));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidOnDisallowedProperty() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> {
+                        opts.put("properties.bootstrap.servers", "AUTO_GEN_UUID");
+                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-test");
+                    });
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class,
+                "AUTO_GEN_UUID is not allowed for property"));
     }
 
     // --------------------------------------------------------------------------------------------
@@ -1047,5 +1310,79 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 .startsWith("upsert-trimmed-prefix-")
                 .doesNotStartWith(" ")
                 .doesNotContain("  -");
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Producer Client Options Validation Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testProducerMissingClientIdValidation() {
+        Map<String, String> options = getModifiedOptions(
+            getFullSinkOptions(),
+            opts -> {
+                // Remove producer client.id
+                opts.remove("properties.psc.producer.client.id");
+            });
+
+        assertThatThrownBy(() -> {
+            createTableSink(SINK_SCHEMA, options);
+        }).isInstanceOf(ValidationException.class)
+          .satisfies(anyCauseMatches(ValidationException.class, 
+                  "Required property 'psc.producer.client.id' is missing or empty"));
+    }
+
+    @Test
+    public void testProducerEmptyClientIdValidation() {
+        Map<String, String> options = getModifiedOptions(
+            getFullSinkOptions(),
+            opts -> {
+                // Set empty producer client.id
+                opts.put("properties.psc.producer.client.id", "   ");  // whitespace only
+            });
+
+        assertThatThrownBy(() -> {
+            createTableSink(SINK_SCHEMA, options);
+        }).isInstanceOf(ValidationException.class)
+          .satisfies(anyCauseMatches(ValidationException.class, 
+                  "Required property 'psc.producer.client.id' is missing or empty"));
+    }
+
+    @Test
+    public void testProducerValidExplicitClientOptions() {
+        Map<String, String> options = getModifiedOptions(
+            getFullSinkOptions(),
+            opts -> {
+                // Set explicit valid values
+                opts.put("properties.psc.producer.client.id", "explicit-producer-client-id");
+            });
+
+        // Should not throw - validation passes
+        DynamicTableSink tableSink = createTableSink(SINK_SCHEMA, options);
+        assertThat(tableSink).isNotNull();
+    }
+
+    @Test
+    public void testProducerValidAutoGenUuidClientOptions() {
+        Map<String, String> options = getModifiedOptions(
+            getFullSinkOptions(),
+            opts -> {
+                // Use AUTO_GEN_UUID for producer with required prefix
+                opts.put("properties.psc.producer.client.id", "AUTO_GEN_UUID");
+                opts.put("properties.client.id.prefix", "test-producer");
+            });
+
+        // Should not throw - validation passes
+        DynamicTableSink tableSink = createTableSink(SINK_SCHEMA, options);
+        assertThat(tableSink).isNotNull();
+        
+        // Verify the producer client ID was generated correctly
+        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        
+        assertThat(producerClientId)
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("test-producer-")
+                .matches("^test-producer-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     }
 }

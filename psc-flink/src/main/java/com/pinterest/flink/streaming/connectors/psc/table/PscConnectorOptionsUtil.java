@@ -57,6 +57,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.PROPS_CLIENT_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
@@ -124,16 +125,18 @@ class PscConnectorOptionsUtil {
         }
         
         // Validate that client.id.prefix is provided and non-empty when using AUTO_GEN_UUID
-        String clientIdPrefix = tableOptions.get("properties.client.id.prefix");
+        String clientIdPrefix = tableOptions.get(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key());
         if (clientIdPrefix == null) {
             throw new ValidationException(
-                    "properties.client.id.prefix must be provided when using AUTO_GEN_UUID for ID options");
+                     String.format("%s must be provided when using AUTO_GEN_UUID for ID options",
+                     PROPS_CLIENT_ID_PREFIX.key()));
         }
         
         String trimmedClientIdPrefix = clientIdPrefix.trim();
         if (trimmedClientIdPrefix.isEmpty()) {
             throw new ValidationException(
-                    "properties.client.id.prefix must be non-empty (after trimming whitespace) when using AUTO_GEN_UUID for ID options");
+                    String.format("%s must be non-empty (after trimming whitespace) when using AUTO_GEN_UUID for ID options",
+                    PROPS_CLIENT_ID_PREFIX.key()));
         }
     }
 
@@ -144,7 +147,7 @@ class PscConnectorOptionsUtil {
      * @return generated UUID string with prefix
      */
     private static String generateUuidWithPrefix(Map<String, String> tableOptions) {
-        String clientIdPrefix = tableOptions.get("properties.client.id.prefix");
+        String clientIdPrefix = tableOptions.get(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key());
         String uuid = UUID.randomUUID().toString();
         
         return clientIdPrefix.trim() + "-" + uuid;
@@ -160,11 +163,13 @@ class PscConnectorOptionsUtil {
         validateSourceTopic(tableOptions);
         validateScanStartupMode(tableOptions);
         validateScanBoundedMode(tableOptions);
+        validateConsumerClientOptions(tableOptions);
     }
 
     public static void validateTableSinkOptions(ReadableConfig tableOptions) {
         validateSinkTopic(tableOptions);
         validateSinkPartitioner(tableOptions);
+        validateProducerClientOptions(tableOptions);
     }
 
     public static void validateSourceTopic(ReadableConfig tableOptions) {
@@ -301,6 +306,51 @@ class PscConnectorOptionsUtil {
                                                 SINK_PARTITIONER.key()));
                             }
                         });
+    }
+
+    static void validateConsumerClientOptions(ReadableConfig tableOptions) {
+        // Convert ReadableConfig to Map to work with getPscProperties
+        Configuration config = (Configuration) tableOptions;
+        Map<String, String> tableOptionsMap = config.toMap();
+        Properties pscProperties = getPscProperties(tableOptionsMap);
+        
+        // Validate required consumer properties are present
+        String consumerClientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        String consumerGroupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        
+        if (consumerClientId == null || consumerClientId.trim().isEmpty()) {
+            throw new ValidationException(
+                String.format("Required property '%s' is missing or empty. " +
+                    "Please provide a value or use 'AUTO_GEN_UUID' with '%s'.", 
+                    PscConfiguration.PSC_CONSUMER_CLIENT_ID,
+                    PROPS_CLIENT_ID_PREFIX.key()));
+        }
+        
+        if (consumerGroupId == null || consumerGroupId.trim().isEmpty()) {
+            throw new ValidationException(
+                String.format("Required property '%s' is missing or empty. " +
+                    "Please provide a value or use 'AUTO_GEN_UUID' with '%s'.", 
+                    PscConfiguration.PSC_CONSUMER_GROUP_ID,
+                    PROPS_CLIENT_ID_PREFIX.key()));
+        }
+    }
+
+    static void validateProducerClientOptions(ReadableConfig tableOptions) {
+        // Convert ReadableConfig to Map to work with getPscProperties
+        Configuration config = (Configuration) tableOptions;
+        Map<String, String> tableOptionsMap = config.toMap();
+        Properties pscProperties = getPscProperties(tableOptionsMap);
+        
+        // Validate required producer property is present
+        String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        
+        if (producerClientId == null || producerClientId.trim().isEmpty()) {
+            throw new ValidationException(
+                String.format("Required property '%s' is missing or empty. " +
+                    "Please provide a value or use 'AUTO_GEN_UUID' with '%s'.", 
+                    PscConfiguration.PSC_PRODUCER_CLIENT_ID,
+                    PROPS_CLIENT_ID_PREFIX.key()));
+        }
     }
 
     // --------------------------------------------------------------------------------------------

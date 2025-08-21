@@ -77,6 +77,8 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUriPattern;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUris;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateScanBoundedMode;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateConsumerClientOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateProducerClientOptions;
 
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
@@ -246,6 +248,7 @@ public class UpsertPscDynamicTableFactory
             int[] primaryKeyIndexes) {
         validateTopic(tableOptions);
         validateScanBoundedMode(tableOptions);
+        validateConsumerClientOptions(tableOptions);
         validateFormat(keyFormat, valueFormat, tableOptions);
         validatePKConstraints(primaryKeyIndexes);
     }
@@ -257,6 +260,7 @@ public class UpsertPscDynamicTableFactory
             int[] primaryKeyIndexes) {
         validateTopic(tableOptions);
         validateFormat(keyFormat, valueFormat, tableOptions);
+        validateProducerClientOptions(tableOptions);
         validatePKConstraints(primaryKeyIndexes);
         validateSinkBufferFlush(tableOptions);
     }

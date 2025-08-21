@@ -304,7 +304,7 @@ public class PscConnectorOptionsUtilTest {
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "my-client");
         tableOptions.put("properties.some.other.property", "some-value");
-        tableOptions.put("properties.client.id.prefix", "mixed-test");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "mixed-test");
 
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
 
@@ -332,7 +332,7 @@ public class PscConnectorOptionsUtilTest {
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
         tableOptions.put("properties.bootstrap.servers", "localhost:9092");
         tableOptions.put("properties.session.timeout.ms", "30000");
-        tableOptions.put("properties.client.id.prefix", "other-test");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "other-test");
 
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
 
@@ -371,7 +371,7 @@ public class PscConnectorOptionsUtilTest {
         // Test that each call to getPscProperties with AUTO_GEN_UUID generates unique UUIDs
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
-        tableOptions.put("properties.client.id.prefix", "unique-test");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "unique-test");
 
         Properties properties1 = PscConnectorOptionsUtil.getPscProperties(tableOptions);
         Properties properties2 = PscConnectorOptionsUtil.getPscProperties(tableOptions);
@@ -392,7 +392,7 @@ public class PscConnectorOptionsUtilTest {
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
         tableOptions.put("properties.max.poll.records", "1000");
-        tableOptions.put("properties.client.id.prefix", "preserve-test");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "preserve-test");
 
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
 
@@ -411,7 +411,7 @@ public class PscConnectorOptionsUtilTest {
     public void testValidateAutoGenUuidOptionsWithAllowedKeys() {
         // Test that the function does not throw for allowed keys with valid client.id.prefix
         Map<String, String> tableOptions = new HashMap<>();
-        tableOptions.put("properties.client.id.prefix", "test-prefix");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-prefix");
         
         try {
             PscConnectorOptionsUtil.validateAutoGenUuidOptions(PscConfiguration.PSC_CONSUMER_CLIENT_ID, tableOptions);
@@ -427,7 +427,7 @@ public class PscConnectorOptionsUtilTest {
     public void testValidateAutoGenUuidOptionsWithNonAllowedKeys() {
         // Test that the function throws ValidationException for non-allowed keys
         Map<String, String> tableOptions = new HashMap<>();
-        tableOptions.put("properties.client.id.prefix", "test-prefix");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-prefix");
         
         String[] nonAllowedKeys = {
             "bootstrap.servers", 
@@ -455,17 +455,17 @@ public class PscConnectorOptionsUtilTest {
     public void testValidateAutoGenUuidOptionsWithNull() {
         // Test that null throws ValidationException
         Map<String, String> tableOptions = new HashMap<>();
-        tableOptions.put("properties.client.id.prefix", "test-prefix");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-prefix");
         
         PscConnectorOptionsUtil.validateAutoGenUuidOptions(null, tableOptions);
     }
 
-        @Test(expected = ValidationException.class) 
+    @Test(expected = ValidationException.class) 
     public void testGetPscPropertiesWithAutoGenOnNonAllowedKey() {
         // Test that using AUTO_GEN_UUID with non-allowed keys throws ValidationException
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties.bootstrap.servers", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
-        tableOptions.put("properties.client.id.prefix", "test");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test");
 
         PscConnectorOptionsUtil.getPscProperties(tableOptions);
     }
@@ -475,7 +475,7 @@ public class PscConnectorOptionsUtilTest {
         // Test with another non-allowed key
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties.session.timeout.ms", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
-        tableOptions.put("properties.client.id.prefix", "test");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test");
 
         PscConnectorOptionsUtil.getPscProperties(tableOptions);
     }
@@ -485,7 +485,7 @@ public class PscConnectorOptionsUtilTest {
         // Test that the validation error message is informative
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties.invalid.key", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
-        tableOptions.put("properties.client.id.prefix", "test");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test");
 
         try {
             PscConnectorOptionsUtil.getPscProperties(tableOptions);
@@ -506,7 +506,7 @@ public class PscConnectorOptionsUtilTest {
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);  // This should work
         tableOptions.put("properties.invalid.key", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);  // This should fail
-        tableOptions.put("properties.client.id.prefix", "mixed");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "mixed");
 
         try {
             PscConnectorOptionsUtil.getPscProperties(tableOptions);
@@ -562,7 +562,7 @@ public class PscConnectorOptionsUtilTest {
         // Test that AUTO_GEN_UUID requires non-empty client.id.prefix
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
-        tableOptions.put("properties.client.id.prefix", "");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "");
 
         try {
             PscConnectorOptionsUtil.getPscProperties(tableOptions);
@@ -579,7 +579,7 @@ public class PscConnectorOptionsUtilTest {
         // Test that AUTO_GEN_UUID requires non-empty client.id.prefix after trimming
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
-        tableOptions.put("properties.client.id.prefix", "   ");  // Only whitespace
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "   ");  // Only whitespace
 
         try {
             PscConnectorOptionsUtil.getPscProperties(tableOptions);
@@ -596,7 +596,7 @@ public class PscConnectorOptionsUtilTest {
         // Test that AUTO_GEN_UUID properly trims client.id.prefix whitespace
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
-        tableOptions.put("properties.client.id.prefix", "  my-app  ");  // Leading and trailing whitespace
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "  my-app  ");  // Leading and trailing whitespace
 
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
 
