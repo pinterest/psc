@@ -507,9 +507,7 @@ public class PscTestEnvironmentWithKafkaAsPubSubImpl extends PscTestEnvironmentW
         return new GenericContainer<>(DockerImageName.parse(DockerImageVersions.ZOOKEEPER))
                 .withNetwork(network)
                 .withNetworkAliases(ZOOKEEPER_HOSTNAME)
-                .withEnv("ZOOKEEPER_CLIENT_PORT", String.valueOf(ZOOKEEPER_PORT))
-                .withEnv("ZOOKEEPER_TICK_TIME", "2000")
-                .withEnv("ZOOKEEPER_SERVER_ID", "1");
+                .withEnv("ZOOKEEPER_CLIENT_PORT", String.valueOf(ZOOKEEPER_PORT));
     }
 
     private KafkaContainer createKafkaContainer(

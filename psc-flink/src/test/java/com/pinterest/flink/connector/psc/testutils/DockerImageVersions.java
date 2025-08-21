@@ -28,5 +28,5 @@ public class DockerImageVersions {
 
     public static final String SCHEMA_REGISTRY = "confluentinc/cp-schema-registry:7.4.4";
 
-    public static final String ZOOKEEPER = "confluentinc/cp-zookeeper:7.4.4";
+    public static final String ZOOKEEPER = "zookeeper:3.4.14";
 }
