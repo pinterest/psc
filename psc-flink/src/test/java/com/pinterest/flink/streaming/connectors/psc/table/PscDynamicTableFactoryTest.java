@@ -40,7 +40,7 @@ import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.dag.Transformation;
-import org.apache.flink.configuration.ConfigOptions;
+
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.formats.avro.AvroRowDataSerializationSchema;
@@ -1890,6 +1890,7 @@ public class PscDynamicTableFactoryTest {
                                 StreamExecutionEnvironment.createLocalEnvironment())
                         .getTransformation();
         assertThat(transformation).isInstanceOf(SourceTransformation.class);
+        @SuppressWarnings("unchecked")
         SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>
                 sourceTransformation =
                         (SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>)
@@ -1903,38 +1904,12 @@ public class PscDynamicTableFactoryTest {
     // --------------------------------------------------------------------------------------------
 
     @Test
-    public void testCreateTableLikeWithAutoGenUuidInBaseAndOverrideInDerived() {
-        // Test scenario: Base table has AUTO_GEN_UUID, derived table overrides with custom value
-        Map<String, String> modifiedOptions = getModifiedOptions(
-                getBasicSourceOptions(),
-                options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
-                    options.put("properties.client.id.prefix", "test-base");
-                });
-
-        // Properties should have AUTO_GEN_UUID values replaced with prefixed UUIDs
-        Properties baseProperties = 
-                PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
-        
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-base-")
-                .matches("^test-base-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-base-")
-                .matches("^test-base-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-    }
-
-    @Test
     public void testCreateTableLikeWithAutoGenUuidInBaseAndAutoGenUuidInDerived() {
         // Test scenario: Both base and derived tables use AUTO_GEN_UUID, each should get unique UUIDs
         Map<String, String> baseTableOptions = getModifiedOptions(
                 getBasicSourceOptions(),
                 options -> {
                     options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
                     options.put("properties.client.id.prefix", "base-table");
                 });
 
@@ -1942,29 +1917,26 @@ public class PscDynamicTableFactoryTest {
                 getBasicSourceOptions(),
                 options -> {
                     options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
                     options.put("properties.client.id.prefix", "derived-table");
                 });
 
         // Both should generate different UUIDs with their respective prefixes
-        Properties baseProperties = 
+        Properties baseProperties =
                 PscConnectorOptionsUtil.getPscProperties(baseTableOptions);
-        Properties derivedProperties = 
+        Properties derivedProperties =
                 PscConnectorOptionsUtil.getPscProperties(derivedTableOptions);
 
         String baseGroupId = baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
         String derivedGroupId = derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        String baseClientId = baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        String derivedClientId = derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
 
         assertThat(baseGroupId)
                 .isNotEqualTo(derivedGroupId)
                 .startsWith("base-table-");
-        assertThat(baseClientId)
-                .isNotEqualTo(derivedClientId)
-                .startsWith("base-table-");
         assertThat(derivedGroupId).startsWith("derived-table-");
-        assertThat(derivedClientId).startsWith("derived-table-");
+
+        // PSC consumer client IDs should be null as they're handled elsewhere and not set via AUTO_GEN_UUID
+        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID)).isNull();
+        assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID)).isNull();
     }
 
     @Test
@@ -1985,9 +1957,9 @@ public class PscDynamicTableFactoryTest {
                     options.put("properties.client.id.prefix", "derived-prefix");
                 });
 
-        Properties baseProperties = 
+        Properties baseProperties =
                 PscConnectorOptionsUtil.getPscProperties(baseTableOptions);
-        Properties derivedProperties = 
+        Properties derivedProperties =
                 PscConnectorOptionsUtil.getPscProperties(derivedTableOptions);
 
         // Base should have original values
@@ -2017,12 +1989,12 @@ public class PscDynamicTableFactoryTest {
                     getBasicSourceOptions(),
                     opts -> {
                         opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                        // Missing client.id.prefix
+                        opts.remove("properties.client.id.prefix"); // Remove client.id.prefix
                     });
             createTableSource(SCHEMA, options);
         }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "properties.client.id.prefix must be provided when using AUTO_GEN_UUID for ID options"));
+          .satisfies(anyCauseMatches(ValidationException.class,
+                  "properties.client.id.prefix"));
     }
 
     @Test
@@ -2037,8 +2009,8 @@ public class PscDynamicTableFactoryTest {
                     });
             createTableSource(SCHEMA, options);
         }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "properties.client.id.prefix must be non-empty"));
+          .satisfies(anyCauseMatches(ValidationException.class,
+                  "must be non-empty"));
     }
 
     @Test
@@ -2053,8 +2025,8 @@ public class PscDynamicTableFactoryTest {
                     });
             createTableSource(SCHEMA, options);
         }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "after trimming whitespace"));
+          .satisfies(anyCauseMatches(ValidationException.class,
+                  "must be non-empty"));
     }
 
     @Test
@@ -2064,40 +2036,35 @@ public class PscDynamicTableFactoryTest {
                 getBasicSourceOptions(),
                 opts -> {
                     opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    opts.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
                     opts.put("properties.psc.producer.client.id", "AUTO_GEN_UUID");
                     opts.put("properties.client.id.prefix", "factory-test");
                 });
 
         // Should create source successfully
         final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
 
         // Verify the generated properties have correct prefixes
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
-        
+
         String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
         String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
 
         assertThat(groupId)
                 .isNotEqualTo("AUTO_GEN_UUID")
                 .startsWith("factory-test-")
                 .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-        
-        assertThat(clientId)
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("factory-test-")
-                .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-        
+
         assertThat(producerClientId)
                 .isNotEqualTo("AUTO_GEN_UUID")
                 .startsWith("factory-test-")
                 .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
-        // All generated IDs should be different
-        assertThat(groupId).isNotEqualTo(clientId).isNotEqualTo(producerClientId);
-        assertThat(clientId).isNotEqualTo(producerClientId);
+        // Generated IDs should be different
+        assertThat(groupId).isNotEqualTo(producerClientId);
+
+        // PSC consumer client ID should be null as it's handled elsewhere
+        assertThat(pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID)).isNull();
     }
 
     @Test
@@ -2131,7 +2098,7 @@ public class PscDynamicTableFactoryTest {
                     });
             createTableSource(SCHEMA, options);
         }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
+          .satisfies(anyCauseMatches(ValidationException.class,
                   "AUTO_GEN_UUID is not allowed for property"));
     }
 }

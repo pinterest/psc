@@ -57,6 +57,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.PROPS_CLIENT_ID;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.PROPS_CLIENT_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
@@ -111,13 +112,13 @@ class PscConnectorOptionsUtil {
      * @return the resolved client ID prefix, or null if neither is found
      */
     private static String resolveClientIdPrefix(Map<String, String> tableOptions) {
-        String clientIdPrefix = tableOptions.get(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key());
+        String clientIdPrefix = tableOptions.get(PROPS_CLIENT_ID_PREFIX.key());
         if (clientIdPrefix != null) {
             return clientIdPrefix;
         }
 
         // Check for alias: properties.psc.consumer.client.id
-        String aliasKey = PROPERTIES_PREFIX + PscConfiguration.PSC_CONSUMER_CLIENT_ID;
+        String aliasKey = PROPS_CLIENT_ID.key();
         return tableOptions.get(aliasKey);
     }
 
@@ -133,15 +134,15 @@ class PscConnectorOptionsUtil {
         String clientIdPrefix = resolveClientIdPrefix(tableOptions);
         if (clientIdPrefix == null) {
             throw new ValidationException(
-                    String.format("%s (or alias %s%s) must be provided as it is mandatory for PSC table sources",
-                    PROPS_CLIENT_ID_PREFIX.key(), PROPERTIES_PREFIX, PscConfiguration.PSC_CONSUMER_CLIENT_ID));
+                    String.format("%s (or alias %s) must be provided as it is mandatory for PSC table sources",
+                    PROPS_CLIENT_ID_PREFIX.key(), PROPS_CLIENT_ID.key()));
         }
 
         String trimmedClientIdPrefix = clientIdPrefix.trim();
         if (trimmedClientIdPrefix.isEmpty()) {
             throw new ValidationException(
-                    String.format("%s (or alias %s%s) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources",
-                    PROPS_CLIENT_ID_PREFIX.key(), PROPERTIES_PREFIX, PscConfiguration.PSC_CONSUMER_CLIENT_ID));
+                    String.format("%s (or alias %s) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources",
+                    PROPS_CLIENT_ID_PREFIX.key(), PROPS_CLIENT_ID.key()));
         }
     }
 
@@ -518,7 +519,13 @@ class PscConnectorOptionsUtil {
                             key -> {
                                 final String value = tableOptions.get(key);
                                 final String subKey = key.substring((PROPERTIES_PREFIX).length());
-                                pscProperties.put(subKey, value);
+                                // Validate and generate UUID for AUTO_GEN_UUID values
+                                if (AUTO_GEN_UUID_VALUE.equals(value)) {
+                                    validateAutoGenUuidOptions(subKey, tableOptions);
+                                    pscProperties.put(subKey, generateUuidWithPrefix(tableOptions));
+                                } else {
+                                    pscProperties.put(subKey, value);
+                                }
                             });
         }
         return pscProperties;
