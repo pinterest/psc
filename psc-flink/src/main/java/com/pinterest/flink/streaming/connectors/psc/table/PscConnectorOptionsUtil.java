@@ -518,13 +518,7 @@ class PscConnectorOptionsUtil {
                             key -> {
                                 final String value = tableOptions.get(key);
                                 final String subKey = key.substring((PROPERTIES_PREFIX).length());
-                                // Validate and generate UUID for AUTO_GEN_UUID values
-                                if (AUTO_GEN_UUID_VALUE.equals(value)) {
-                                    validateAutoGenUuidOptions(subKey, tableOptions);
-                                    pscProperties.put(subKey, generateUuidWithPrefix(tableOptions));
-                                } else {
-                                    pscProperties.put(subKey, value);
-                                }
+                                pscProperties.put(subKey, value);
                             });
         }
         return pscProperties;

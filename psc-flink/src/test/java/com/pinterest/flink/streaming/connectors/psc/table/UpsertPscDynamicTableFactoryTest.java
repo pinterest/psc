@@ -135,12 +135,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     private static final Properties UPSERT_PSC_SINK_PROPERTIES = new Properties();
 
     static {
-        UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "upsert-test-group");
-        UPSERT_PSC_SOURCE_PROPERTIES.setProperty("client.id.prefix", "upsert-test");
         UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
-        UPSERT_PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "upsert-sink-test-producer-client");
-        UPSERT_PSC_SINK_PROPERTIES.setProperty("client.id.prefix", "upsert-sink");
         UPSERT_PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
     }
 
@@ -384,7 +380,6 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "dummy-producer-client");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         optionModifier.accept(options);
 
@@ -701,8 +696,6 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SOURCE_TOPIC_URI);
-        options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "upsert-test-group");
-        options.put("properties.client.id.prefix", "upsert-test");  // Now mandatory
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         // key format options
         options.put("key.format", TestFormatFactory.IDENTIFIER);
