@@ -1751,6 +1751,219 @@ public class PscTableITCase extends PscTableTestBase {
         deleteTestTopic(topic);
     }
 
+    @Test
+    public void testCreateTableLikeLegacyBaseWithAutoGenUuidOverride() throws Exception {
+        final String topic = "tstopic_like_legacy_autogen_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create legacy base source table with traditional configuration (specific group id)
+        String baseGroupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        final String createBaseTable =
+                String.format(
+                        "CREATE TABLE legacy_base_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  `value` DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'legacy-consumer-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        baseGroupId,
+                        formatOptions());
+
+        tEnv.executeSql(createBaseTable);
+
+        // Create derived table using CREATE TABLE ... LIKE with AUTO_GEN_UUID override
+        final String createDerivedTable =
+                "CREATE TABLE derived_autogen_source\n"
+                        + "WITH (\n"
+                        + "  'properties.client.id.prefix' = 'derived-autogen-client',\n"
+                        + "  'properties.psc.consumer.group.id' = 'AUTO_GEN_UUID'\n"
+                        + ") LIKE legacy_base_source";
+
+        tEnv.executeSql(createDerivedTable);
+
+        // Create sink to produce test data
+        final String createSink =
+                String.format(
+                        "CREATE TABLE test_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  `value` DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.client.id.prefix' = 'test-sink-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSink);
+
+        // Insert test data
+        String insertData =
+                "INSERT INTO test_sink\n"
+                        + "VALUES\n"
+                        + " (1100, 'LikeLegacy1', 110.5),\n"
+                        + " (1200, 'LikeLegacy2', 120.75)";
+
+        tEnv.executeSql(insertData).await();
+
+        // Verify derived table can read data with AUTO_GEN_UUID configuration
+        String query = "SELECT id, name, CAST(`value` AS DECIMAL(10, 2)) FROM derived_autogen_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(2);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("CreateTableLike_Legacy_AutoGen_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully read using derived table with AUTO_GEN_UUID
+        assertThat(TestingSinkFunction.rows).hasSize(2);
+        assertThat(TestingSinkFunction.rows).contains("+I(1100,LikeLegacy1,110.50)");
+        assertThat(TestingSinkFunction.rows).contains("+I(1200,LikeLegacy2,120.75)");
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testCreateTableLikeAutoGenBaseWithSpecificGroupIdOverride() throws Exception {
+        final String topic = "tstopic_like_autogen_specific_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create base source table with AUTO_GEN_UUID configuration
+        final String createBaseTable =
+                String.format(
+                        "CREATE TABLE autogen_base_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  `value` DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.client.id.prefix' = 'autogen-base-client',\n"
+                                + "  'properties.psc.consumer.group.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createBaseTable);
+
+        // Create derived table using CREATE TABLE ... LIKE with specific user-defined group id
+        String specificGroupId = "derived-specific-group-" + UUID.randomUUID().toString().substring(0, 8);
+        final String createDerivedTable =
+                String.format(
+                        "CREATE TABLE derived_specific_source\n"
+                                + "WITH (\n"
+                                + "  'properties.client.id.prefix' = 'derived-specific-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s'\n"
+                                + ") LIKE autogen_base_source",
+                        specificGroupId);
+
+        tEnv.executeSql(createDerivedTable);
+
+        // Create sink to produce test data
+        final String createSink =
+                String.format(
+                        "CREATE TABLE test_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  `value` DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.client.id.prefix' = 'test-sink-client',\n"
+                                + "  'properties.psc.producer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSink);
+
+        // Insert test data
+        String insertData =
+                "INSERT INTO test_sink\n"
+                        + "VALUES\n"
+                        + " (1300, 'LikeSpecific1', 130.5),\n"
+                        + " (1400, 'LikeSpecific2', 140.75)";
+
+        tEnv.executeSql(insertData).await();
+
+        // Verify derived table can read data with specific group id
+        String query = "SELECT id, name, CAST(`value` AS DECIMAL(10, 2)) FROM derived_specific_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(2);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("CreateTableLike_AutoGen_Specific_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully read using derived table with specific group id
+        assertThat(TestingSinkFunction.rows).hasSize(2);
+        assertThat(TestingSinkFunction.rows).contains("+I(1300,LikeSpecific1,130.50)");
+        assertThat(TestingSinkFunction.rows).contains("+I(1400,LikeSpecific2,140.75)");
+
+        deleteTestTopic(topic);
+    }
+
     private List<String> appendNewData(
             String topic, String tableName, String groupId, int targetNum) throws Exception {
         waitUtil(
