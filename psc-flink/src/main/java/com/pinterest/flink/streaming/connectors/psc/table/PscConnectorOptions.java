@@ -139,15 +139,6 @@ public class PscConnectorOptions {
                                     .text("Set to 'AUTO_GEN_UUID' to generate a group id w/ dynamic UUID suffix automatically as an ephemeral group.")
                                     .build());
 
-    public static final ConfigOption<String> PROPS_CLIENT_ID =
-            ConfigOptions.key("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID)
-                    .stringType()
-                    .noDefaultValue()
-                    .withDescription(
-                            Description.builder()
-                                    .text("Mandatory client ID for PSC consumer. ")
-                                    .text("Use 'AUTO_GEN_UUID' to automatically generate a client id w/ dynamic UUID suffix.")
-                                    .build());
 
     public static final ConfigOption<String> PROPS_PRODUCER_CLIENT_ID =
             ConfigOptions.key("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID)
@@ -165,11 +156,9 @@ public class PscConnectorOptions {
                     .noDefaultValue()
                     .withDescription(
                             Description.builder()
-                                    .text("Client ID prefix used when AUTO_GEN_UUID is specified for ID options. ")
-                                    .text(String.format("Required as prefix for the generated UUID when using AUTO_GEN_UUID for %s, %s, or %s", 
-                                    PROPS_PRODUCER_CLIENT_ID.key(), 
-                                    PROPS_CLIENT_ID.key(), 
-                                    PROPS_GROUP_ID.key()))
+                                    .text("Mandatory client ID prefix for generating client IDs. ")
+                                    .text("Always required for PSC table sources to ensure unique client identification. ")
+                                    .text("Used as prefix for auto-generated client IDs when consumer client.id is not provided or when using AUTO_GEN_UUID for any ID options.")
                                     .build());
 
     // --------------------------------------------------------------------------------------------

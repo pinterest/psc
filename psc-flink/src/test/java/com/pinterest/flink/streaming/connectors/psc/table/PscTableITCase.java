@@ -1190,6 +1190,567 @@ public class PscTableITCase extends PscTableTestBase {
                 .satisfies(FlinkAssertions.anyCauseMatches(NoOffsetForPartitionException.class));
     }
 
+    @Test
+    public void testAutoGenUuidSourceTableWithClientIdAndGroupId() throws Exception {
+        final String topic = "tstopic_autogen_source_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        final String createSourceTable =
+                String.format(
+                        "CREATE TABLE autogen_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  ts TIMESTAMP(3)\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.group.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.client.id.prefix' = 'integration-test-source',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSourceTable);
+
+        // Create a regular sink table for validation
+        final String createSinkTable =
+                String.format(
+                        "CREATE TABLE validation_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  ts TIMESTAMP(3)\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.producer.client.id' = 'validation-sink-client',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSinkTable);
+
+        // Insert test data
+        String insertData =
+                "INSERT INTO validation_sink\n"
+                        + "VALUES\n"
+                        + " (1, 'Alice', TIMESTAMP '2023-01-01 10:00:00'),\n"
+                        + " (2, 'Bob', TIMESTAMP '2023-01-01 11:00:00'),\n"
+                        + " (3, 'Charlie', TIMESTAMP '2023-01-01 12:00:00')";
+
+        tEnv.executeSql(insertData).await();
+
+        // Read from source with AUTO_GEN_UUID properties
+        String query = "SELECT id, name FROM autogen_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(3);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("AutoGenUuid_Source_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully read (proves AUTO_GEN_UUID worked)
+        // Order is not guaranteed in streaming, so we check the count and presence of data
+        assertThat(TestingSinkFunction.rows).hasSize(3);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testAutoGenUuidSinkTableWithProducerId() throws Exception {
+        final String topic = "tstopic_autogen_sink_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create sink table with AUTO_GEN_UUID for producer client ID
+        final String createSinkTable =
+                String.format(
+                        "CREATE TABLE autogen_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  amount DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.producer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.client.id.prefix' = 'integration-test-sink',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSinkTable);
+
+        // Create a regular source table for validation
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        final String createSourceTable =
+                String.format(
+                        "CREATE TABLE validation_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  amount DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.client.id.prefix' = 'validation-source-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        groupId,
+                        formatOptions());
+
+        tEnv.executeSql(createSourceTable);
+
+        // Insert data using sink with AUTO_GEN_UUID producer client ID
+        String insertData =
+                "INSERT INTO autogen_sink\n"
+                        + "VALUES\n"
+                        + " (10, 'Product A', 99.99),\n"
+                        + " (20, 'Product B', 149.50),\n"
+                        + " (30, 'Product C', 299.00)";
+
+        tEnv.executeSql(insertData).await();
+
+        // Read back the data to verify sink worked (proves AUTO_GEN_UUID worked)
+        String query = "SELECT id, name, CAST(amount AS DECIMAL(10, 2)) FROM validation_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(3);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("AutoGenUuid_Sink_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully written and read back (proves AUTO_GEN_UUID worked)
+        // Order is not guaranteed in streaming, so we check the count and presence of data
+        assertThat(TestingSinkFunction.rows).hasSize(3);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testMinimumConsumerConfigurationSourceTable() throws Exception {
+        final String topic = "tstopic_min_consumer_source_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create source table with minimum required consumer configuration
+        final String createSourceTable =
+                String.format(
+                        "CREATE TABLE min_consumer_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  ts TIMESTAMP(3)\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.client.id.prefix' = 'min-consumer-client-id',\n"
+                                + "  'properties.psc.consumer.group.id' = 'min-consumer-group-id',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSourceTable);
+
+        // Create sink table to write test data
+        final String createSinkTable =
+                String.format(
+                        "CREATE TABLE data_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  ts TIMESTAMP(3)\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.producer.client.id' = 'data-sink-producer-client',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSinkTable);
+
+        // Insert test data
+        String insertData =
+                "INSERT INTO data_sink\n"
+                        + "VALUES\n"
+                        + " (1, 'MinConfig1', TIMESTAMP '2023-01-01 10:00:00'),\n"
+                        + " (2, 'MinConfig2', TIMESTAMP '2023-01-01 11:00:00'),\n"
+                        + " (3, 'MinConfig3', TIMESTAMP '2023-01-01 12:00:00')";
+
+        tEnv.executeSql(insertData).await();
+
+        // Read from source with minimum consumer configuration
+        String query = "SELECT id, name FROM min_consumer_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(3);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("MinConsumerConfig_Source_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully read with minimum consumer configuration
+        assertThat(TestingSinkFunction.rows).hasSize(3);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testMinimumProducerConfigurationSinkTable() throws Exception {
+        final String topic = "tstopic_min_producer_sink_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create sink table with minimum required producer configuration
+        final String createSinkTable =
+                String.format(
+                        "CREATE TABLE min_producer_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  value DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.producer.client.id' = 'min-producer-client-id',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSinkTable);
+
+        // Create source table to read back data
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        final String createSourceTable =
+                String.format(
+                        "CREATE TABLE validation_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  value DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.client.id.prefix' = 'validation-source-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        groupId,
+                        formatOptions());
+
+        tEnv.executeSql(createSourceTable);
+
+        // Insert data using sink with minimum producer configuration
+        String insertData =
+                "INSERT INTO min_producer_sink\n"
+                        + "VALUES\n"
+                        + " (100, 'MinProd1', 10.5),\n"
+                        + " (200, 'MinProd2', 20.75),\n"
+                        + " (300, 'MinProd3', 30.25)";
+
+        tEnv.executeSql(insertData).await();
+
+        // Read back the data to verify sink worked with minimum producer configuration
+        String query = "SELECT id, name, CAST(value AS DECIMAL(10, 2)) FROM validation_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(3);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("MinProducerConfig_Sink_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully written with minimum producer configuration
+        assertThat(TestingSinkFunction.rows).hasSize(3);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testMinimumConfigurationWithAutoGenUuidSourceTable() throws Exception {
+        final String topic = "tstopic_min_autogen_source_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create source table with minimum required configuration using AUTO_GEN_UUID
+        final String createSourceTable =
+                String.format(
+                        "CREATE TABLE min_autogen_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  ts TIMESTAMP(3)\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.group.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.client.id.prefix' = 'min-config',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSourceTable);
+
+        // Create sink table to write test data
+        final String createSinkTable =
+                String.format(
+                        "CREATE TABLE data_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  ts TIMESTAMP(3)\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.producer.client.id' = 'data-sink-producer-client',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSinkTable);
+
+        // Insert test data
+        String insertData =
+                "INSERT INTO data_sink\n"
+                        + "VALUES\n"
+                        + " (1, 'MinAutoGen1', TIMESTAMP '2023-01-01 10:00:00'),\n"
+                        + " (2, 'MinAutoGen2', TIMESTAMP '2023-01-01 11:00:00'),\n"
+                        + " (3, 'MinAutoGen3', TIMESTAMP '2023-01-01 12:00:00')";
+
+        tEnv.executeSql(insertData).await();
+
+        // Read from source with minimum configuration using AUTO_GEN_UUID
+        String query = "SELECT id, name FROM min_autogen_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(3);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("MinAutoGenConfig_Source_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully read with minimum AUTO_GEN_UUID configuration
+        assertThat(TestingSinkFunction.rows).hasSize(3);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testMinimumConfigurationWithAutoGenUuidSinkTable() throws Exception {
+        final String topic = "tstopic_min_autogen_sink_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create sink table with minimum required configuration using AUTO_GEN_UUID
+        final String createSinkTable =
+                String.format(
+                        "CREATE TABLE min_autogen_sink (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  value DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.producer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.client.id.prefix' = 'min-sink-config',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        formatOptions());
+
+        tEnv.executeSql(createSinkTable);
+
+        // Create source table to read back data
+        String groupId = getStandardProps().getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        final String createSourceTable =
+                String.format(
+                        "CREATE TABLE validation_source (\n"
+                                + "  id INT,\n"
+                                + "  name STRING,\n"
+                                + "  value DOUBLE\n"
+                                + ") WITH (\n"
+                                + "  'connector' = '%s',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.client.id.prefix' = 'validation-source-client',\n"
+                                + "  'properties.psc.consumer.group.id' = '%s',\n"
+                                + "  'scan.startup.mode' = 'earliest-offset',\n"
+                                + "  %s\n"
+                                + ")",
+                        PscDynamicTableFactory.IDENTIFIER,
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        groupId,
+                        formatOptions());
+
+        tEnv.executeSql(createSourceTable);
+
+        // Insert data using sink with minimum AUTO_GEN_UUID configuration
+        String insertData =
+                "INSERT INTO min_autogen_sink\n"
+                        + "VALUES\n"
+                        + " (1000, 'MinAutoSink1', 100.5),\n"
+                        + " (2000, 'MinAutoSink2', 200.75),\n"
+                        + " (3000, 'MinAutoSink3', 300.25)";
+
+        tEnv.executeSql(insertData).await();
+
+        // Read back the data to verify sink worked with minimum AUTO_GEN_UUID configuration
+        String query = "SELECT id, name, CAST(value AS DECIMAL(10, 2)) FROM validation_source";
+        DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
+        TestingSinkFunction sink = new TestingSinkFunction(3);
+        result.addSink(sink).setParallelism(1);
+
+        try {
+            env.execute("MinAutoGenConfig_Sink_Test");
+        } catch (Throwable e) {
+            if (!isCausedByJobFinished(e)) {
+                throw e;
+            }
+        }
+
+        // Verify data was successfully written with minimum AUTO_GEN_UUID configuration
+        assertThat(TestingSinkFunction.rows).hasSize(3);
+
+        deleteTestTopic(topic);
+    }
+
     private List<String> appendNewData(
             String topic, String tableName, String groupId, int targetNum) throws Exception {
         waitUtil(

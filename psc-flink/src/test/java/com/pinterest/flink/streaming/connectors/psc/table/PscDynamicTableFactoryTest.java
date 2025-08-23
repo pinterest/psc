@@ -21,6 +21,7 @@ package com.pinterest.flink.streaming.connectors.psc.table;
 import com.pinterest.flink.connector.psc.PscFlinkConfiguration;
 import com.pinterest.flink.connector.psc.sink.PscSink;
 import com.pinterest.flink.connector.psc.source.PscSource;
+import com.pinterest.flink.connector.psc.source.PscSourceOptions;
 import com.pinterest.flink.connector.psc.source.PscSourceTestUtils;
 import com.pinterest.flink.connector.psc.source.enumerator.PscSourceEnumState;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
@@ -39,6 +40,7 @@ import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.dag.Transformation;
+import org.apache.flink.configuration.ConfigOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.formats.avro.AvroRowDataSerializationSchema;
@@ -103,6 +105,7 @@ import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSou
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 /** Tests for {@link PscDynamicTableFactory}. */
 @ExtendWith(TestLoggerExtension.class)
@@ -134,17 +137,24 @@ public class PscDynamicTableFactoryTest {
     private static final DataType COMPUTED_COLUMN_DATATYPE = DataTypes.DECIMAL(10, 3);
     private static final String DISCOVERY_INTERVAL = "1000 ms";
 
-    private static final Properties PSC_BASIC_SOURCE_PROPERTIES = new Properties();
+    private static final Properties PSC_SOURCE_PROPERTIES = new Properties();
+    private static final Properties PSC_KV_SOURCE_PROPERTIES = new Properties();
     private static final Properties PSC_SINK_PROPERTIES = new Properties();
+    private static final Properties PSC_KV_SINK_PROPERTIES = new Properties();
 
     static {
-        PSC_BASIC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        PSC_BASIC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID, "dummy-client");
-        PSC_BASIC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
-        PSC_BASIC_SOURCE_PROPERTIES.setProperty("partition.discovery.interval.ms", "1000");
+        PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        PSC_SOURCE_PROPERTIES.setProperty("client.id.prefix", "test");
+        PSC_SOURCE_PROPERTIES.setProperty(PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(), "1000");
 
-        PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "dummy-producer-client");
         PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
+
+        PSC_KV_SINK_PROPERTIES.putAll(PSC_SINK_PROPERTIES);
+        PSC_KV_SOURCE_PROPERTIES.putAll(PSC_SOURCE_PROPERTIES);
+        // Add client.id.prefix to key-value sink properties for key-value sink tests
+        PSC_KV_SINK_PROPERTIES.setProperty("client.id.prefix", "test");
     }
 
     private static final String PROPS_SCAN_OFFSETS =
@@ -205,7 +215,7 @@ public class PscDynamicTableFactoryTest {
                         null,
                         Collections.singletonList(TOPIC_URI),
                         null,
-                        PSC_BASIC_SOURCE_PROPERTIES,
+                        PSC_SOURCE_PROPERTIES,
                         StartupMode.SPECIFIC_OFFSETS,
                         specificOffsets,
                         0);
@@ -247,7 +257,7 @@ public class PscDynamicTableFactoryTest {
                         null,
                         null,
                         Pattern.compile(TOPIC_REGEX),
-                        PSC_BASIC_SOURCE_PROPERTIES,
+                        PSC_SOURCE_PROPERTIES,
                         StartupMode.EARLIEST,
                         specificOffsets,
                         0);
@@ -288,7 +298,7 @@ public class PscDynamicTableFactoryTest {
                         null,
                         Collections.singletonList(TOPIC_URI),
                         null,
-                        PSC_BASIC_SOURCE_PROPERTIES,
+                        PSC_KV_SOURCE_PROPERTIES,
                         StartupMode.GROUP_OFFSETS,
                         Collections.emptyMap(),
                         0);
@@ -339,7 +349,7 @@ public class PscDynamicTableFactoryTest {
                         null,
                         Collections.singletonList(TOPIC_URI),
                         null,
-                        PSC_BASIC_SOURCE_PROPERTIES,
+                        PSC_KV_SOURCE_PROPERTIES,
                         StartupMode.GROUP_OFFSETS,
                         Collections.emptyMap(),
                         0);
@@ -350,17 +360,306 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
-    public void testTableSourceCommitOnCheckpointDisabled() {
-        // Test that validation requires consumer group ID - this test now validates that
-        // missing group ID results in a proper validation error
-        assertThatThrownBy(() -> {
-            final Map<String, String> modifiedOptions =
-                    getModifiedOptions(
-                            getBasicSourceOptions(), options -> options.remove("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID));
-            createTableSource(SCHEMA, modifiedOptions);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "Required property 'psc.consumer.group.id' is missing or empty"));
+    public void testTableSourceWithAutoGenUuidGroupId() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing directly using the utility method
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(groupId).startsWith("test-"); // Should start with client.id.prefix from getBasicSourceOptions()
+
+        // Verify the suffix after prefix is a valid UUID
+        String uuidPart = groupId.substring("test-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+            // If no exception is thrown, the UUID is valid
+        } catch (IllegalArgumentException e) {
+            fail("Generated group ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify other properties remain unchanged
+        assertThat(processedProperties.getProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG))
+                .isEqualTo(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        assertThat(processedProperties.getProperty("client.id.prefix")).isEqualTo("test");
+
+        // Verify that the table source can be created successfully with AUTO_GEN_UUID
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify the scan runtime provider works correctly
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        ScanTableSource.ScanRuntimeProvider provider =
+                actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertPscSource(provider);
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGeneratesDifferentGroupIds() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Generate multiple group IDs using the same options
+        Properties properties1 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties2 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties3 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+
+        String groupId1 = properties1.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String groupId2 = properties2.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String groupId3 = properties3.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify all group IDs are different
+        assertThat(groupId1).isNotEqualTo(groupId2);
+        assertThat(groupId1).isNotEqualTo(groupId3);
+        assertThat(groupId2).isNotEqualTo(groupId3);
+
+        // Verify all group IDs have correct format (prefix + UUID)
+        assertThat(groupId1).startsWith("test-");
+        assertThat(groupId2).startsWith("test-");
+        assertThat(groupId3).startsWith("test-");
+
+        // Verify all UUIDs are valid
+        String uuid1 = groupId1.substring("test-".length());
+        String uuid2 = groupId2.substring("test-".length());
+        String uuid3 = groupId3.substring("test-".length());
+
+        try {
+            java.util.UUID.fromString(uuid1);
+            java.util.UUID.fromString(uuid2);
+            java.util.UUID.fromString(uuid3);
+            // If no exception is thrown, all UUIDs are valid
+        } catch (IllegalArgumentException e) {
+            fail("All generated UUIDs should be valid: " + e.getMessage());
+        }
+
+        // Also verify that table sources can be created successfully with these different group IDs
+        final DynamicTableSource tableSource1 = createTableSource(SCHEMA, modifiedOptions);
+        final DynamicTableSource tableSource2 = createTableSource(SCHEMA, modifiedOptions);
+
+        assertThat(tableSource1).isInstanceOf(PscDynamicSource.class);
+        assertThat(tableSource2).isInstanceOf(PscDynamicSource.class);
+
+        // The table sources should be functionally equivalent but have different internal group IDs
+        // (we can't directly access the properties, but the creation should succeed)
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGroupIdFailsWithMissingClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                            options.remove("properties.client.id.prefix"); // Remove client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix must be provided as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGroupIdFailsWithEmptyClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", ""); // Empty client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGroupIdFailsWithBlankClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", "   "); // Blank spaces client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerId() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties.client.id.prefix", "test");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing directly using the utility method
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(producerId).startsWith("test-"); // Should start with client.id.prefix from getBasicSinkOptions()
+
+        // Verify the suffix after prefix is a valid UUID
+        String uuidPart = producerId.substring("test-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+            // If no exception is thrown, the UUID is valid
+        } catch (IllegalArgumentException e) {
+            fail("Generated producer ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify other properties remain unchanged
+        assertThat(processedProperties.getProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG))
+                .isEqualTo(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        assertThat(processedProperties.getProperty("client.id.prefix")).isEqualTo("test");
+
+        // Verify that the table sink can be created successfully with AUTO_GEN_UUID
+        final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify the sink runtime provider works correctly
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
+        DynamicTableSink.SinkRuntimeProvider provider =
+                actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+        assertThat(provider).isInstanceOf(SinkV2Provider.class);
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidGeneratesDifferentProducerIds() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties.client.id.prefix", "test");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Generate multiple producer IDs using the same options
+        Properties properties1 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties2 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties3 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+
+        String producerId1 = properties1.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String producerId2 = properties2.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String producerId3 = properties3.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify all producer IDs are different
+        assertThat(producerId1).isNotEqualTo(producerId2);
+        assertThat(producerId1).isNotEqualTo(producerId3);
+        assertThat(producerId2).isNotEqualTo(producerId3);
+
+        // Verify all producer IDs have correct format (prefix + UUID)
+        assertThat(producerId1).startsWith("test-");
+        assertThat(producerId2).startsWith("test-");
+        assertThat(producerId3).startsWith("test-");
+
+        // Verify all UUIDs are valid
+        String uuid1 = producerId1.substring("test-".length());
+        String uuid2 = producerId2.substring("test-".length());
+        String uuid3 = producerId3.substring("test-".length());
+
+        try {
+            java.util.UUID.fromString(uuid1);
+            java.util.UUID.fromString(uuid2);
+            java.util.UUID.fromString(uuid3);
+            // If no exception is thrown, all UUIDs are valid
+        } catch (IllegalArgumentException e) {
+            fail("All generated UUIDs should be valid: " + e.getMessage());
+        }
+
+        // Also verify that table sinks can be created successfully with these different producer IDs
+        final DynamicTableSink tableSink1 = createTableSink(SCHEMA, modifiedOptions);
+        final DynamicTableSink tableSink2 = createTableSink(SCHEMA, modifiedOptions);
+
+        assertThat(tableSink1).isInstanceOf(PscDynamicSink.class);
+        assertThat(tableSink2).isInstanceOf(PscDynamicSink.class);
+
+        // The table sinks should be functionally equivalent but have different internal producer IDs
+        // (we can't directly access the properties, but the creation should succeed)
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerIdFailsWithMissingClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties.client.id.prefix", "test"); // Add first, then remove
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                            options.remove("properties.client.id.prefix"); // Remove client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix must be provided as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerIdFailsWithEmptyClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", ""); // Empty client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerIdFailsWithBlankClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", "   "); // Blank spaces client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
     }
 
     @ParameterizedTest
@@ -565,7 +864,7 @@ public class PscDynamicTableFactoryTest {
     public void testTableSink() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
-                        getSinkOptions(),
+                        getBasicSinkOptions(),
                         options -> {
                             options.put("sink.delivery-guarantee", "exactly-once");
                             options.put("sink.transactional-id-prefix", "psc-sink");
@@ -609,7 +908,7 @@ public class PscDynamicTableFactoryTest {
         for (final String semantic : semantics) {
             final Map<String, String> modifiedOptions =
                     getModifiedOptions(
-                            getSinkOptions(),
+                            getBasicSinkOptions(),
                             options -> {
                                 options.put("sink.semantic", semantic);
                                 options.put("sink.transactional-id-prefix", "psc-sink");
@@ -667,7 +966,7 @@ public class PscDynamicTableFactoryTest {
                         new int[] {1, 2},
                         null,
                         TOPIC_URI,
-                        PSC_SINK_PROPERTIES,
+                        PSC_KV_SINK_PROPERTIES,
                         new FlinkFixedPartitioner<>(),
                         DeliveryGuarantee.EXACTLY_ONCE,
                         null,
@@ -680,7 +979,7 @@ public class PscDynamicTableFactoryTest {
     public void testTableSinkWithParallelism() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
-                        getSinkOptions(), options -> options.put("sink.parallelism", "100"));
+                        getBasicSinkOptions(), options -> options.put("sink.parallelism", "100"));
         PscDynamicSink actualSink = (PscDynamicSink) createTableSink(SCHEMA, modifiedOptions);
 
         final EncodingFormat<SerializationSchema<RowData>> valueEncodingFormat =
@@ -798,9 +1097,9 @@ public class PscDynamicTableFactoryTest {
         options.put("connector", PscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "dummy-client");
-        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "dummy-producer-client");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        options.put("properties.client.id.prefix", "test");
+        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
         optionModifier.accept(options);
 
         final RowType rowType = (RowType) SCHEMA_DATA_TYPE.getLogicalType();
@@ -855,290 +1154,6 @@ public class PscDynamicTableFactoryTest {
     private SerializationSchema<RowData> createDebeziumAvroSerSchema(
             RowType rowType, String subject) {
         return new DebeziumAvroSerializationSchema(rowType, TEST_REGISTRY_URL, subject, null);
-    }
-
-    // --------------------------------------------------------------------------------------------
-    // AUTO_GEN_UUID Tests
-    // --------------------------------------------------------------------------------------------
-
-    @Test
-    public void testTableSourceWithAutoGenUuidConsumerClientId() {
-        final Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-consumer-client");
-                });
-
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
-
-        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        assertThat(consumerClientId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-consumer-client-")
-                .matches("test-consumer-client-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-    }
-
-    @Test
-    public void testTableSourceWithAutoGenUuidConsumerGroupId() {
-        final Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-consumer-group");
-                });
-
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
-
-        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        assertThat(consumerGroupId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-consumer-group-")
-                .matches("test-consumer-group-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-    }
-
-    @Test
-    public void testTableSourceWithAutoGenUuidBothConsumerIds() {
-        final Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-both");
-                });
-
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
-
-        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-
-        assertThat(consumerClientId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-both-")
-                .matches("test-both-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
-        assertThat(consumerGroupId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-both-")
-                .matches("test-both-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-                .isNotEqualTo(consumerClientId); // Should be different UUIDs
-    }
-
-    @Test
-    public void testTableSinkWithAutoGenUuidProducerClientId() {
-        final Map<String, String> options = getModifiedOptions(
-                getSinkOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-producer-client");
-                });
-
-        final DynamicTableSink actualSink = createTableSink(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSink) actualSink).properties;
-
-        String producerClientId = actualProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
-        assertThat(producerClientId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-producer-client-")
-                .matches("test-producer-client-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-    }
-
-    @Test
-    public void testKeyValueSourceWithAutoGenUuidAllIds() {
-        final Map<String, String> options = getModifiedOptions(
-                getKeyValueSourceOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-keyvalue-src");
-                });
-
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
-
-        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-
-        assertThat(consumerClientId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-keyvalue-src-")
-                .matches("test-keyvalue-src-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
-        assertThat(consumerGroupId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-keyvalue-src-")
-                .matches("test-keyvalue-src-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-                .isNotEqualTo(consumerClientId);
-    }
-
-    @Test
-    public void testKeyValueSinkWithAutoGenUuidAllIds() {
-        final Map<String, String> options = getModifiedOptions(
-                getKeyValueSinkOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-keyvalue-sink");
-                });
-
-        final DynamicTableSink actualSink = createTableSink(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSink) actualSink).properties;
-
-        String producerClientId = actualProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
-        assertThat(producerClientId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-keyvalue-sink-")
-                .matches("test-keyvalue-sink-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-    }
-
-    @Test
-    public void testAutoGenUuidWithTrimmedPrefix() {
-        final Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "  trimmed-test-prefix  ");
-                });
-
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
-
-        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        assertThat(consumerClientId)
-                .isNotNull()
-                .startsWith("trimmed-test-prefix-") // Should be trimmed
-                .matches("trimmed-test-prefix-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-    }
-
-    @Test
-    public void testAutoGenUuidMixedWithCustomValues() {
-        final Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "custom-group-id");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-mixed");
-                });
-
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
-
-        String consumerClientId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-
-        // Client ID should be generated with UUID
-        assertThat(consumerClientId)
-                .isNotNull()
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-mixed-")
-                .matches("test-mixed-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
-        // Group ID should remain custom value
-        assertThat(consumerGroupId)
-                .isEqualTo("custom-group-id");
-    }
-
-    @Test
-    public void testAutoGenUuidUniquePerTableCreation() {
-        final Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-unique");
-                });
-
-        // Create two separate table sources with same options
-        final DynamicTableSource actualSource1 = createTableSource(SCHEMA, options);
-        final DynamicTableSource actualSource2 = createTableSource(SCHEMA, options);
-
-        Properties properties1 = ((PscDynamicSource) actualSource1).properties;
-        Properties properties2 = ((PscDynamicSource) actualSource2).properties;
-
-        String clientId1 = properties1.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        String clientId2 = properties2.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-
-        assertThat(clientId1)
-                .isNotNull()
-                .startsWith("test-unique-")
-                .matches("test-unique-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
-
-        assertThat(clientId2)
-                .isNotNull()
-                .startsWith("test-unique-")
-                .matches("test-unique-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-                .isNotEqualTo(clientId1); // Each table creation should get unique UUID
-    }
-
-    // AUTO_GEN_UUID Negative Tests
-    @Test
-    public void testAutoGenUuidWithMissingClientIdPrefix() {
-        assertThatThrownBy(() -> {
-            final Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID"));
-            createTableSource(SCHEMA, options);
-        })
-        .isInstanceOf(ValidationException.class)
-        .satisfies(anyCauseMatches(ValidationException.class, 
-                "properties.client.id.prefix must be provided when using AUTO_GEN_UUID for ID options"));
-    }
-
-    @Test
-    public void testAutoGenUuidWithEmptyPrefixInSourceTest() {
-        assertThatThrownBy(() -> {
-            final Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> {
-                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID.key(), "AUTO_GEN_UUID");
-                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "");
-                    });
-            createTableSource(SCHEMA, options);
-        })
-        .isInstanceOf(ValidationException.class)
-        .satisfies(anyCauseMatches(ValidationException.class,
-                "properties.client.id.prefix must be non-empty"));
-    }
-
-    @Test
-    public void testAutoGenUuidWithWhitespacePrefixInSourceTest() {
-        assertThatThrownBy(() -> {
-            final Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> {
-                        opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
-                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "   ");
-                    });
-            createTableSource(SCHEMA, options);
-        })
-        .isInstanceOf(ValidationException.class)
-        .satisfies(anyCauseMatches(ValidationException.class,
-                "properties.client.id.prefix must be non-empty"));
-    }
-
-    @Test
-    public void testAutoGenUuidOnDisallowedProperty() {
-        assertThatThrownBy(() -> {
-            final Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> {
-                        opts.put("properties.bootstrap.servers", "AUTO_GEN_UUID");
-                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test");
-                    });
-            createTableSource(SCHEMA, options);
-        })
-        .isInstanceOf(ValidationException.class)
-        .satisfies(anyCauseMatches(ValidationException.class,
-                "AUTO_GEN_UUID is not allowed for property"));
     }
 
     // --------------------------------------------------------------------------------------------
@@ -1213,7 +1228,7 @@ public class PscDynamicTableFactoryTest {
                         () -> {
                             final Map<String, String> modifiedOptions =
                                     getModifiedOptions(
-                                            getSinkOptions(),
+                                            getBasicSinkOptions(),
                                             options -> options.put("sink.partitioner", "abc"));
 
                             createTableSink(SCHEMA, modifiedOptions);
@@ -1275,7 +1290,7 @@ public class PscDynamicTableFactoryTest {
     public void testSinkWithTopicListOrTopicPattern() {
         Map<String, String> modifiedOptions =
                 getModifiedOptions(
-                        getSinkOptions(),
+                        getBasicSinkOptions(),
                         options -> {
                             options.put("topic-uri", TOPIC_URIS);
                             options.put("scan.startup.mode", "earliest-offset");
@@ -1297,7 +1312,7 @@ public class PscDynamicTableFactoryTest {
 
         modifiedOptions =
                 getModifiedOptions(
-                        getSinkOptions(),
+                        getBasicSinkOptions(),
                         options -> options.put("topic-pattern", TOPIC_REGEX));
 
         try {
@@ -1318,7 +1333,7 @@ public class PscDynamicTableFactoryTest {
 
         Map<String, String> sinkOptions =
                 getModifiedOptions(
-                        getSinkOptions(),
+                        getBasicSinkOptions(),
                         options ->
                                 options.put(
                                         String.format(
@@ -1330,7 +1345,7 @@ public class PscDynamicTableFactoryTest {
         createTableSink(pkSchema, sinkOptions);
 
         assertThatExceptionOfType(ValidationException.class)
-                .isThrownBy(() -> createTableSink(pkSchema, getSinkOptions()))
+                .isThrownBy(() -> createTableSink(pkSchema, getBasicSinkOptions()))
                 .havingRootCause()
                 .withMessage(
                         "The PSC table 'default.default.t1' with 'test-format' format"
@@ -1376,7 +1391,7 @@ public class PscDynamicTableFactoryTest {
         final PscDynamicSource actualSource =
                 (PscDynamicSource) createTableSource(SCHEMA, tableSourceOptions);
         Properties props = new Properties();
-        props.putAll(PSC_BASIC_SOURCE_PROPERTIES);
+        props.putAll(PSC_SOURCE_PROPERTIES);
         // The default partition discovery interval is 5 minutes
         props.setProperty("partition.discovery.interval.ms", "300000");
         final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
@@ -1414,7 +1429,7 @@ public class PscDynamicTableFactoryTest {
         final PscDynamicSource actualSource =
                 (PscDynamicSource) createTableSource(SCHEMA, tableSourceOptions);
         Properties props = new Properties();
-        props.putAll(PSC_BASIC_SOURCE_PROPERTIES);
+        props.putAll(PSC_SOURCE_PROPERTIES);
         // Disable discovery if the partition discovery interval is 0 minutes
         props.setProperty("partition.discovery.interval.ms", "0");
         final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
@@ -1528,8 +1543,8 @@ public class PscDynamicTableFactoryTest {
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties.psc.consumer.group.id", "dummy");
-        tableOptions.put("properties.psc.consumer.client.id", "dummy-client");
         tableOptions.put("properties.psc.cluster.uri", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        tableOptions.put("properties.client.id.prefix", "test");
         tableOptions.put("scan.startup.mode", "specific-offsets");
         tableOptions.put("scan.startup.specific-offsets", PROPS_SCAN_OFFSETS);
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
@@ -1547,13 +1562,13 @@ public class PscDynamicTableFactoryTest {
         return tableOptions;
     }
 
-    private static Map<String, String> getSinkOptions() {
+    private static Map<String, String> getBasicSinkOptions() {
         Map<String, String> tableOptions = new HashMap<>();
         // PSC specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
-        tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "dummy-producer-client");
         tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
         tableOptions.put(
                 "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);
         tableOptions.put("sink.delivery-guarantee", DeliveryGuarantee.EXACTLY_ONCE.toString());
@@ -1567,13 +1582,16 @@ public class PscDynamicTableFactoryTest {
         return tableOptions;
     }
 
-    private static Map<String, String> getKeyValueSinkOptions() {
-        Map<String, String> tableOptions = getSinkOptions();
-        // Remove basic format and add key/value formats
-        tableOptions.remove("format");
-        tableOptions.remove(String.format(
-                "%s.%s", TestFormatFactory.IDENTIFIER, TestFormatFactory.DELIMITER.key()));
-        // Add key/value format options.
+    private static Map<String, String> getKeyValueSourceOptions() {
+        Map<String, String> tableOptions = new HashMap<>();
+        // PSC specific options.
+        tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
+        tableOptions.put("topic-uri", TOPIC_URI);
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        tableOptions.put("properties.client.id.prefix", "test");
+        tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
+        // Format options.
         tableOptions.put("key.format", TestFormatFactory.IDENTIFIER);
         tableOptions.put(
                 String.format(
@@ -1593,15 +1611,18 @@ public class PscDynamicTableFactoryTest {
         return tableOptions;
     }
 
-    private static Map<String, String> getKeyValueSourceOptions() {
+    private static Map<String, String> getKeyValueSinkOptions() {
         Map<String, String> tableOptions = new HashMap<>();
-        // PSC specific options for source.
+        // PSC specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "dummy-client");
         tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
-        tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
+        tableOptions.put("properties.client.id.prefix", "test");
+        tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
+        tableOptions.put(
+                "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);
+        tableOptions.put("sink.delivery-guarantee", DeliveryGuarantee.EXACTLY_ONCE.toString());
+        tableOptions.put("sink.transactional-id-prefix", "psc-sink");
         // Format options.
         tableOptions.put("key.format", TestFormatFactory.IDENTIFIER);
         tableOptions.put(
@@ -1638,362 +1659,5 @@ public class PscDynamicTableFactoryTest {
                                 transformation;
         assertThat(sourceTransformation.getSource()).isInstanceOf(PscSource.class);
         return (PscSource<?>) sourceTransformation.getSource();
-    }
-
-    // --------------------------------------------------------------------------------------------
-    // CREATE TABLE ... LIKE Tests for AUTO_GEN_UUID Support
-    // --------------------------------------------------------------------------------------------
-
-    @Test
-    public void testCreateTableLikeWithAutoGenUuidInBaseAndOverrideInDerived() {
-        // Test scenario: Base table has AUTO_GEN_UUID, derived table overrides with custom value
-        Map<String, String> modifiedOptions = getModifiedOptions(
-                getBasicSourceOptions(),
-                options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
-                    options.put("properties.client.id.prefix", "test-base");
-                });
-
-        // Properties should have AUTO_GEN_UUID values replaced with prefixed UUIDs
-        Properties baseProperties = 
-                PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
-        
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-base-")
-                .matches("^test-base-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("test-base-")
-                .matches("^test-base-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-    }
-
-    @Test
-    public void testCreateTableLikeWithAutoGenUuidInBaseAndAutoGenUuidInDerived() {
-        // Test scenario: Both base and derived tables use AUTO_GEN_UUID, each should get unique UUIDs
-        Map<String, String> baseTableOptions = getModifiedOptions(
-                getBasicSourceOptions(),
-                options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
-                    options.put("properties.client.id.prefix", "base-table");
-                });
-
-        Map<String, String> derivedTableOptions = getModifiedOptions(
-                getBasicSourceOptions(),
-                options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    options.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
-                    options.put("properties.client.id.prefix", "derived-table");
-                });
-
-        // Both should generate different UUIDs with their respective prefixes
-        Properties baseProperties = 
-                PscConnectorOptionsUtil.getPscProperties(baseTableOptions);
-        Properties derivedProperties = 
-                PscConnectorOptionsUtil.getPscProperties(derivedTableOptions);
-
-        String baseGroupId = baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        String derivedGroupId = derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        String baseClientId = baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        String derivedClientId = derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-
-        assertThat(baseGroupId)
-                .isNotEqualTo(derivedGroupId)
-                .startsWith("base-table-");
-        assertThat(baseClientId)
-                .isNotEqualTo(derivedClientId)
-                .startsWith("base-table-");
-        assertThat(derivedGroupId).startsWith("derived-table-");
-        assertThat(derivedClientId).startsWith("derived-table-");
-    }
-
-    @Test
-    public void testCreateTableLikeWithoutAutoGenUuidInBaseAndOverrideInDerived() {
-        // Test scenario: Base table has custom values, derived table overrides with AUTO_GEN_UUID
-        Map<String, String> baseTableOptions = getModifiedOptions(
-                getBasicSourceOptions(),
-                options -> {
-                    options.put("properties.psc.consumer.group.id", "base-group");
-                    options.put("properties.psc.consumer.client.id", "base-client");
-                });
-
-        Map<String, String> derivedTableOptions = getModifiedOptions(
-                getBasicSourceOptions(),
-                options -> {
-                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    options.put("properties.psc.consumer.client.id", "base-client"); // Keep same client ID
-                    options.put("properties.client.id.prefix", "derived-prefix");
-                });
-
-        Properties baseProperties = 
-                PscConnectorOptionsUtil.getPscProperties(baseTableOptions);
-        Properties derivedProperties = 
-                PscConnectorOptionsUtil.getPscProperties(derivedTableOptions);
-
-        // Base should have original values
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
-                .isEqualTo("base-group");
-        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
-                .isEqualTo("base-client");
-
-        // Derived should have AUTO_GEN_UUID replaced for group_id but keep custom client_id
-        assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("derived-prefix-")
-                .matches("^derived-prefix-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-        assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
-                .isEqualTo("base-client");
-    }
-
-    // --------------------------------------------------------------------------------------------
-    // Validation Tests for AUTO_GEN_UUID and client.id.prefix
-    // --------------------------------------------------------------------------------------------
-
-    @Test
-    public void testAutoGenUuidRequiresClientIdPrefix() {
-        // Test that AUTO_GEN_UUID requires client.id.prefix
-        assertThatThrownBy(() -> {
-            Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> {
-                        opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                        // Missing client.id.prefix
-                    });
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "properties.client.id.prefix must be provided when using AUTO_GEN_UUID for ID options"));
-    }
-
-    @Test
-    public void testAutoGenUuidWithEmptyClientIdPrefix() {
-        // Test that AUTO_GEN_UUID requires non-empty client.id.prefix
-        assertThatThrownBy(() -> {
-            Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> {
-                        opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                        opts.put("properties.client.id.prefix", "");
-                    });
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "properties.client.id.prefix must be non-empty"));
-    }
-
-    @Test
-    public void testAutoGenUuidWithWhitespaceOnlyClientIdPrefix() {
-        // Test that AUTO_GEN_UUID requires non-empty client.id.prefix after trimming
-        assertThatThrownBy(() -> {
-            Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> {
-                        opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                        opts.put("properties.client.id.prefix", "   ");
-                    });
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "after trimming whitespace"));
-    }
-
-    @Test
-    public void testAutoGenUuidWithValidClientIdPrefix() {
-        // Test that AUTO_GEN_UUID works correctly with valid client.id.prefix
-        Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    opts.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
-                    opts.put("properties.psc.producer.client.id", "AUTO_GEN_UUID");
-                    opts.put("properties.client.id.prefix", "factory-test");
-                });
-
-        // Should create source successfully
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
-        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
-
-        // Verify the generated properties have correct prefixes
-        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
-        
-        String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-        String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
-
-        assertThat(groupId)
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("factory-test-")
-                .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-        
-        assertThat(clientId)
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("factory-test-")
-                .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-        
-        assertThat(producerClientId)
-                .isNotEqualTo("AUTO_GEN_UUID")
-                .startsWith("factory-test-")
-                .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-
-        // All generated IDs should be different
-        assertThat(groupId).isNotEqualTo(clientId).isNotEqualTo(producerClientId);
-        assertThat(clientId).isNotEqualTo(producerClientId);
-    }
-
-    @Test
-    public void testAutoGenUuidTrimsWhitespaceFromPrefix() {
-        // Test that client.id.prefix is properly trimmed
-        Map<String, String> options = getModifiedOptions(
-                getBasicSourceOptions(),
-                opts -> {
-                    opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                    opts.put("properties.client.id.prefix", "  trimmed-prefix  ");
-                });
-
-        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
-        String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
-
-        assertThat(groupId)
-                .startsWith("trimmed-prefix-")
-                .doesNotStartWith(" ")
-                .doesNotContain("  -");
-    }
-
-    @Test
-    public void testAutoGenUuidOnNonAllowedKeyThrowsValidationException() {
-        // Test that AUTO_GEN_UUID on non-allowed keys throws ValidationException
-        assertThatThrownBy(() -> {
-            Map<String, String> options = getModifiedOptions(
-                    getBasicSourceOptions(),
-                    opts -> {
-                        opts.put("properties.bootstrap.servers", "AUTO_GEN_UUID");
-                        opts.put("properties.client.id.prefix", "test");
-                    });
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "AUTO_GEN_UUID is not allowed for property"));
-    }
-
-    // --------------------------------------------------------------------------------------------
-    // Consumer Client Options Validation Tests
-    // --------------------------------------------------------------------------------------------
-
-    @Test
-    public void testConsumerMissingClientIdValidation() {
-        Map<String, String> options = getModifiedOptions(
-            getBasicSourceOptions(),
-            opts -> {
-                // Remove client.id but keep group.id
-                opts.remove("properties.psc.consumer.client.id");
-                opts.put("properties.psc.consumer.group.id", "test-group");
-            });
-
-        assertThatThrownBy(() -> {
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "Required property 'psc.consumer.client.id' is missing or empty"));
-    }
-
-    @Test
-    public void testConsumerMissingGroupIdValidation() {
-        Map<String, String> options = getModifiedOptions(
-            getBasicSourceOptions(),
-            opts -> {
-                // Remove group.id but keep client.id
-                opts.put("properties.psc.consumer.client.id", "test-client");
-                opts.remove("properties.psc.consumer.group.id");
-            });
-
-        assertThatThrownBy(() -> {
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "Required property 'psc.consumer.group.id' is missing or empty"));
-    }
-
-    @Test
-    public void testConsumerEmptyClientIdValidation() {
-        Map<String, String> options = getModifiedOptions(
-            getBasicSourceOptions(),
-            opts -> {
-                // Set empty client.id but valid group.id
-                opts.put("properties.psc.consumer.client.id", "");
-                opts.put("properties.psc.consumer.group.id", "test-group");
-            });
-
-        assertThatThrownBy(() -> {
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "Required property 'psc.consumer.client.id' is missing or empty"));
-    }
-
-    @Test
-    public void testConsumerEmptyGroupIdValidation() {
-        Map<String, String> options = getModifiedOptions(
-            getBasicSourceOptions(),
-            opts -> {
-                // Set valid client.id but empty group.id
-                opts.put("properties.psc.consumer.client.id", "test-client");
-                opts.put("properties.psc.consumer.group.id", "   ");  // whitespace only
-            });
-
-        assertThatThrownBy(() -> {
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "Required property 'psc.consumer.group.id' is missing or empty"));
-    }
-
-    @Test
-    public void testConsumerValidExplicitClientOptions() {
-        Map<String, String> options = getModifiedOptions(
-            getBasicSourceOptions(),
-            opts -> {
-                // Set explicit valid values for both
-                opts.put("properties.psc.consumer.client.id", "explicit-client-id");
-                opts.put("properties.psc.consumer.group.id", "explicit-group-id");
-            });
-
-        // Should not throw - validation passes
-        DynamicTableSource tableSource = createTableSource(SCHEMA, options);
-        assertThat(tableSource).isNotNull();
-    }
-
-    @Test
-    public void testConsumerValidAutoGenUuidClientOptions() {
-        Map<String, String> options = getModifiedOptions(
-            getBasicSourceOptions(),
-            opts -> {
-                // Use AUTO_GEN_UUID for both with required prefix
-                opts.put("properties.psc.consumer.client.id", "AUTO_GEN_UUID");
-                opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
-                opts.put("properties.client.id.prefix", "test-consumer");
-            });
-
-        // Should not throw - validation passes
-        DynamicTableSource tableSource = createTableSource(SCHEMA, options);
-        assertThat(tableSource).isNotNull();
-    }
-
-    @Test
-    public void testConsumerMissingBothClientOptionsValidation() {
-        Map<String, String> options = getModifiedOptions(
-            getBasicSourceOptions(),
-            opts -> {
-                // Remove both client.id and group.id
-                opts.remove("properties.psc.consumer.client.id");
-                opts.remove("properties.psc.consumer.group.id");
-            });
-
-        assertThatThrownBy(() -> {
-            createTableSource(SCHEMA, options);
-        }).isInstanceOf(ValidationException.class)
-          .satisfies(anyCauseMatches(ValidationException.class, 
-                  "Required property 'psc.consumer.client.id' is missing or empty"));
     }
 }

@@ -36,9 +36,7 @@ public class PscConnectorOptionsTest {
         assertNull(
                 "Group ID should have no default value (required)",
                 PscConnectorOptions.PROPS_GROUP_ID.defaultValue());
-        assertNull(
-                "Consumer client ID should have no default value (optional)",
-                PscConnectorOptions.PROPS_CLIENT_ID.defaultValue());
+        // Consumer client ID option has been removed - it's now auto-generated when missing
         assertNull(
                 "Producer client ID should have no default value (optional)",
                 PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.defaultValue());
@@ -51,7 +49,7 @@ public class PscConnectorOptionsTest {
     public void testConfigOptionsKeys() {
         // Test that ConfigOptions have correct keys
         assertEquals("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptions.PROPS_GROUP_ID.key());
-        assertEquals("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, PscConnectorOptions.PROPS_CLIENT_ID.key());
+        // Consumer client ID option removed - now auto-generated when missing
         assertEquals("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.key());
     }
 
@@ -67,8 +65,7 @@ public class PscConnectorOptionsTest {
     @Test
     public void testIdOptionsConfiguration() {
         // Test ID options configuration behavior - all should be optional with no default values
-        assertNull("Consumer client ID should have no default value",
-                PscConnectorOptions.PROPS_CLIENT_ID.defaultValue());
+        // Consumer client ID option removed - now auto-generated when missing
         assertNull("Producer client ID should have no default value",
                 PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.defaultValue());
         assertNull("Consumer group ID should have no default value",
@@ -81,7 +78,7 @@ public class PscConnectorOptionsTest {
     public void testConfigOptionDescriptions() {
         // Test that ConfigOptions have meaningful descriptions
         assertNotNull("Group ID should have description", PscConnectorOptions.PROPS_GROUP_ID.description());
-        assertNotNull("Client ID should have description", PscConnectorOptions.PROPS_CLIENT_ID.description());
+        // Consumer client ID option removed - description no longer exists
         assertNotNull("Producer Client ID should have description", PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.description());
 
         // Note: Specific description content checks removed due to Flink API toString() behavior changes

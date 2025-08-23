@@ -192,26 +192,20 @@ public class PscConnectorOptionsUtilTest {
     }
 
     @Test
-    public void testGetPscPropertiesWithAutoGenClientId() {
-        // Test AUTO_GEN_UUID replacement for client_id
+    public void testGetPscPropertiesWithoutConsumerClientId() {
+        // Test that missing consumer client ID is not set (handled by PscTopicUriPartitionSplitReader)
         Map<String, String> tableOptions = new HashMap<>();
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
         tableOptions.put("properties.client.id.prefix", "test-client");
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "test-group");
 
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
 
+        // Consumer client ID should not be present - it's handled elsewhere
         String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
-        assertNotNull("Client ID should not be null", clientId);
-        assertNotEquals("Client ID should not be AUTO_GEN_UUID", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE, clientId);
-        assertTrue("Client ID should start with prefix", clientId.startsWith("test-client-"));
-
-        // Verify the suffix is a valid UUID
-        String uuidPart = clientId.substring("test-client-".length());
-        try {
-            UUID.fromString(uuidPart);
-        } catch (IllegalArgumentException e) {
-            fail("Generated client ID suffix should be a valid UUID: " + uuidPart);
-        }
+        assertEquals("Consumer client ID should not be set in properties", null, clientId);
+        
+        // Other properties should be present
+        assertEquals("test-group", pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID));
     }
 
     @Test
@@ -239,10 +233,10 @@ public class PscConnectorOptionsUtilTest {
 
     @Test
     public void testGetPscPropertiesWithMultipleAutoGen() {
-        // Test AUTO_GEN_UUID replacement for multiple properties
+        // Test AUTO_GEN_UUID replacement for multiple properties (group ID + producer ID)
+        // Consumer client ID is handled by PscTopicUriPartitionSplitReader
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
         tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
         tableOptions.put("properties.client.id.prefix", "multi-test");
 
@@ -252,32 +246,26 @@ public class PscConnectorOptionsUtilTest {
         String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
         String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
 
-        // All should be valid prefixed UUIDs
+        // Group ID and Producer ID should be valid prefixed UUIDs
         assertNotNull("Group ID should not be null", groupId);
-        assertNotNull("Client ID should not be null", clientId);
+        assertEquals("Consumer client ID should not be set", null, clientId);  // Handled elsewhere
         assertNotNull("Producer Client ID should not be null", producerClientId);
         assertNotEquals("Group ID should not be AUTO_GEN_UUID", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE, groupId);
-        assertNotEquals("Client ID should not be AUTO_GEN_UUID", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE, clientId);
         assertNotEquals("Producer Client ID should not be AUTO_GEN_UUID", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE, producerClientId);
 
-        // All should start with prefix
+        // Group ID and Producer Client ID should start with prefix
         assertTrue("Group ID should start with prefix", groupId.startsWith("multi-test-"));
-        assertTrue("Client ID should start with prefix", clientId.startsWith("multi-test-"));
         assertTrue("Producer Client ID should start with prefix", producerClientId.startsWith("multi-test-"));
 
-        // All should be different UUIDs
-        assertNotEquals("Group ID and client ID should be different", groupId, clientId);
-        assertNotEquals("Client ID and producer client ID should be different", clientId, producerClientId);
+        // Group ID and producer client ID should be different UUIDs
         assertNotEquals("Group ID and producer client ID should be different", groupId, producerClientId);
 
-        // Verify all suffix parts are valid UUIDs
+        // Verify suffix parts are valid UUIDs
         try {
             String groupUuidPart = groupId.substring("multi-test-".length());
-            String clientUuidPart = clientId.substring("multi-test-".length());
             String producerUuidPart = producerClientId.substring("multi-test-".length());
             
             UUID.fromString(groupUuidPart);
-            UUID.fromString(clientUuidPart);
             UUID.fromString(producerUuidPart);
         } catch (IllegalArgumentException e) {
             fail("All generated ID suffixes should be valid UUIDs");
@@ -286,23 +274,25 @@ public class PscConnectorOptionsUtilTest {
 
     @Test
     public void testGetPscPropertiesWithNonAutoGenValues() {
-        // Test that non-AUTO_GEN values are preserved
+        // Test that non-AUTO_GEN values are preserved (consumer client ID handled elsewhere)
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "my-group");
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "my-client");
+        tableOptions.put("properties.client.id.prefix", "non-auto");
 
         Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
 
         assertEquals("my-group", pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID));
-        assertEquals("my-client", pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID));
+        
+        // Consumer client ID should not be set (handled by PscTopicUriPartitionSplitReader)
+        String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        assertEquals("Consumer client ID should not be set", null, clientId);
     }
 
     @Test
     public void testGetPscPropertiesWithMixedValues() {
-        // Test mixing AUTO_GEN_UUID and regular values
+        // Test mixing AUTO_GEN_UUID and regular values (consumer client ID handled elsewhere)
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "my-client");
         tableOptions.put("properties.some.other.property", "some-value");
         tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "mixed-test");
 
@@ -321,7 +311,9 @@ public class PscConnectorOptionsUtilTest {
             fail("Generated group ID suffix should be a valid UUID");
         }
 
-        assertEquals("my-client", pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID));
+        // Consumer client ID should not be set in properties (handled by PscTopicUriPartitionSplitReader)
+        String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        assertEquals("Consumer client ID should not be set", null, clientId);
         assertEquals("some-value", pscProperties.getProperty("some.other.property"));
     }
 
@@ -410,11 +402,12 @@ public class PscConnectorOptionsUtilTest {
     @Test
     public void testValidateAutoGenUuidOptionsWithAllowedKeys() {
         // Test that the function does not throw for allowed keys with valid client.id.prefix
+        // Note: Consumer client ID is no longer allowed with AUTO_GEN_UUID - it's auto-generated when missing
         Map<String, String> tableOptions = new HashMap<>();
         tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-prefix");
         
         try {
-            PscConnectorOptionsUtil.validateAutoGenUuidOptions(PscConfiguration.PSC_CONSUMER_CLIENT_ID, tableOptions);
+            // Only group ID and producer client ID are allowed with AUTO_GEN_UUID
             PscConnectorOptionsUtil.validateAutoGenUuidOptions(PscConfiguration.PSC_CONSUMER_GROUP_ID, tableOptions);
             PscConnectorOptionsUtil.validateAutoGenUuidOptions(PscConfiguration.PSC_PRODUCER_CLIENT_ID, tableOptions);
             // If we get here, all validations passed
@@ -433,7 +426,8 @@ public class PscConnectorOptionsUtilTest {
             "bootstrap.servers", 
             "session.timeout.ms", 
             "max.poll.records", 
-            "random.property", 
+            "random.property",
+            PscConfiguration.PSC_CONSUMER_CLIENT_ID,  // Consumer client ID no longer allowed with AUTO_GEN_UUID
             ""
         };
         
@@ -446,7 +440,7 @@ public class PscConnectorOptionsUtilTest {
                 String message = e.getMessage();
                 assertTrue("Error message should mention the invalid key", message.contains(key));
                 assertTrue("Error message should mention AUTO_GEN_UUID", message.contains("AUTO_GEN_UUID"));
-                assertTrue("Error message should list allowed keys", message.contains(PscConfiguration.PSC_CONSUMER_CLIENT_ID));
+                assertTrue("Error message should list allowed keys", message.contains(PscConfiguration.PSC_CONSUMER_GROUP_ID));
             }
         }
     }
@@ -494,7 +488,6 @@ public class PscConnectorOptionsUtilTest {
             String message = e.getMessage();
             assertTrue("Error message should mention the invalid key", message.contains("invalid.key"));
             assertTrue("Error message should mention AUTO_GEN_UUID", message.contains("AUTO_GEN_UUID"));
-            assertTrue("Error message should list allowed keys", message.contains(PscConfiguration.PSC_CONSUMER_CLIENT_ID));
             assertTrue("Error message should list allowed keys", message.contains(PscConfiguration.PSC_CONSUMER_GROUP_ID));
             assertTrue("Error message should list allowed keys", message.contains(PscConfiguration.PSC_PRODUCER_CLIENT_ID));
         }
@@ -504,7 +497,7 @@ public class PscConnectorOptionsUtilTest {
     public void testGetPscPropertiesWithMixedValidAndInvalidAutoGen() {
         // Test mixing allowed AUTO_GEN_UUID with non-allowed AUTO_GEN_UUID
         Map<String, String> tableOptions = new HashMap<>();
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);  // This should work
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);  // This should work
         tableOptions.put("properties.invalid.key", PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);  // This should fail
         tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "mixed");
 
@@ -614,6 +607,108 @@ public class PscConnectorOptionsUtilTest {
         } catch (IllegalArgumentException e) {
             fail("Generated group ID suffix should be a valid UUID: " + uuidPart);
         }
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // New Validation Methods Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testValidateConsumerClientOptionsSuccess() {
+        // Test that validateConsumerClientOptions passes with valid configuration
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "test-group");
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-prefix");
+        
+        Configuration config = Configuration.fromMap(tableOptions);
+        
+        try {
+            PscConnectorOptionsUtil.validateConsumerClientOptions(config);
+            // Should not throw exception
+        } catch (ValidationException e) {
+            fail("Should not fail with valid consumer client options: " + e.getMessage());
+        }
+    }
+
+    @Test(expected = ValidationException.class)
+    public void testValidateConsumerClientOptionsWithMissingGroupId() {
+        // Test that validateConsumerClientOptions fails when group ID is missing
+        Map<String, String> tableOptions = new HashMap<>();
+        // Missing group ID
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-prefix");
+        
+        Configuration config = Configuration.fromMap(tableOptions);
+        PscConnectorOptionsUtil.validateConsumerClientOptions(config);
+    }
+
+    @Test(expected = ValidationException.class)
+    public void testValidateConsumerClientOptionsWithMissingClientIdPrefix() {
+        // Test that validateConsumerClientOptions fails when client.id.prefix is missing
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "test-group");
+        // Missing client.id.prefix
+        
+        Configuration config = Configuration.fromMap(tableOptions);
+        PscConnectorOptionsUtil.validateConsumerClientOptions(config);
+    }
+
+    @Test
+    public void testValidateProducerClientOptionsSuccess() {
+        // Test that validateProducerClientOptions passes with valid configuration
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
+        
+        Configuration config = Configuration.fromMap(tableOptions);
+        
+        try {
+            PscConnectorOptionsUtil.validateProducerClientOptions(config);
+            // Should not throw exception
+        } catch (ValidationException e) {
+            fail("Should not fail with valid producer client options: " + e.getMessage());
+        }
+    }
+
+    @Test(expected = ValidationException.class)
+    public void testValidateProducerClientOptionsWithMissingProducerId() {
+        // Test that validateProducerClientOptions fails when producer client ID is missing
+        Map<String, String> tableOptions = new HashMap<>();
+        // Missing producer client ID
+        
+        Configuration config = Configuration.fromMap(tableOptions);
+        PscConnectorOptionsUtil.validateProducerClientOptions(config);
+    }
+
+    @Test
+    public void testValidateProducerClientOptionsWithAutoGenUuid() {
+        // Test that validateProducerClientOptions works with AUTO_GEN_UUID
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, PscConnectorOptionsUtil.AUTO_GEN_UUID_VALUE);
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-producer");
+        
+        Configuration config = Configuration.fromMap(tableOptions);
+        
+        try {
+            PscConnectorOptionsUtil.validateProducerClientOptions(config);
+            // Should not throw exception
+        } catch (ValidationException e) {
+            fail("Should not fail with AUTO_GEN_UUID producer client options: " + e.getMessage());
+        }
+    }
+
+    @Test
+    public void testGetPscPropertiesDoesNotSetConsumerClientId() {
+        // Test that consumer client ID is not set in properties (handled by PscTopicUriPartitionSplitReader)
+        Map<String, String> tableOptions = new HashMap<>();
+        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "test-group");  
+        tableOptions.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "test-prefix");
+
+        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(tableOptions);
+
+        String clientId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID);
+        assertEquals("Consumer client ID should not be set in properties", null, clientId);
+        
+        // Other properties should be present
+        assertEquals("test-group", pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID));
     }
 
     // --------------------------------------------------------------------------------------------

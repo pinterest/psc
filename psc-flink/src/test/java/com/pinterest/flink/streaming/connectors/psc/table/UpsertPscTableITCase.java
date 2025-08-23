@@ -168,6 +168,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
+                                + "  'properties.client.id.prefix' = 'integration-test',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields-prefix' = 'k_',\n"
                                 + "  'sink.buffer-flush.max-rows' = '2',\n"
@@ -305,6 +306,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
++ "  'properties.client.id.prefix' = 'integration-test',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields-prefix' = 'k_',\n"
                                 + "  'value.format' = '%s',\n"
@@ -411,6 +413,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
++ "  'properties.client.id.prefix' = 'integration-test',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s',\n"
                                 + "  'value.fields-include' = 'ALL',\n"
@@ -713,6 +716,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
++ "  'properties.client.id.prefix' = 'integration-test',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s'"
                                 + ")",
@@ -773,6 +777,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
++ "  'properties.client.id.prefix' = 'integration-test',\n"
                                 + "  'scan.startup.mode' = 'earliest-offset',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'key.fields' = 'key_word',\n"
@@ -958,6 +963,7 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                                 + "  'properties.psc.consumer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.producer.client.id' = 'psc-test-client',\n"
                                 + "  'properties.psc.consumer.group.id' = 'psc-test-group-id',\n"
++ "  'properties.client.id.prefix' = 'integration-test',\n"
                                 + "  'key.format' = '%s',\n"
                                 + "  'value.format' = '%s'"
                                 + ")",
@@ -1183,5 +1189,232 @@ public class UpsertPscTableITCase extends PscTableTestBase {
                         7);
 
         assertThat(result).satisfies(matching(deepEqualTo(expected, true)));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithConsumerAndProducerIds() throws Exception {
+        final String topic = "tstopic_upsert_autogen_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create upsert table with AUTO_GEN_UUID for both consumer and producer client IDs
+        final String createUpsertTable =
+                String.format(
+                        "CREATE TABLE upsert_autogen_table (\n"
+                                + "  `id` INT,\n"
+                                + "  `name` STRING,\n"
+                                + "  `value` DOUBLE,\n"
+                                + "  PRIMARY KEY (`id`) NOT ENFORCED\n"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.psc.consumer.group.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.psc.producer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.client.id.prefix' = 'upsert-test',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'value.format' = '%s'\n"
+                                + ")",
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        format,
+                        format);
+
+        tEnv.executeSql(createUpsertTable);
+
+        // Insert test data to verify the table works with AUTO_GEN_UUID
+        String insertData =
+                "INSERT INTO upsert_autogen_table VALUES\n"
+                        + " (1, 'Alice', 100.0),\n"
+                        + " (2, 'Bob', 200.0)";
+        
+        tEnv.executeSql(insertData).await();
+
+        // Read back the data to verify AUTO_GEN_UUID worked with upsert
+        final List<Row> result = collectRows(tEnv.sqlQuery("SELECT * FROM upsert_autogen_table"), 2);
+
+        // Just verify we can read data successfully - this proves the AUTO_GEN_UUID configuration worked
+        assertThat(result).hasSize(2);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testUpsertMinimumConfigurationWithExplicitIds() throws Exception {
+        final String topic = "tstopic_upsert_min_explicit_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create upsert table with minimum required explicit configuration
+        final String createUpsertTable =
+                String.format(
+                        "CREATE TABLE upsert_min_explicit_table (\n"
+                                + "  `id` INT,\n"
+                                + "  `name` STRING,\n"
+                                + "  `status` STRING,\n"
+                                + "  PRIMARY KEY (`id`) NOT ENFORCED\n"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'min-upsert-consumer',\n"
+                                + "  'properties.psc.consumer.group.id' = 'min-upsert-group',\n"
+                                + "  'properties.psc.producer.client.id' = 'min-upsert-producer',\n"
+                                + "  'properties.client.id.prefix' = 'min-explicit',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'value.format' = '%s'\n"
+                                + ")",
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        format,
+                        format);
+
+        tEnv.executeSql(createUpsertTable);
+
+        // Insert test data to verify the table works with minimum configuration
+        String insertData =
+                "INSERT INTO upsert_min_explicit_table VALUES\n"
+                        + " (10, 'User10', 'ACTIVE'),\n"
+                        + " (20, 'User20', 'INACTIVE')";
+        
+        tEnv.executeSql(insertData).await();
+
+        // Read back the data to verify minimum configuration worked with upsert
+        // For upsert tables, we expect to see records in the changelog
+        final List<Row> result = collectRows(tEnv.sqlQuery("SELECT * FROM upsert_min_explicit_table"), 2);
+
+        // Just verify we can read data successfully - this proves the AUTO_GEN_UUID configuration worked
+        assertThat(result).hasSize(2);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithPartialIds() throws Exception {
+        final String topic = "tstopic_upsert_partial_autogen_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create upsert table with AUTO_GEN_UUID for some IDs and explicit for others
+        final String createUpsertTable =
+                String.format(
+                        "CREATE TABLE upsert_partial_autogen_table (\n"
+                                + "  `id` INT,\n"
+                                + "  `name` STRING,\n"
+                                + "  `score` INT,\n"
+                                + "  PRIMARY KEY (`id`) NOT ENFORCED\n"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.psc.consumer.group.id' = 'explicit-upsert-group',\n"
+                                + "  'properties.psc.producer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.client.id.prefix' = 'partial-upsert',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'value.format' = '%s'\n"
+                                + ")",
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        format,
+                        format);
+
+        tEnv.executeSql(createUpsertTable);
+
+        // Insert test data to verify partial AUTO_GEN_UUID functionality
+        String insertData =
+                "INSERT INTO upsert_partial_autogen_table VALUES\n"
+                        + " (100, 'Student1', 85),\n"
+                        + " (200, 'Student2', 90)";
+        
+        tEnv.executeSql(insertData).await();
+
+        // Read back the data to verify partial AUTO_GEN_UUID worked
+        final List<Row> result = collectRows(tEnv.sqlQuery("SELECT * FROM upsert_partial_autogen_table"), 2);
+
+        // Just verify we can read data successfully - this proves the partial AUTO_GEN_UUID configuration worked
+        assertThat(result).hasSize(2);
+
+        deleteTestTopic(topic);
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithKeyValueFormats() throws Exception {
+        final String topic = "tstopic_upsert_keyvalue_autogen_" + format + "_" + UUID.randomUUID();
+        final String topicUri = PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX + topic;
+        createTestTopic(topic, 1, 1);
+
+        String bootstraps = getBootstrapServers();
+
+        // Create upsert table with AUTO_GEN_UUID and key/value formats
+        final String createUpsertTable =
+                String.format(
+                        "CREATE TABLE upsert_keyvalue_autogen_table (\n"
+                                + "  `product_id` INT,\n"
+                                + "  `product_name` STRING,\n"
+                                + "  `price` DECIMAL(10,2),\n"
+                                + "  `category` STRING,\n"
+                                + "  PRIMARY KEY (`product_id`) NOT ENFORCED\n"
+                                + ") WITH (\n"
+                                + "  'connector' = 'upsert-psc',\n"
+                                + "  'topic-uri' = '%s',\n"
+                                + "  'properties.psc.cluster.uri' = '%s',\n"
+                                + "  'properties.psc.discovery.topic.uri.prefixes' = '%s',\n"
+                                + "  'properties.psc.discovery.connection.urls' = '%s',\n"
+                                + "  'properties.psc.discovery.security.protocols' = 'plaintext',\n"
+                                + "  'properties.psc.consumer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.psc.consumer.group.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.psc.producer.client.id' = 'AUTO_GEN_UUID',\n"
+                                + "  'properties.client.id.prefix' = 'keyvalue-upsert',\n"
+                                + "  'key.format' = '%s',\n"
+                                + "  'value.format' = '%s',\n"
+                                + "  'value.fields-include' = 'EXCEPT_KEY'\n"
+                                + ")",
+                        topicUri,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX,
+                        bootstraps,
+                        format,
+                        format);
+
+        tEnv.executeSql(createUpsertTable);
+
+        // Insert test product data
+        String insertData =
+                "INSERT INTO upsert_keyvalue_autogen_table VALUES\n"
+                        + " (1001, 'Laptop', 999.99, 'Electronics'),\n"
+                        + " (1002, 'Mouse', 29.99, 'Electronics')";
+        
+        tEnv.executeSql(insertData).await();
+
+        // Read back the data to verify key/value format with AUTO_GEN_UUID worked
+        final List<Row> result = collectRows(tEnv.sqlQuery("SELECT * FROM upsert_keyvalue_autogen_table"), 2);
+
+        // Just verify we can read data successfully - this proves the key/value AUTO_GEN_UUID configuration worked
+        assertThat(result).hasSize(2);
+
+        deleteTestTopic(topic);
     }
 }
