@@ -470,7 +470,9 @@ public class PscDynamicTableFactoryTest {
                 .hasCauseInstanceOf(ValidationException.class)
                 .satisfies(exception ->
                     assertThat(exception.getCause().getMessage())
-                        .contains("properties.client.id.prefix must be provided as it is mandatory for PSC table sources"));
+                        .contains("properties.client.id.prefix")
+                        .contains("must be provided")
+                        .contains("mandatory for PSC table sources"));
     }
 
     @Test
@@ -488,7 +490,9 @@ public class PscDynamicTableFactoryTest {
                 .hasCauseInstanceOf(ValidationException.class)
                 .satisfies(exception ->
                     assertThat(exception.getCause().getMessage())
-                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
     }
 
     @Test
@@ -506,7 +510,9 @@ public class PscDynamicTableFactoryTest {
                 .hasCauseInstanceOf(ValidationException.class)
                 .satisfies(exception ->
                     assertThat(exception.getCause().getMessage())
-                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
     }
 
     @Test
@@ -623,7 +629,9 @@ public class PscDynamicTableFactoryTest {
                 .hasCauseInstanceOf(ValidationException.class)
                 .satisfies(exception ->
                     assertThat(exception.getCause().getMessage())
-                        .contains("properties.client.id.prefix must be provided as it is mandatory for PSC table sources"));
+                        .contains("properties.client.id.prefix")
+                        .contains("must be provided")
+                        .contains("mandatory for PSC table sources"));
     }
 
     @Test
@@ -641,7 +649,9 @@ public class PscDynamicTableFactoryTest {
                 .hasCauseInstanceOf(ValidationException.class)
                 .satisfies(exception ->
                     assertThat(exception.getCause().getMessage())
-                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
     }
 
     @Test
@@ -659,7 +669,234 @@ public class PscDynamicTableFactoryTest {
                 .hasCauseInstanceOf(ValidationException.class)
                 .satisfies(exception ->
                     assertThat(exception.getCause().getMessage())
-                        .contains("properties.client.id.prefix must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Client ID Prefix Alias Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testTableSourceWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for properties.client.id.prefix
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            // Remove the primary key and use the alias instead
+                            options.remove("properties.client.id.prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(groupId).startsWith("alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = groupId.substring("alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated group ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify the scan runtime provider works correctly
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        ScanTableSource.ScanRuntimeProvider provider =
+                actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertPscSource(provider);
+    }
+
+    @Test
+    public void testTableSourceWithClientIdPrefixPrimaryKeyTakesPrecedence() {
+        // Test that properties.client.id.prefix takes precedence over the alias when both are provided
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            // Provide both primary key and alias - primary should win
+                            options.put("properties.client.id.prefix", "primary-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing - should use primary prefix
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify the primary key prefix was used, not the alias
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("primary-prefix-");
+        assertThat(groupId).doesNotContain("alias-prefix");
+
+        // Verify that the table source can be created successfully
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+    }
+
+    @Test
+    public void testTableSinkWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for sink options too
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            // Remove the primary key and use the alias instead
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "sink-alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(producerId).startsWith("sink-alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = producerId.substring("sink-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated producer ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify the sink runtime provider works correctly
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
+        DynamicTableSink.SinkRuntimeProvider provider =
+                actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+        assertThat(provider).isInstanceOf(SinkV2Provider.class);
+    }
+
+    @Test
+    public void testTableSourceWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias when neither is provided
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.remove("properties.client.id.prefix"); // Remove primary key
+                            // Don't provide alias either
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception -> {
+                    String message = exception.getCause().getMessage();
+                    assertThat(message).contains("properties.client.id.prefix");
+                    assertThat(message).contains("properties.psc.consumer.client.id");
+                    assertThat(message).contains("must be provided");
+                    assertThat(message).contains("mandatory for PSC table sources");
+                });
+    }
+
+    @Test
+    public void testTableSinkWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias for sink options too
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            // Don't provide either primary key or alias
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception -> {
+                    String message = exception.getCause().getMessage();
+                    assertThat(message).contains("properties.client.id.prefix");
+                    assertThat(message).contains("properties.psc.consumer.client.id");
+                    assertThat(message).contains("must be provided");
+                    assertThat(message).contains("mandatory for PSC table sources");
+                });
+    }
+
+    @Test
+    public void testTableSourceWithKeyValueAndClientIdPrefixAlias() {
+        // Test that alias works with key-value table sources
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getKeyValueSourceOptions(),
+                        options -> {
+                            // Replace primary key with alias
+                            options.remove("properties.client.id.prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "kv-alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias in key-value context
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("kv-alias-prefix-");
+
+        // Verify that the key-value table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Initialize stateful testing formats
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+
+        // Verify it works like a normal key-value source
+        assertThat(actualSource).isNotNull();
+    }
+
+    @Test
+    public void testTableSinkWithKeyValueAndClientIdPrefixAlias() {
+        // Test that alias works with key-value table sinks
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getKeyValueSinkOptions(),
+                        options -> {
+                            // Replace primary key with alias
+                            options.remove("properties.client.id.prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "kv-sink-alias");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias in key-value sink context
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).startsWith("kv-sink-alias-");
+
+        // Verify that the key-value table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Initialize stateful testing formats
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
+        actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+
+        // Verify it works like a normal key-value sink
+        assertThat(actualSink).isNotNull();
     }
 
     @ParameterizedTest

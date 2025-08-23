@@ -1484,7 +1484,7 @@ public class PscTableITCase extends PscTableTestBase {
                         "CREATE TABLE min_producer_sink (\n"
                                 + "  id INT,\n"
                                 + "  name STRING,\n"
-                                + "  value DOUBLE\n"
+                                + "  `value` DOUBLE\n"
                                 + ") WITH (\n"
                                 + "  'connector' = '%s',\n"
                                 + "  'topic-uri' = '%s',\n"
@@ -1511,7 +1511,7 @@ public class PscTableITCase extends PscTableTestBase {
                         "CREATE TABLE validation_source (\n"
                                 + "  id INT,\n"
                                 + "  name STRING,\n"
-                                + "  value DOUBLE\n"
+                                + "  `value` DOUBLE\n"
                                 + ") WITH (\n"
                                 + "  'connector' = '%s',\n"
                                 + "  'topic-uri' = '%s',\n"
@@ -1545,7 +1545,7 @@ public class PscTableITCase extends PscTableTestBase {
         tEnv.executeSql(insertData).await();
 
         // Read back the data to verify sink worked with minimum producer configuration
-        String query = "SELECT id, name, CAST(value AS DECIMAL(10, 2)) FROM validation_source";
+        String query = "SELECT id, name, CAST(`value` AS DECIMAL(10, 2)) FROM validation_source";
         DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
         TestingSinkFunction sink = new TestingSinkFunction(3);
         result.addSink(sink).setParallelism(1);
@@ -1670,7 +1670,7 @@ public class PscTableITCase extends PscTableTestBase {
                         "CREATE TABLE min_autogen_sink (\n"
                                 + "  id INT,\n"
                                 + "  name STRING,\n"
-                                + "  value DOUBLE\n"
+                                + "  `value` DOUBLE\n"
                                 + ") WITH (\n"
                                 + "  'connector' = '%s',\n"
                                 + "  'topic-uri' = '%s',\n"
@@ -1698,7 +1698,7 @@ public class PscTableITCase extends PscTableTestBase {
                         "CREATE TABLE validation_source (\n"
                                 + "  id INT,\n"
                                 + "  name STRING,\n"
-                                + "  value DOUBLE\n"
+                                + "  `value` DOUBLE\n"
                                 + ") WITH (\n"
                                 + "  'connector' = '%s',\n"
                                 + "  'topic-uri' = '%s',\n"
@@ -1732,7 +1732,7 @@ public class PscTableITCase extends PscTableTestBase {
         tEnv.executeSql(insertData).await();
 
         // Read back the data to verify sink worked with minimum AUTO_GEN_UUID configuration
-        String query = "SELECT id, name, CAST(value AS DECIMAL(10, 2)) FROM validation_source";
+        String query = "SELECT id, name, CAST(`value` AS DECIMAL(10, 2)) FROM validation_source";
         DataStream<RowData> result = tEnv.toAppendStream(tEnv.sqlQuery(query), RowData.class);
         TestingSinkFunction sink = new TestingSinkFunction(3);
         result.addSink(sink).setParallelism(1);

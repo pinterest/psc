@@ -99,7 +99,6 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'properties.psc.discovery.security.protocols' = 'plaintext',"
                                 + " 'properties.psc.consumer.client.id' = 'psc-test-client',"
                                 + " 'properties.psc.consumer.group.id' = 'psc-test-group',"
-                                + " 'properties.client.id.prefix' = 'integration-test',"
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'debezium-json'"
                                 + ")",
@@ -241,7 +240,6 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'properties.psc.discovery.security.protocols' = 'plaintext',"
                                 + " 'properties.psc.consumer.client.id' = 'psc-test-client',"
                                 + " 'properties.psc.consumer.group.id' = 'psc-test-group',"
-                                + " 'properties.client.id.prefix' = 'integration-test',"
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'canal-json'"
                                 + ")",
@@ -387,7 +385,6 @@ public class PscChangelogTableITCase extends PscTableTestBase {
                                 + " 'properties.psc.discovery.security.protocols' = 'plaintext',"
                                 + " 'properties.psc.consumer.client.id' = 'psc-test-client',"
                                 + " 'properties.psc.consumer.group.id' = 'psc-test-group',"
-                                + " 'properties.client.id.prefix' = 'integration-test',"
                                 + " 'scan.startup.mode' = 'earliest-offset',"
                                 + " 'value.format' = 'maxwell-json'"
                                 + ")",

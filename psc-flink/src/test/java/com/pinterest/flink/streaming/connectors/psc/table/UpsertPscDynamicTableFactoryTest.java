@@ -1006,7 +1006,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         })
         .isInstanceOf(ValidationException.class)
         .satisfies(anyCauseMatches(ValidationException.class,
-                "properties.client.id.prefix must be provided as it is mandatory for PSC table sources"));
+                "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be provided as it is mandatory for PSC table sources"));
     }
 
     @Test
@@ -1022,7 +1022,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         })
         .isInstanceOf(ValidationException.class)
         .satisfies(anyCauseMatches(ValidationException.class,
-                "properties.client.id.prefix must be non-empty"));
+                "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
     }
 
     @Test
@@ -1038,7 +1038,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         })
         .isInstanceOf(ValidationException.class)
         .satisfies(anyCauseMatches(ValidationException.class,
-                "properties.client.id.prefix must be non-empty"));
+                "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
     }
 
     @Test
@@ -1055,5 +1055,307 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         .isInstanceOf(ValidationException.class)
         .satisfies(anyCauseMatches(ValidationException.class,
                 "AUTO_GEN_UUID is not allowed for property"));
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Client ID Prefix Alias Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testUpsertTableSourceWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for properties.client.id.prefix
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    // Remove the primary key and use the alias instead
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(groupId).startsWith("upsert-alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = groupId.substring("upsert-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated group ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the upsert table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify that the actual source's properties have the correct alias prefix and valid UUID
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        String actualGroupId = pscSource.properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(actualGroupId).isNotNull();
+        assertThat(actualGroupId).startsWith("upsert-alias-prefix-");
+        assertThat(actualGroupId).isNotEqualTo("AUTO_GEN_UUID");
+
+        // Verify the UUID part is valid in the actual source properties
+        String actualUuidPart = actualGroupId.substring("upsert-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(actualUuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Actual source's group ID UUID should be valid: " + actualUuidPart);
+        }
+    }
+
+    @Test
+    public void testUpsertTableSourceWithClientIdPrefixPrimaryKeyTakesPrecedence() {
+        // Test that properties.client.id.prefix takes precedence over the alias when both are provided
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    // Provide both primary key and alias - primary should win
+                    opts.put("properties.client.id.prefix", "upsert-primary-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing - should use primary prefix
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify the primary key prefix was used, not the alias
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("upsert-primary-prefix-");
+        assertThat(groupId).doesNotContain("upsert-alias-prefix");
+
+        // Verify that the upsert table source can be created successfully
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify that the actual source's properties use the primary prefix, not the alias
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        String actualGroupId = pscSource.properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(actualGroupId).isNotNull();
+        assertThat(actualGroupId).startsWith("upsert-primary-prefix-");
+        assertThat(actualGroupId).doesNotContain("upsert-alias-prefix");
+        assertThat(actualGroupId).isNotEqualTo("AUTO_GEN_UUID");
+    }
+
+    @Test
+    public void testUpsertTableSinkWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for upsert sink options too
+        final Map<String, String> options = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    // Remove the primary key and use the alias instead
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-sink-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(producerId).startsWith("upsert-sink-alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = producerId.substring("upsert-sink-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated producer ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the upsert table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, options);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify that the actual sink's properties have the correct alias prefix and valid UUID
+        final PscDynamicSink pscSink = (PscDynamicSink) actualSink;
+        String actualProducerId = pscSink.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        assertThat(actualProducerId).isNotNull();
+        assertThat(actualProducerId).startsWith("upsert-sink-alias-prefix-");
+        assertThat(actualProducerId).isNotEqualTo("AUTO_GEN_UUID");
+
+        // Verify the UUID part is valid in the actual sink properties
+        String actualUuidPart = actualProducerId.substring("upsert-sink-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(actualUuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Actual sink's producer ID UUID should be valid: " + actualUuidPart);
+        }
+    }
+
+    @Test
+    public void testUpsertTableSourceWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias when neither is provided
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.remove("properties.client.id.prefix"); // Remove primary key
+                    // Don't provide alias either
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        assertThatThrownBy(() -> createTableSource(SOURCE_SCHEMA, options))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(anyCauseMatches(ValidationException.class,
+                        "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be provided as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertTableSinkWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias for upsert sink options too
+        final Map<String, String> options = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    opts.remove("properties.client.id.prefix"); // Remove primary key
+                    // Don't provide alias either
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        assertThatThrownBy(() -> createTableSink(SINK_SCHEMA, options))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(anyCauseMatches(ValidationException.class,
+                        "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be provided as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertKeyValueTableWithClientIdPrefixAlias() {
+        // Test that alias works with key-value upsert table sources and sinks
+        final Map<String, String> sourceOptions = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    // Replace primary key with alias for source
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-kv-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias in upsert key-value context
+        Properties sourceProcessedProperties = PscConnectorOptionsUtil.getPscProperties(sourceOptions);
+        String groupId = sourceProcessedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("upsert-kv-alias-prefix-");
+
+        // Verify that the upsert key-value table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, sourceOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify that the actual source's properties have the correct alias prefix and valid UUID
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        String actualSourceGroupId = pscSource.properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(actualSourceGroupId).isNotNull();
+        assertThat(actualSourceGroupId).startsWith("upsert-kv-alias-prefix-");
+        assertThat(actualSourceGroupId).isNotEqualTo("AUTO_GEN_UUID");
+
+        // Test sink options with alias too
+        final Map<String, String> sinkOptions = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    // Replace primary key with alias for sink
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-kv-sink-alias");
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias for producer ID
+        Properties sinkProcessedProperties = PscConnectorOptionsUtil.getPscProperties(sinkOptions);
+        String producerId = sinkProcessedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).startsWith("upsert-kv-sink-alias-");
+
+        // Verify that the upsert key-value table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, sinkOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify that the actual sink's properties have the correct alias prefix and valid UUID
+        final PscDynamicSink pscSink = (PscDynamicSink) actualSink;
+        String actualSinkProducerId = pscSink.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        assertThat(actualSinkProducerId).isNotNull();
+        assertThat(actualSinkProducerId).startsWith("upsert-kv-sink-alias-");
+        assertThat(actualSinkProducerId).isNotEqualTo("AUTO_GEN_UUID");
+    }
+
+    @Test
+    public void testUpsertTableAliasEmptyValidationError() {
+        // Test that validation error occurs when alias is provided but empty
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.remove("properties.client.id.prefix"); // Remove primary key
+                    // Provide empty alias
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "   ");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        assertThatThrownBy(() -> createTableSource(SOURCE_SCHEMA, options))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(anyCauseMatches(ValidationException.class,
+                        "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertTableAliasPrecedenceWithUniqueIds() {
+        // Test that when both primary and alias are provided, primary takes precedence
+        // and generates unique IDs correctly
+        final Map<String, String> options = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    // Provide both primary key and alias - primary should win
+                    opts.put("properties.client.id.prefix", "upsert-primary");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-alias");
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        // Generate multiple producer IDs using the same options
+        Properties properties1 = PscConnectorOptionsUtil.getPscProperties(options);
+        Properties properties2 = PscConnectorOptionsUtil.getPscProperties(options);
+
+        String producerId1 = properties1.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String producerId2 = properties2.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify all producer IDs are different and use primary prefix
+        assertThat(producerId1).isNotEqualTo(producerId2);
+        assertThat(producerId1).startsWith("upsert-primary-");
+        assertThat(producerId2).startsWith("upsert-primary-");
+        assertThat(producerId1).doesNotContain("upsert-alias");
+        assertThat(producerId2).doesNotContain("upsert-alias");
+
+        // Verify that upsert table sinks can be created successfully
+        final DynamicTableSink tableSink1 = createTableSink(SINK_SCHEMA, options);
+        final DynamicTableSink tableSink2 = createTableSink(SINK_SCHEMA, options);
+
+        assertThat(tableSink1).isInstanceOf(PscDynamicSink.class);
+        assertThat(tableSink2).isInstanceOf(PscDynamicSink.class);
+
+        // Verify that the actual sink properties use the primary prefix, not the alias
+        final PscDynamicSink pscSink1 = (PscDynamicSink) tableSink1;
+        final PscDynamicSink pscSink2 = (PscDynamicSink) tableSink2;
+
+        String actualProducerId1 = pscSink1.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String actualProducerId2 = pscSink2.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify actual producer IDs are different and use primary prefix, not alias
+        assertThat(actualProducerId1).isNotNull();
+        assertThat(actualProducerId2).isNotNull();
+        assertThat(actualProducerId1).isNotEqualTo(actualProducerId2); // UUIDs should be different
+        assertThat(actualProducerId1).startsWith("upsert-primary-");
+        assertThat(actualProducerId2).startsWith("upsert-primary-");
+        assertThat(actualProducerId1).doesNotContain("upsert-alias");
+        assertThat(actualProducerId2).doesNotContain("upsert-alias");
+        assertThat(actualProducerId1).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(actualProducerId2).isNotEqualTo("AUTO_GEN_UUID");
     }
 }
