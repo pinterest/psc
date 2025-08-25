@@ -167,8 +167,8 @@ public class PscConnectorOptions {
                     .noDefaultValue()
                     .withDescription(
                             Description.builder()
-                                    .text("Optional client ID for PSC consumer. ")
-                                    .text("Use 'AUTO_GEN_UUID' to automatically generate a client id w/ dynamic UUID suffix.")
+                                    .text("Optional client ID for PSC consumer.")
+                                    .text("Use as alias for 'properties.client.id.prefix' for backward compatibility.")
                                     .build());
 
 
