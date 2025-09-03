@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
@@ -129,11 +130,47 @@ public class PscConnectorOptions {
                             "Optional topic pattern from which the table is read for source. Either 'topic' or 'topic-pattern' must be set.");
 
     public static final ConfigOption<String> PROPS_GROUP_ID =
-            ConfigOptions.key("properties.group.id")
+            ConfigOptions.key("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID)
                     .stringType()
                     .noDefaultValue()
                     .withDescription(
-                            "Required consumer group in PSC consumer, no need for PSC producer");
+                            Description.builder()
+                                    .text("Required consumer group in PSC consumer, no need for PSC producer. ")
+                                    .text("Set to 'AUTO_GEN_UUID' to generate a group id w/ dynamic UUID suffix automatically as an ephemeral group.")
+                                    .build());
+
+
+    public static final ConfigOption<String> PROPS_PRODUCER_CLIENT_ID =
+            ConfigOptions.key("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID)
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text("Mandatory client ID for PSC producer. ")
+                                    .text("Use 'AUTO_GEN_UUID' to automatically generate a producer id w/ dynamic UUID suffix.")
+                                    .build());
+
+    public static final ConfigOption<String> PROPS_CLIENT_ID_PREFIX =
+            ConfigOptions.key("properties.client.id.prefix")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                .text("Mandatory client ID prefix for generating client IDs. ")
+                                .text("Always required for PSC table sources to ensure unique client identification. ")
+                                .text("Used as prefix for auto-generated client IDs when consumer client.id is not provided or when using AUTO_GEN_UUID for any ID options.")
+                                .build());
+
+    public static final ConfigOption<String> PROPS_CLIENT_ID =
+            ConfigOptions.key("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID)
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text("Optional client ID for PSC consumer.")
+                                    .text("Use as alias for 'properties.client.id.prefix' for backward compatibility.")
+                                    .build());
+
 
     // --------------------------------------------------------------------------------------------
     // Scan specific options

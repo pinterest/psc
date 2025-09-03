@@ -48,13 +48,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
+import com.pinterest.psc.config.PscConfiguration;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.DELIVERY_GUARANTEE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FIELDS_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.KEY_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.PROPS_CLIENT_ID;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.PROPS_CLIENT_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
@@ -88,6 +92,9 @@ class PscConnectorOptionsUtil {
     // Prefix for PSC specific properties.
     public static final String PROPERTIES_PREFIX = "properties.";
 
+    // AUTO_GEN_UUID keyword for UUID generation.
+    public static final String AUTO_GEN_UUID_VALUE = "AUTO_GEN_UUID";
+
     // Other keywords.
     private static final String PARTITION = "partition";
     private static final String OFFSET = "offset";
@@ -95,6 +102,89 @@ class PscConnectorOptionsUtil {
     protected static final String DEBEZIUM_AVRO_CONFLUENT = "debezium-avro-confluent";
     private static final List<String> SCHEMA_REGISTRY_FORMATS =
             Arrays.asList(AVRO_CONFLUENT, DEBEZIUM_AVRO_CONFLUENT);
+
+    /**
+     * Resolves the client ID prefix from either the primary key (properties.client.id.prefix)
+     * or the alias (properties.psc.consumer.client.id) for source options.
+     * The primary key takes precedence if both are provided.
+     *
+     * @param tableOptions the table options map to check for client.id.prefix or its alias
+     * @return the resolved client ID prefix, or null if neither is found
+     */
+    private static String resolveClientIdPrefix(Map<String, String> tableOptions) {
+        String clientIdPrefix = tableOptions.get(PROPS_CLIENT_ID_PREFIX.key());
+        if (clientIdPrefix != null) {
+            return clientIdPrefix;
+        }
+
+        // Check for alias: properties.psc.consumer.client.id
+        String aliasKey = PROPS_CLIENT_ID.key();
+        return tableOptions.get(aliasKey);
+    }
+
+    /**
+     * Validates that client.id.prefix (or its alias properties.psc.consumer.client.id) is provided and non-empty.
+     * This is always mandatory for PSC table sources to ensure unique client identification.
+     * The primary key properties.client.id.prefix takes precedence if both are provided.
+     *
+     * @param tableOptions the table options map to check for client.id.prefix or its alias
+     * @throws ValidationException if client.id.prefix is missing or empty
+     */
+    private static void validateClientIdPrefix(Map<String, String> tableOptions) {
+        String clientIdPrefix = resolveClientIdPrefix(tableOptions);
+        if (clientIdPrefix == null) {
+            throw new ValidationException(
+                    String.format("%s (or alias %s) must be provided as it is mandatory for PSC table sources",
+                    PROPS_CLIENT_ID_PREFIX.key(), PROPS_CLIENT_ID.key()));
+        }
+
+        String trimmedClientIdPrefix = clientIdPrefix.trim();
+        if (trimmedClientIdPrefix.isEmpty()) {
+            throw new ValidationException(
+                    String.format("%s (or alias %s) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources",
+                    PROPS_CLIENT_ID_PREFIX.key(), PROPS_CLIENT_ID.key()));
+        }
+    }
+
+    /**
+     * Validates if AUTO_GEN_UUID is allowed for the given property key and that client.id.prefix is provided.
+     * Only allows AUTO_GEN_UUID for psc.consumer.client.id, psc.consumer.group.id, and psc.producer.client.id keys.
+     * Throws ValidationException if AUTO_GEN_UUID is not allowed for the key or if client.id.prefix is missing/empty.
+     *
+     * @param subKey the property key (without the "properties." prefix)
+     * @param tableOptions the table options map to check for client.id.prefix
+     * @throws ValidationException if AUTO_GEN_UUID is not allowed for this key or client.id.prefix is invalid
+     */
+    public static void validateAutoGenUuidOptions(String subKey, Map<String, String> tableOptions) {
+        if (!(PscConfiguration.PSC_CONSUMER_GROUP_ID.equals(subKey) ||
+              PscConfiguration.PSC_PRODUCER_CLIENT_ID.equals(subKey))) {
+            throw new ValidationException(
+                    String.format("AUTO_GEN_UUID is not allowed for property '%s'. " +
+                    "AUTO_GEN_UUID is only supported for: %s, %s",
+                    subKey,
+                    PscConfiguration.PSC_CONSUMER_GROUP_ID,
+                    PscConfiguration.PSC_PRODUCER_CLIENT_ID));
+        }
+
+        // client.id.prefix validation is now handled by validateClientIdPrefix
+        validateClientIdPrefix(tableOptions);
+    }
+
+    /**
+     * Generates a UUID with the client.id.prefix (or its alias properties.psc.consumer.client.id).
+     * The primary key takes precedence if both are provided.
+     *
+     * @param tableOptions the table options map to get client.id.prefix or its alias from
+     * @return generated UUID string with prefix
+     */
+    private static String generateUuidWithPrefix(Map<String, String> tableOptions) {
+        String clientIdPrefix = resolveClientIdPrefix(tableOptions);
+        String uuid = UUID.randomUUID().toString();
+
+        return clientIdPrefix.trim() + "-" + uuid;
+    }
+
+
 
     // --------------------------------------------------------------------------------------------
     // Validation
@@ -104,11 +194,13 @@ class PscConnectorOptionsUtil {
         validateSourceTopic(tableOptions);
         validateScanStartupMode(tableOptions);
         validateScanBoundedMode(tableOptions);
+        validateConsumerClientOptions(tableOptions);
     }
 
     public static void validateTableSinkOptions(ReadableConfig tableOptions) {
         validateSinkTopic(tableOptions);
         validateSinkPartitioner(tableOptions);
+        validateProducerClientOptions(tableOptions);
     }
 
     public static void validateSourceTopic(ReadableConfig tableOptions) {
@@ -245,6 +337,42 @@ class PscConnectorOptionsUtil {
                                                 SINK_PARTITIONER.key()));
                             }
                         });
+    }
+
+    static void validateConsumerClientOptions(ReadableConfig tableOptions) {
+        // Convert ReadableConfig to Map to work with getPscProperties
+        Configuration config = (Configuration) tableOptions;
+        Map<String, String> tableOptionsMap = config.toMap();
+        // Always validate that client.id.prefix is provided (now mandatory)
+        validateClientIdPrefix(tableOptionsMap);
+        Properties pscProperties = getPscProperties(tableOptionsMap);
+        // Validate required consumer group ID is present (still mandatory)
+        String consumerGroupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        if (consumerGroupId == null || consumerGroupId.trim().isEmpty()) {
+            throw new ValidationException(
+                String.format("Required property '%s' is missing or empty. " +
+                    "Please provide a value or use 'AUTO_GEN_UUID' with '%s'.",
+                    PscConfiguration.PSC_CONSUMER_GROUP_ID,
+                    PROPS_CLIENT_ID_PREFIX.key()));
+        }
+
+        // Consumer client.id is handled by PscTopicUriPartitionSplitReader - no validation needed here
+    }
+
+    static void validateProducerClientOptions(ReadableConfig tableOptions) {
+        // Convert ReadableConfig to Map to work with getPscProperties
+        Configuration config = (Configuration) tableOptions;
+        Map<String, String> tableOptionsMap = config.toMap();
+        Properties pscProperties = getPscProperties(tableOptionsMap);
+        // Validate required producer property is present
+        String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        if (producerClientId == null || producerClientId.trim().isEmpty()) {
+            throw new ValidationException(
+                String.format("Required property '%s' is missing or empty. " +
+                    "Please provide a value or use 'AUTO_GEN_UUID' with '%s'.",
+                    PscConfiguration.PSC_PRODUCER_CLIENT_ID,
+                    PROPS_CLIENT_ID_PREFIX.key()));
+        }
     }
 
     // --------------------------------------------------------------------------------------------
@@ -391,7 +519,13 @@ class PscConnectorOptionsUtil {
                             key -> {
                                 final String value = tableOptions.get(key);
                                 final String subKey = key.substring((PROPERTIES_PREFIX).length());
-                                pscProperties.put(subKey, value);
+                                // Validate and generate UUID for AUTO_GEN_UUID values
+                                if (AUTO_GEN_UUID_VALUE.equals(value)) {
+                                    validateAutoGenUuidOptions(subKey, tableOptions);
+                                    pscProperties.put(subKey, generateUuidWithPrefix(tableOptions));
+                                } else {
+                                    pscProperties.put(subKey, value);
+                                }
                             });
         }
         return pscProperties;
