@@ -91,6 +91,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUriPattern;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUris;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getStartupOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateDeliveryGuarantee;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSinkOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSourceOptions;
 
@@ -245,9 +246,10 @@ public class PscDynamicTableFactory
         final ReadableConfig tableOptions = helper.getOptions();
 
         final DeliveryGuarantee deliveryGuarantee = validateDeprecatedSemantic(tableOptions);
+        
         validateTableSinkOptions(tableOptions);
 
-        PscConnectorOptionsUtil.validateDeliveryGuarantee(tableOptions);
+        validateDeliveryGuarantee(tableOptions);
 
         validatePKConstraints(
                 context.getObjectIdentifier(),
