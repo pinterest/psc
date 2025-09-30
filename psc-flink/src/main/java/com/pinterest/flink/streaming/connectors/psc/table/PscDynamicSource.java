@@ -166,6 +166,9 @@ public class PscDynamicSource
 
     protected final String tableIdentifier;
 
+    /** Optional user-provided UID prefix for stabilizing operator UIDs across DAG changes. */
+    protected final @Nullable String sourceUidPrefix;
+
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -183,7 +186,8 @@ public class PscDynamicSource
             Map<PscTopicUriPartition, Long> specificBoundedOffsets,
             long boundedTimestampMillis,
             boolean upsertMode,
-            String tableIdentifier) {
+            String tableIdentifier,
+            @Nullable String sourceUidPrefix) {
         // Format attributes
         this.physicalDataType =
                 Preconditions.checkNotNull(
@@ -223,6 +227,7 @@ public class PscDynamicSource
         this.boundedTimestampMillis = boundedTimestampMillis;
         this.upsertMode = upsertMode;
         this.tableIdentifier = tableIdentifier;
+        this.sourceUidPrefix = sourceUidPrefix;
     }
 
     @Override
@@ -254,7 +259,12 @@ public class PscDynamicSource
                 DataStreamSource<RowData> sourceStream =
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
-                providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
+                // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
+                if (sourceUidPrefix != null && !sourceUidPrefix.isEmpty()) {
+                    sourceStream.uid(sourceUidPrefix + ":" + PSC_TRANSFORMATION + ":" + tableIdentifier);
+                } else {
+                    providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
+                }
                 return sourceStream;
             }
 
@@ -339,7 +349,8 @@ public class PscDynamicSource
                         specificBoundedOffsets,
                         boundedTimestampMillis,
                         upsertMode,
-                        tableIdentifier);
+                        tableIdentifier,
+                        sourceUidPrefix);
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;

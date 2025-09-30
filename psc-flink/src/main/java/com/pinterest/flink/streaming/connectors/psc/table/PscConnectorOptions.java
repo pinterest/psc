@@ -176,6 +176,15 @@ public class PscConnectorOptions {
     // Scan specific options
     // --------------------------------------------------------------------------------------------
 
+    public static final ConfigOption<String> SOURCE_UID_PREFIX =
+            ConfigOptions.key("source.uid-prefix")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Optional prefix used to derive a stable UID for the PSC source operator. "
+                                    + "When set, the connector will assign a deterministic UID to the source transformation "
+                                    + "based on this prefix to ensure checkpoint state compatibility across DAG changes.");
+
     public static final ConfigOption<ScanStartupMode> SCAN_STARTUP_MODE =
             ConfigOptions.key("scan.startup.mode")
                     .enumType(ScanStartupMode.class)
