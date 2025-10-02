@@ -433,8 +433,7 @@ public class PscDynamicSource
                 && boundedTimestampMillis == that.boundedTimestampMillis
                 && Objects.equals(upsertMode, that.upsertMode)
                 && Objects.equals(tableIdentifier, that.tableIdentifier)
-                && Objects.equals(watermarkStrategy, that.watermarkStrategy)
-                && Objects.equals(sourceUidPrefix, that.sourceUidPrefix);
+                && Objects.equals(watermarkStrategy, that.watermarkStrategy);
     }
 
     @Override
@@ -459,8 +458,7 @@ public class PscDynamicSource
                 boundedTimestampMillis,
                 upsertMode,
                 tableIdentifier,
-                watermarkStrategy,
-                sourceUidPrefix);
+                watermarkStrategy);
     }
 
     // --------------------------------------------------------------------------------------------
