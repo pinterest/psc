@@ -149,6 +149,7 @@ public class PscDynamicTableFactory
         options.add(SCAN_BOUNDED_MODE);
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(SOURCE_UID_PREFIX);
         return options;
     }
 

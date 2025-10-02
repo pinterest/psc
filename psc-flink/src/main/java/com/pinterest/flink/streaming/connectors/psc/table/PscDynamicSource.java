@@ -230,6 +230,49 @@ public class PscDynamicSource
         this.sourceUidPrefix = sourceUidPrefix;
     }
 
+    /**
+     * Backward-compatible constructor without UID prefix. Delegates to the full constructor with a
+     * null {@code sourceUidPrefix}.
+     */
+    public PscDynamicSource(
+            DataType physicalDataType,
+            @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
+            DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat,
+            int[] keyProjection,
+            int[] valueProjection,
+            @Nullable String keyPrefix,
+            @Nullable List<String> topics,
+            @Nullable Pattern topicPattern,
+            Properties properties,
+            StartupMode startupMode,
+            Map<PscTopicUriPartition, Long> specificStartupOffsets,
+            long startupTimestampMillis,
+            BoundedMode boundedMode,
+            Map<PscTopicUriPartition, Long> specificBoundedOffsets,
+            long boundedTimestampMillis,
+            boolean upsertMode,
+            String tableIdentifier) {
+        this(
+                physicalDataType,
+                keyDecodingFormat,
+                valueDecodingFormat,
+                keyProjection,
+                valueProjection,
+                keyPrefix,
+                topics,
+                topicPattern,
+                properties,
+                startupMode,
+                specificStartupOffsets,
+                startupTimestampMillis,
+                boundedMode,
+                specificBoundedOffsets,
+                boundedTimestampMillis,
+                upsertMode,
+                tableIdentifier,
+                null);
+    }
+
     @Override
     public ChangelogMode getChangelogMode() {
         return valueDecodingFormat.getChangelogMode();
@@ -390,7 +433,8 @@ public class PscDynamicSource
                 && boundedTimestampMillis == that.boundedTimestampMillis
                 && Objects.equals(upsertMode, that.upsertMode)
                 && Objects.equals(tableIdentifier, that.tableIdentifier)
-                && Objects.equals(watermarkStrategy, that.watermarkStrategy);
+                && Objects.equals(watermarkStrategy, that.watermarkStrategy)
+                && Objects.equals(sourceUidPrefix, that.sourceUidPrefix);
     }
 
     @Override
@@ -415,7 +459,8 @@ public class PscDynamicSource
                 boundedTimestampMillis,
                 upsertMode,
                 tableIdentifier,
-                watermarkStrategy);
+                watermarkStrategy,
+                sourceUidPrefix);
     }
 
     // --------------------------------------------------------------------------------------------
