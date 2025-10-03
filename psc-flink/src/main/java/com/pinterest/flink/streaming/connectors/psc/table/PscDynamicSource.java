@@ -166,6 +166,9 @@ public class PscDynamicSource
 
     protected final String tableIdentifier;
 
+    /** Optional user-provided UID prefix for stabilizing operator UIDs across DAG changes. */
+    protected final @Nullable String sourceUidPrefix;
+
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -183,7 +186,8 @@ public class PscDynamicSource
             Map<PscTopicUriPartition, Long> specificBoundedOffsets,
             long boundedTimestampMillis,
             boolean upsertMode,
-            String tableIdentifier) {
+            String tableIdentifier,
+            @Nullable String sourceUidPrefix) {
         // Format attributes
         this.physicalDataType =
                 Preconditions.checkNotNull(
@@ -223,6 +227,50 @@ public class PscDynamicSource
         this.boundedTimestampMillis = boundedTimestampMillis;
         this.upsertMode = upsertMode;
         this.tableIdentifier = tableIdentifier;
+        this.sourceUidPrefix = sourceUidPrefix;
+    }
+
+    /**
+     * Backward-compatible constructor without UID prefix. Delegates to the full constructor with a
+     * null {@code sourceUidPrefix}.
+     */
+    public PscDynamicSource(
+            DataType physicalDataType,
+            @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
+            DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat,
+            int[] keyProjection,
+            int[] valueProjection,
+            @Nullable String keyPrefix,
+            @Nullable List<String> topics,
+            @Nullable Pattern topicPattern,
+            Properties properties,
+            StartupMode startupMode,
+            Map<PscTopicUriPartition, Long> specificStartupOffsets,
+            long startupTimestampMillis,
+            BoundedMode boundedMode,
+            Map<PscTopicUriPartition, Long> specificBoundedOffsets,
+            long boundedTimestampMillis,
+            boolean upsertMode,
+            String tableIdentifier) {
+        this(
+                physicalDataType,
+                keyDecodingFormat,
+                valueDecodingFormat,
+                keyProjection,
+                valueProjection,
+                keyPrefix,
+                topics,
+                topicPattern,
+                properties,
+                startupMode,
+                specificStartupOffsets,
+                startupTimestampMillis,
+                boundedMode,
+                specificBoundedOffsets,
+                boundedTimestampMillis,
+                upsertMode,
+                tableIdentifier,
+                null);
     }
 
     @Override
@@ -254,6 +302,14 @@ public class PscDynamicSource
                 DataStreamSource<RowData> sourceStream =
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
+                // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
+                if (sourceUidPrefix != null) {
+                    final String trimmedPrefix = sourceUidPrefix.trim();
+                    if (!trimmedPrefix.isEmpty()) {
+                        sourceStream.uid(trimmedPrefix + ":" + PSC_TRANSFORMATION + ":" + tableIdentifier);
+                        return sourceStream;
+                    }
+                }
                 providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
                 return sourceStream;
             }
@@ -339,7 +395,8 @@ public class PscDynamicSource
                         specificBoundedOffsets,
                         boundedTimestampMillis,
                         upsertMode,
-                        tableIdentifier);
+                        tableIdentifier,
+                        sourceUidPrefix);
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;
