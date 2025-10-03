@@ -303,11 +303,14 @@ public class PscDynamicSource
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
-                if (sourceUidPrefix != null && !sourceUidPrefix.isEmpty()) {
-                    sourceStream.uid(sourceUidPrefix + ":" + PSC_TRANSFORMATION + ":" + tableIdentifier);
-                } else {
-                    providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
+                if (sourceUidPrefix != null) {
+                    final String trimmedPrefix = sourceUidPrefix.trim();
+                    if (!trimmedPrefix.isEmpty()) {
+                        sourceStream.uid(trimmedPrefix + ":" + PSC_TRANSFORMATION + ":" + tableIdentifier);
+                        return sourceStream;
+                    }
                 }
+                providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
                 return sourceStream;
             }
 
