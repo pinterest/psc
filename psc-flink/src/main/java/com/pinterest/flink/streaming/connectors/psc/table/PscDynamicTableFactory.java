@@ -70,6 +70,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SOURCE_UID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
@@ -148,6 +149,7 @@ public class PscDynamicTableFactory
         options.add(SCAN_BOUNDED_MODE);
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(SOURCE_UID_PREFIX);
         return options;
     }
 
@@ -226,7 +228,8 @@ public class PscDynamicTableFactory
                 boundedOptions.boundedMode,
                 boundedOptions.specificOffsets,
                 boundedOptions.boundedTimestampMillis,
-                context.getObjectIdentifier().asSummaryString());
+                context.getObjectIdentifier().asSummaryString(),
+                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null));
     }
 
     @Override
@@ -391,7 +394,8 @@ public class PscDynamicTableFactory
             BoundedMode boundedMode,
             Map<PscTopicUriPartition, Long> specificEndOffsets,
             long endTimestampMillis,
-            String tableIdentifier) {
+            String tableIdentifier,
+            @Nullable String sourceUidPrefix) {
         return new PscDynamicSource(
                 physicalDataType,
                 keyDecodingFormat,
@@ -409,7 +413,8 @@ public class PscDynamicTableFactory
                 specificEndOffsets,
                 endTimestampMillis,
                 false,
-                tableIdentifier);
+                tableIdentifier,
+                sourceUidPrefix);
     }
 
     protected PscDynamicSink creatPscTableSink(

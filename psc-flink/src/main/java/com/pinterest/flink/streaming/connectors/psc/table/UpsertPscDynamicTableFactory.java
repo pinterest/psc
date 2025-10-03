@@ -64,6 +64,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_INTERVAL;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_MAX_ROWS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SOURCE_UID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TRANSACTIONAL_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FIELDS_INCLUDE;
@@ -113,6 +114,7 @@ public class UpsertPscDynamicTableFactory
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
         options.add(DELIVERY_GUARANTEE);
         options.add(TRANSACTIONAL_ID_PREFIX);
+        options.add(SOURCE_UID_PREFIX);
         return options;
     }
 
@@ -165,7 +167,8 @@ public class UpsertPscDynamicTableFactory
                 boundedOptions.specificOffsets,
                 boundedOptions.boundedTimestampMillis,
                 true,
-                context.getObjectIdentifier().asSummaryString());
+                context.getObjectIdentifier().asSummaryString(),
+                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null));
     }
 
     @Override
