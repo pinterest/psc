@@ -169,6 +169,9 @@ public class PscDynamicSource
     /** Optional user-provided UID prefix for stabilizing operator UIDs across DAG changes. */
     protected final @Nullable String sourceUidPrefix;
 
+    /** Optional parallelism for the source operator. If not set, uses Flink's default. */
+    protected final @Nullable Integer sourceParallelism;
+
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -187,7 +190,8 @@ public class PscDynamicSource
             long boundedTimestampMillis,
             boolean upsertMode,
             String tableIdentifier,
-            @Nullable String sourceUidPrefix) {
+            @Nullable String sourceUidPrefix,
+            @Nullable Integer sourceParallelism) {
         // Format attributes
         this.physicalDataType =
                 Preconditions.checkNotNull(
@@ -228,11 +232,12 @@ public class PscDynamicSource
         this.upsertMode = upsertMode;
         this.tableIdentifier = tableIdentifier;
         this.sourceUidPrefix = sourceUidPrefix;
+        this.sourceParallelism = sourceParallelism;
     }
 
     /**
-     * Backward-compatible constructor without UID prefix. Delegates to the full constructor with a
-     * null {@code sourceUidPrefix}.
+     * Backward-compatible constructor without UID prefix and parallelism. Delegates to the full
+     * constructor with null {@code sourceUidPrefix} and {@code sourceParallelism}.
      */
     public PscDynamicSource(
             DataType physicalDataType,
@@ -270,6 +275,7 @@ public class PscDynamicSource
                 boundedTimestampMillis,
                 upsertMode,
                 tableIdentifier,
+                null,
                 null);
     }
 
@@ -302,6 +308,12 @@ public class PscDynamicSource
                 DataStreamSource<RowData> sourceStream =
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
+                
+                // Apply explicit parallelism if configured
+                if (sourceParallelism != null && sourceParallelism > 0) {
+                    sourceStream.setParallelism(sourceParallelism);
+                }
+                
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
                 if (sourceUidPrefix != null) {
                     final String trimmedPrefix = sourceUidPrefix.trim();
@@ -396,7 +408,8 @@ public class PscDynamicSource
                         boundedTimestampMillis,
                         upsertMode,
                         tableIdentifier,
-                        sourceUidPrefix);
+                        sourceUidPrefix,
+                        sourceParallelism);
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;
@@ -436,6 +449,8 @@ public class PscDynamicSource
                 && boundedTimestampMillis == that.boundedTimestampMillis
                 && Objects.equals(upsertMode, that.upsertMode)
                 && Objects.equals(tableIdentifier, that.tableIdentifier)
+                && Objects.equals(sourceUidPrefix, that.sourceUidPrefix)
+                && Objects.equals(sourceParallelism, that.sourceParallelism)
                 && Objects.equals(watermarkStrategy, that.watermarkStrategy);
     }
 
@@ -461,6 +476,8 @@ public class PscDynamicSource
                 boundedTimestampMillis,
                 upsertMode,
                 tableIdentifier,
+                sourceUidPrefix,
+                sourceParallelism,
                 watermarkStrategy);
     }
 

@@ -1247,6 +1247,52 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
+    public void testTableSourceWithParallelism() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(), options -> options.put("scan.parallelism", "10"));
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify the parallelism is stored in the source
+        assertThat(pscSource.sourceParallelism).isEqualTo(10);
+        
+        // Verify that the source equals the expected source with parallelism set
+        final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_0), OFFSET_0);
+        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_1), OFFSET_1);
+
+        final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat =
+                new DecodingFormatMock(",", true);
+
+        final PscDynamicSource expectedPscSource =
+                new PscDynamicSource(
+                        SCHEMA_DATA_TYPE,
+                        null,
+                        valueDecodingFormat,
+                        new int[0],
+                        new int[] {0, 1, 2},
+                        null,
+                        Collections.singletonList(TOPIC_URI),
+                        null,
+                        PSC_SOURCE_PROPERTIES,
+                        StartupMode.SPECIFIC_OFFSETS,
+                        specificOffsets,
+                        0,
+                        BoundedMode.UNBOUNDED,
+                        Collections.emptyMap(),
+                        0,
+                        false,
+                        FactoryMocks.IDENTIFIER.asSummaryString(),
+                        null,
+                        10);
+        assertThat(pscSource).isEqualTo(expectedPscSource);
+    }
+
+    @Test
     public void testTableSinkAutoCompleteSchemaRegistrySubject() {
         // only format
         verifyEncoderSubject(
@@ -1729,7 +1775,9 @@ public class PscDynamicTableFactoryTest {
                 Collections.emptyMap(),
                 0,
                 false,
-                FactoryMocks.IDENTIFIER.asSummaryString());
+                FactoryMocks.IDENTIFIER.asSummaryString(),
+                null,
+                null);
     }
 
     private static PscDynamicSink createExpectedSink(

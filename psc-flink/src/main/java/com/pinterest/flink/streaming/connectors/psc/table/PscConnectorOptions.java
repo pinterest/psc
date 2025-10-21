@@ -109,6 +109,8 @@ public class PscConnectorOptions {
 
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
+    public static final ConfigOption<Integer> SCAN_PARALLELISM = FactoryUtil.SCAN_PARALLELISM;
+
     // --------------------------------------------------------------------------------------------
     // Psc specific options
     // --------------------------------------------------------------------------------------------

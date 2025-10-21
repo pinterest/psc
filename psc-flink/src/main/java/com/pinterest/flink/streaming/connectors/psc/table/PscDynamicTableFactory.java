@@ -75,6 +75,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_TOPIC_PARTITION_DISCOVERY;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_PARALLELISM;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARTITIONER;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
@@ -149,6 +150,7 @@ public class PscDynamicTableFactory
         options.add(SCAN_BOUNDED_MODE);
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(SCAN_PARALLELISM);
         options.add(SOURCE_UID_PREFIX);
         return options;
     }
@@ -212,6 +214,8 @@ public class PscDynamicTableFactory
 
         final String keyPrefix = tableOptions.getOptional(KEY_FIELDS_PREFIX).orElse(null);
 
+        final Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
+
         return createPscTableSource(
                 physicalDataType,
                 keyDecodingFormat.orElse(null),
@@ -229,7 +233,8 @@ public class PscDynamicTableFactory
                 boundedOptions.specificOffsets,
                 boundedOptions.boundedTimestampMillis,
                 context.getObjectIdentifier().asSummaryString(),
-                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null));
+                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
+                scanParallelism);
     }
 
     @Override
@@ -395,7 +400,8 @@ public class PscDynamicTableFactory
             Map<PscTopicUriPartition, Long> specificEndOffsets,
             long endTimestampMillis,
             String tableIdentifier,
-            @Nullable String sourceUidPrefix) {
+            @Nullable String sourceUidPrefix,
+            @Nullable Integer scanParallelism) {
         return new PscDynamicSource(
                 physicalDataType,
                 keyDecodingFormat,
@@ -414,7 +420,8 @@ public class PscDynamicTableFactory
                 endTimestampMillis,
                 false,
                 tableIdentifier,
-                sourceUidPrefix);
+                sourceUidPrefix,
+                scanParallelism);
     }
 
     protected PscDynamicSink creatPscTableSink(
