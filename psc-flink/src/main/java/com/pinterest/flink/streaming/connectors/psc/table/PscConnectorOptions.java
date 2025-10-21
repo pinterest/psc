@@ -109,7 +109,15 @@ public class PscConnectorOptions {
 
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
-    public static final ConfigOption<Integer> SCAN_PARALLELISM = FactoryUtil.SCAN_PARALLELISM;
+    public static final ConfigOption<Integer> SCAN_PARALLELISM =
+            ConfigOptions.key("scan.parallelism")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Defines a custom parallelism for the scan source. "
+                                    + "By default, if this option is not defined, the planner will derive the parallelism "
+                                    + "based on the number of partitions. When this option is set, the specified "
+                                    + "parallelism will be used and partitions will be distributed across all readers.");
 
     // --------------------------------------------------------------------------------------------
     // Psc specific options
