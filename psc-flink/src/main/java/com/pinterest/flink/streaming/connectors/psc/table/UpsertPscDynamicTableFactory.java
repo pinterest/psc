@@ -62,6 +62,8 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.INFER_SCAN_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.INFER_SCAN_PARALLELISM_MAX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_INTERVAL;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_MAX_ROWS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
@@ -114,6 +116,8 @@ public class UpsertPscDynamicTableFactory
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
         options.add(SCAN_PARALLELISM);
+        options.add(INFER_SCAN_PARALLELISM);
+        options.add(INFER_SCAN_PARALLELISM_MAX);
         options.add(DELIVERY_GUARANTEE);
         options.add(TRANSACTIONAL_ID_PREFIX);
         options.add(SOURCE_UID_PREFIX);
@@ -152,7 +156,28 @@ public class UpsertPscDynamicTableFactory
 
         final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
 
-        final Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
+        // Determine scan parallelism with priority:
+        // 1. Explicit scan.parallelism (if set)
+        // 2. Inferred parallelism (if inference enabled)
+        // 3. null (Flink default)
+        Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
+        
+        if (scanParallelism == null && tableOptions.get(INFER_SCAN_PARALLELISM)) {
+            // Use lazy supplier to avoid metadata calls unless needed
+            final List<String> topicUris = getSourceTopicUris(tableOptions);
+            final Properties props = properties;
+            scanParallelism = PscTableSourceUtil.inferParallelism(
+                tableOptions,
+                () -> {
+                    if (topicUris == null || topicUris.isEmpty()) {
+                        return 1;
+                    }
+                    // Extract cluster URI from first topic URI for metadata client
+                    String firstTopicUri = topicUris.get(0);
+                    String clusterUri = extractClusterUri(firstTopicUri);
+                    return PscTableSourceUtil.getPartitionCount(props, topicUris, clusterUri);
+                });
+        }
 
         return new PscDynamicSource(
                 context.getPhysicalRowDataType(),
@@ -432,5 +457,17 @@ public class UpsertPscDynamicTableFactory
         public int hashCode() {
             return Objects.hash(innerEncodingFormat);
         }
+    }
+
+    /**
+     * Extract cluster URI from a full topic URI.
+     * For example: "kafka://cluster-name/topic-name" -> "kafka://cluster-name"
+     */
+    private static String extractClusterUri(String topicUri) {
+        int lastSlash = topicUri.lastIndexOf('/');
+        if (lastSlash > 0) {
+            return topicUri.substring(0, lastSlash);
+        }
+        return topicUri;
     }
 }

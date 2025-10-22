@@ -119,6 +119,23 @@ public class PscConnectorOptions {
                                     + "based on the number of partitions. When this option is set, the specified "
                                     + "parallelism will be used and partitions will be distributed across all readers.");
 
+    public static final ConfigOption<Boolean> INFER_SCAN_PARALLELISM =
+            ConfigOptions.key("scan.parallelism.infer")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "If false, parallelism is set by 'scan.parallelism' or Flink's default.\n"
+                                    + "If true, source parallelism is inferred from topic partition count. "
+                                    + "This option is ignored if 'scan.parallelism' is explicitly set.");
+
+    public static final ConfigOption<Integer> INFER_SCAN_PARALLELISM_MAX =
+            ConfigOptions.key("scan.parallelism.infer.max")
+                    .intType()
+                    .defaultValue(128)
+                    .withDescription(
+                            "Maximum inferred parallelism for scan operator when 'scan.parallelism.infer' is enabled. "
+                                    + "The actual parallelism will be min(partition_count, this_value).");
+
     // --------------------------------------------------------------------------------------------
     // Psc specific options
     // --------------------------------------------------------------------------------------------
