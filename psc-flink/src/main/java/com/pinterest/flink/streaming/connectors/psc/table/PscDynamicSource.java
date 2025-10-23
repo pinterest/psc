@@ -310,8 +310,15 @@ public class PscDynamicSource
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
                 
                 // Apply explicit parallelism if configured
+                // Note: Setting parallelism higher than partition count requires rebalance()
+                // to distribute data across all downstream operators, otherwise excess
+                // source operators remain idle due to FLIP-27 split assignment.
+                DataStream<RowData> resultStream = sourceStream;
                 if (sourceParallelism != null && sourceParallelism > 0) {
                     sourceStream.setParallelism(sourceParallelism);
+                    // Add rebalance to redistribute data across all parallel instances
+                    // This ensures downstream operators can utilize the increased parallelism
+                    resultStream = sourceStream.rebalance();
                 }
                 
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
@@ -319,11 +326,11 @@ public class PscDynamicSource
                     final String trimmedPrefix = sourceUidPrefix.trim();
                     if (!trimmedPrefix.isEmpty()) {
                         sourceStream.uid(trimmedPrefix + ":" + PSC_TRANSFORMATION + ":" + tableIdentifier);
-                        return sourceStream;
+                        return resultStream;
                     }
                 }
                 providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
-                return sourceStream;
+                return resultStream;
             }
 
             @Override
