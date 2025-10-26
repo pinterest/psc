@@ -169,8 +169,8 @@ public class PscDynamicSource
     /** Optional user-provided UID prefix for stabilizing operator UIDs across DAG changes. */
     protected final @Nullable String sourceUidPrefix;
 
-    /** Optional parallelism for the source operator. If not set, uses Flink's default. */
-    protected final @Nullable Integer sourceParallelism;
+    /** Enable rescale() shuffle to redistribute data across downstream operators. */
+    protected final boolean enableRescale;
 
     public PscDynamicSource(
             DataType physicalDataType,
@@ -191,7 +191,7 @@ public class PscDynamicSource
             boolean upsertMode,
             String tableIdentifier,
             @Nullable String sourceUidPrefix,
-            @Nullable Integer sourceParallelism) {
+            boolean enableRescale) {
         // Format attributes
         this.physicalDataType =
                 Preconditions.checkNotNull(
@@ -232,12 +232,12 @@ public class PscDynamicSource
         this.upsertMode = upsertMode;
         this.tableIdentifier = tableIdentifier;
         this.sourceUidPrefix = sourceUidPrefix;
-        this.sourceParallelism = sourceParallelism;
+        this.enableRescale = enableRescale;
     }
 
     /**
-     * Backward-compatible constructor without UID prefix and parallelism. Delegates to the full
-     * constructor with null {@code sourceUidPrefix} and {@code sourceParallelism}.
+     * Backward-compatible constructor without UID prefix and rescale. Delegates to the full
+     * constructor with null {@code sourceUidPrefix} and false {@code enableRescale}.
      */
     public PscDynamicSource(
             DataType physicalDataType,
@@ -276,7 +276,7 @@ public class PscDynamicSource
                 upsertMode,
                 tableIdentifier,
                 null,
-                null);
+                false);
     }
 
     @Override
@@ -309,16 +309,11 @@ public class PscDynamicSource
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
                 
-                // Apply explicit parallelism if configured
-                // Note: Setting parallelism higher than partition count requires rebalance()
-                // to distribute data across all downstream operators, otherwise excess
-                // source operators remain idle due to FLIP-27 split assignment.
+                // Let Flink handle source parallelism automatically (defaults to partition count)
+                // Only add rescale if explicitly enabled to redistribute data across downstream operators
                 DataStream<RowData> resultStream = sourceStream;
-                if (sourceParallelism != null && sourceParallelism > 0) {
-                    sourceStream.setParallelism(sourceParallelism);
-                    // Add rebalance to redistribute data across all parallel instances
-                    // This ensures downstream operators can utilize the increased parallelism
-                    resultStream = sourceStream.rebalance();
+                if (enableRescale) {
+                    resultStream = sourceStream.rescale();
                 }
                 
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
@@ -416,7 +411,7 @@ public class PscDynamicSource
                         upsertMode,
                         tableIdentifier,
                         sourceUidPrefix,
-                        sourceParallelism);
+                        enableRescale);
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;
@@ -457,7 +452,7 @@ public class PscDynamicSource
                 && Objects.equals(upsertMode, that.upsertMode)
                 && Objects.equals(tableIdentifier, that.tableIdentifier)
                 && Objects.equals(sourceUidPrefix, that.sourceUidPrefix)
-                && Objects.equals(sourceParallelism, that.sourceParallelism)
+                && enableRescale == that.enableRescale
                 && Objects.equals(watermarkStrategy, that.watermarkStrategy);
     }
 
@@ -484,7 +479,7 @@ public class PscDynamicSource
                 upsertMode,
                 tableIdentifier,
                 sourceUidPrefix,
-                sourceParallelism,
+                enableRescale,
                 watermarkStrategy);
     }
 

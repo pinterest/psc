@@ -1247,110 +1247,17 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
-    public void testTableSourceWithParallelism() {
-        final Map<String, String> modifiedOptions =
-                getModifiedOptions(
-                        getBasicSourceOptions(), options -> options.put("scan.parallelism", "10"));
-        
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
-        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
-        
-        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
-        
-        // Verify the parallelism is stored in the source
-        assertThat(pscSource.sourceParallelism).isEqualTo(10);
-        
-        // Verify that the source equals the expected source with parallelism set
-        final Map<PscTopicUriPartition, Long> specificOffsets = new HashMap<>();
-        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_0), OFFSET_0);
-        specificOffsets.put(new PscTopicUriPartition(TOPIC_URI, PARTITION_1), OFFSET_1);
-
-        final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat =
-                new DecodingFormatMock(",", true);
-
-        final PscDynamicSource expectedPscSource =
-                new PscDynamicSource(
-                        SCHEMA_DATA_TYPE,
-                        null,
-                        valueDecodingFormat,
-                        new int[0],
-                        new int[] {0, 1, 2},
-                        null,
-                        Collections.singletonList(TOPIC_URI),
-                        null,
-                        PSC_SOURCE_PROPERTIES,
-                        StartupMode.SPECIFIC_OFFSETS,
-                        specificOffsets,
-                        0,
-                        BoundedMode.UNBOUNDED,
-                        Collections.emptyMap(),
-                        0,
-                        false,
-                        FactoryMocks.IDENTIFIER.asSummaryString(),
-                        null,
-                        10);
-        assertThat(pscSource).isEqualTo(expectedPscSource);
-    }
-
-    @Test
-    public void testTableSourceWithInferredParallelismDisabledByDefault() {
-        // Test that inference is disabled by default (backward compatibility)
-        final Map<String, String> modifiedOptions = getBasicSourceOptions();
-        
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
-        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
-        
-        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
-        
-        // Without explicit parallelism or inference enabled, should be null
-        assertThat(pscSource.sourceParallelism).isNull();
-    }
-
-    @Test
-    public void testTableSourceExplicitParallelismOverridesInference() {
-        // Test that explicit parallelism takes priority over inference
-        // Even with inference enabled, explicit value should be used and no metadata calls made
+    public void testTableSourceWithRescale() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
                         getBasicSourceOptions(),
-                        options -> {
-                            options.put("scan.parallelism", "20");
-                            options.put("scan.parallelism.infer", "true");
-                            options.put("scan.parallelism.infer.max", "50");
-                        });
+                        options -> options.put("scan.enable-rescale", "true"));
         
         final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
         assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
         
         final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
-        
-        // Verify that explicit parallelism is used, not inferred
-        assertThat(pscSource.sourceParallelism).isEqualTo(20);
-    }
-
-    @Test
-    public void testTableSourceInferenceConfigOptionsAccepted() {
-        // Test that inference config options are recognized (doesn't validate inference logic)
-        // This test ensures the options are registered but doesn't trigger actual metadata calls
-        final Map<String, String> modifiedOptions =
-                getModifiedOptions(
-                        getBasicSourceOptions(),
-                        options -> {
-                            // Use explicit parallelism to avoid metadata calls in unit test
-                            options.put("scan.parallelism", "15");
-                            // But also set inference options to verify they're accepted
-                            options.put("scan.parallelism.infer", "false");
-                            options.put("scan.parallelism.infer.max", "100");
-                        });
-        
-        // Should not throw validation exception
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
-        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
-        
-        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
-        
-        // Explicit parallelism should be used
-        assertThat(pscSource.sourceParallelism).isEqualTo(15);
+        assertThat(pscSource.enableRescale).isTrue();
     }
 
     @Test
@@ -1838,7 +1745,7 @@ public class PscDynamicTableFactoryTest {
                 false,
                 FactoryMocks.IDENTIFIER.asSummaryString(),
                 null,
-                null);
+                false);
     }
 
     private static PscDynamicSink createExpectedSink(

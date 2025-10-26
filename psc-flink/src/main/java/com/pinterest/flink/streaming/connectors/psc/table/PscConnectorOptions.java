@@ -109,32 +109,15 @@ public class PscConnectorOptions {
 
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
-    public static final ConfigOption<Integer> SCAN_PARALLELISM =
-            ConfigOptions.key("scan.parallelism")
-                    .intType()
-                    .noDefaultValue()
-                    .withDescription(
-                            "Defines a custom parallelism for the scan source. "
-                                    + "By default, if this option is not defined, the planner will derive the parallelism "
-                                    + "based on the number of partitions. When this option is set, the specified "
-                                    + "parallelism will be used and partitions will be distributed across all readers.");
-
-    public static final ConfigOption<Boolean> INFER_SCAN_PARALLELISM =
-            ConfigOptions.key("scan.parallelism.infer")
+    public static final ConfigOption<Boolean> SCAN_ENABLE_RESCALE =
+            ConfigOptions.key("scan.enable-rescale")
                     .booleanType()
                     .defaultValue(false)
                     .withDescription(
-                            "If false, parallelism is set by 'scan.parallelism' or Flink's default.\n"
-                                    + "If true, source parallelism is inferred from topic partition count. "
-                                    + "This option is ignored if 'scan.parallelism' is explicitly set.");
-
-    public static final ConfigOption<Integer> INFER_SCAN_PARALLELISM_MAX =
-            ConfigOptions.key("scan.parallelism.infer.max")
-                    .intType()
-                    .defaultValue(128)
-                    .withDescription(
-                            "Maximum inferred parallelism for scan operator when 'scan.parallelism.infer' is enabled. "
-                                    + "The actual parallelism will be min(partition_count, this_value).");
+                            "Enable rescale() shuffle to redistribute data when topic partitions " +
+                            "are fewer than downstream parallelism. This allows downstream operators " +
+                            "to utilize higher parallelism than partition count. Default: false to " +
+                            "avoid unnecessary shuffle overhead when partitions >= pipeline parallelism.");
 
     // --------------------------------------------------------------------------------------------
     // Psc specific options
