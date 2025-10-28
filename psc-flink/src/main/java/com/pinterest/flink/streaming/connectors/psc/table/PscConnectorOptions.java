@@ -114,10 +114,12 @@ public class PscConnectorOptions {
                     .booleanType()
                     .defaultValue(false)
                     .withDescription(
-                            "Enable rescale() shuffle to redistribute data when topic partitions " +
-                            "are fewer than downstream parallelism. This allows downstream operators " +
-                            "to utilize higher parallelism than partition count. Default: false to " +
-                            "avoid unnecessary shuffle overhead when partitions >= pipeline parallelism.");
+                            "Enable smart rescale() to redistribute data when needed. When enabled, the connector " +
+                            "automatically compares the configured pipeline parallelism (table.exec.resource.default-parallelism) " +
+                            "with the topic's partition count. Rescale is applied ONLY when parallelism > partition count, " +
+                            "avoiding unnecessary shuffle overhead otherwise. This allows downstream operators to fully utilize " +
+                            "higher parallelism than the source partition count. " +
+                            "Default: false (no automatic shuffling).");
 
     // --------------------------------------------------------------------------------------------
     // Psc specific options
