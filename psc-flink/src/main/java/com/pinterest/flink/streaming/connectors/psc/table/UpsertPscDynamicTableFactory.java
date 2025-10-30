@@ -19,21 +19,13 @@
 package com.pinterest.flink.streaming.connectors.psc.table;
 
 import com.pinterest.flink.streaming.connectors.psc.config.StartupMode;
-import com.pinterest.psc.common.TopicUri;
-import com.pinterest.psc.config.PscConfiguration;
-import com.pinterest.psc.metadata.TopicUriMetadata;
-import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.flink.api.common.serialization.DeserializationSchema;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.table.api.ValidationException;
-import org.apache.flink.table.api.config.ExecutionConfigOptions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.connector.ChangelogMode;
@@ -92,8 +84,6 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
         implements DynamicTableSourceFactory, DynamicTableSinkFactory {
-
-    private static final Logger LOG = LoggerFactory.getLogger(UpsertPscDynamicTableFactory.class);
 
     public static final String IDENTIFIER = "upsert-psc";
 
@@ -162,7 +152,7 @@ public class UpsertPscDynamicTableFactory
         final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
 
         // Determine if rescale should be applied based on parallelism vs partition count
-        final boolean shouldRescale = shouldApplyRescale(
+        final boolean shouldRescale = PscRescaleUtil.shouldApplyRescale(
                 tableOptions,
                 context.getConfiguration(),
                 getSourceTopicUris(tableOptions),
@@ -448,125 +438,4 @@ public class UpsertPscDynamicTableFactory
         }
     }
 
-    // --------------------------------------------------------------------------------------------
-    // Helper methods for smart rescale logic
-    // --------------------------------------------------------------------------------------------
-
-    /**
-     * Determines whether rescale() should be applied based on:
-     * 1. scan.enable-rescale flag must be true
-     * 2. Global parallelism (table.exec.resource.default-parallelism) > partition count
-     * 
-     * This automatically avoids unnecessary shuffle overhead when partitions >= parallelism.
-     */
-    private boolean shouldApplyRescale(
-            ReadableConfig tableOptions,
-            ReadableConfig globalConfig,
-            List<String> topicUris,
-            Properties pscProperties) {
-        
-        // First check if rescale is enabled by user
-        if (!tableOptions.get(SCAN_ENABLE_RESCALE)) {
-            return false;
-        }
-
-        // Get the global default parallelism
-        int defaultParallelism = globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
-        
-        // If parallelism is -1 (not set) or <= 0, cannot determine, so don't apply rescale
-        if (defaultParallelism <= 0) {
-            LOG.info("scan.enable-rescale is true, but table.exec.resource.default-parallelism is {} (not set). " +
-                    "Rescale will not be applied. Set a positive parallelism value to enable automatic rescale.", 
-                    defaultParallelism);
-            return false;
-        }
-
-        // Query partition count from PSC metadata
-        int partitionCount = getTopicPartitionCount(topicUris, pscProperties);
-        
-        // If partition count couldn't be determined, don't apply rescale (fail-safe)
-        if (partitionCount <= 0) {
-            LOG.warn("scan.enable-rescale is true, but partition count could not be determined. " +
-                    "Rescale will not be applied.");
-            return false;
-        }
-
-        // Apply rescale only if user-configured parallelism exceeds partition count
-        boolean shouldRescale = defaultParallelism > partitionCount;
-        
-        if (shouldRescale) {
-            LOG.info("Applying rescale(): configured parallelism ({}) > partition count ({}). " +
-                    "Data will be redistributed to fully utilize downstream operators.",
-                    defaultParallelism, partitionCount);
-        } else {
-            LOG.info("Skipping rescale(): configured parallelism ({}) <= partition count ({}). " +
-                    "No shuffle needed as source will naturally match or exceed desired parallelism.",
-                    defaultParallelism, partitionCount);
-        }
-        
-        return shouldRescale;
-    }
-
-    /**
-     * Queries the minimum partition count across all specified topic URIs.
-     * Returns -1 if partition count cannot be determined.
-     */
-    private int getTopicPartitionCount(List<String> topicUris, Properties pscProperties) {
-        if (topicUris == null || topicUris.isEmpty()) {
-            LOG.warn("No topic URIs provided for partition count query.");
-            return -1;
-        }
-
-        PscMetadataClient metadataClient = null;
-        try {
-            // Create PSC configuration from properties
-            PscConfiguration pscConfig = new PscConfiguration();
-            for (String key : pscProperties.stringPropertyNames()) {
-                pscConfig.setProperty(key, pscProperties.getProperty(key));
-            }
-            
-            metadataClient = new PscMetadataClient(pscConfig);
-            
-            int minPartitionCount = Integer.MAX_VALUE;
-            
-            for (String topicUriStr : topicUris) {
-                try {
-                    TopicUri topicUri = TopicUri.validate(topicUriStr);
-                    
-                    // Query metadata for this topic
-                    java.util.Map<TopicUri, TopicUriMetadata> metadataMap = metadataClient.describeTopicUris(
-                            topicUri, // cluster URI (can use full topic URI)
-                            java.util.Collections.singleton(topicUri),
-                            java.time.Duration.ofSeconds(10));
-                    
-                    TopicUriMetadata metadata = metadataMap.get(topicUri);
-                    if (metadata != null) {
-                        int partitionCount = metadata.getTopicUriPartitions().size();
-                        LOG.debug("Topic {} has {} partitions", topicUriStr, partitionCount);
-                        minPartitionCount = Math.min(minPartitionCount, partitionCount);
-                    } else {
-                        LOG.warn("No metadata returned for topic {}", topicUriStr);
-                    }
-                } catch (Exception e) {
-                    LOG.warn("Failed to query partition count for topic {}: {}", 
-                            topicUriStr, e.getMessage());
-                }
-            }
-            
-            return (minPartitionCount == Integer.MAX_VALUE) ? -1 : minPartitionCount;
-            
-        } catch (Exception e) {
-            LOG.warn("Failed to create PSC metadata client or query partition count: {}", 
-                    e.getMessage());
-            return -1;
-        } finally {
-            if (metadataClient != null) {
-                try {
-                    metadataClient.close();
-                } catch (Exception e) {
-                    LOG.warn("Failed to close PSC metadata client: {}", e.getMessage());
-                }
-            }
-        }
-    }
 }
