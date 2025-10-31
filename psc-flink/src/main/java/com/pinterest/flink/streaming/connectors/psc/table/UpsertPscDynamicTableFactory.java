@@ -80,6 +80,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateScanBoundedMode;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateConsumerClientOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateProducerClientOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.shouldApplyRescale;
 
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
@@ -152,7 +153,7 @@ public class UpsertPscDynamicTableFactory
         final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
 
         // Determine if rescale should be applied based on parallelism vs partition count
-        final boolean shouldRescale = PscRescaleUtil.shouldApplyRescale(
+        final boolean shouldRescale = shouldApplyRescale(
                 tableOptions,
                 context.getConfiguration(),
                 getSourceTopicUris(tableOptions),

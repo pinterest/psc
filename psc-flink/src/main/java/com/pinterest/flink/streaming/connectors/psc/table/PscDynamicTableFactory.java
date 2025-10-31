@@ -96,6 +96,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateDeliveryGuarantee;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSinkOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSourceOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.shouldApplyRescale;
 
 /**
  * Factory for creating configured instances of {@link PscDynamicSource} and {@link
@@ -215,7 +216,7 @@ public class PscDynamicTableFactory
         final String keyPrefix = tableOptions.getOptional(KEY_FIELDS_PREFIX).orElse(null);
 
         // Determine if rescale should be applied based on parallelism vs partition count
-        final boolean shouldRescale = PscRescaleUtil.shouldApplyRescale(
+        final boolean shouldRescale = shouldApplyRescale(
                 tableOptions,
                 context.getConfiguration(),
                 getSourceTopicUris(tableOptions),

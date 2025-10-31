@@ -35,14 +35,14 @@ import java.util.Properties;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
 
 /**
- * Utility class for smart rescale decision logic shared between PSC table factories.
+ * Common utility functions for PSC dynamic table source and sink.
  * 
- * <p>This class provides methods to determine whether rescale() should be applied to a PSC source
- * based on comparing the configured pipeline parallelism with the actual topic partition count.
+ * <p>This class provides shared utility methods used across PSC table factories,
+ * including smart rescale decision logic, metadata queries, and other common operations.
  */
-public class PscRescaleUtil {
+public class PscTableCommonUtils {
 
-    private static final Logger LOG = LoggerFactory.getLogger(PscRescaleUtil.class);
+    private static final Logger LOG = LoggerFactory.getLogger(PscTableCommonUtils.class);
 
     /**
      * Determines whether rescale() should be applied based on:
@@ -175,8 +175,9 @@ public class PscRescaleUtil {
     }
 
     /** Private constructor to prevent instantiation. */
-    private PscRescaleUtil() {
+    private PscTableCommonUtils() {
         throw new UnsupportedOperationException("Utility class should not be instantiated");
     }
 }
+
 
