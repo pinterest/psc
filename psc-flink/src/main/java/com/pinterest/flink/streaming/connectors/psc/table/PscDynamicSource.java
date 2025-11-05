@@ -169,6 +169,9 @@ public class PscDynamicSource
     /** Optional user-provided UID prefix for stabilizing operator UIDs across DAG changes. */
     protected final @Nullable String sourceUidPrefix;
 
+    /** Enable rescale() shuffle to redistribute data across downstream operators. */
+    protected final boolean enableRescale;
+
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -187,7 +190,8 @@ public class PscDynamicSource
             long boundedTimestampMillis,
             boolean upsertMode,
             String tableIdentifier,
-            @Nullable String sourceUidPrefix) {
+            @Nullable String sourceUidPrefix,
+            boolean enableRescale) {
         // Format attributes
         this.physicalDataType =
                 Preconditions.checkNotNull(
@@ -228,11 +232,12 @@ public class PscDynamicSource
         this.upsertMode = upsertMode;
         this.tableIdentifier = tableIdentifier;
         this.sourceUidPrefix = sourceUidPrefix;
+        this.enableRescale = enableRescale;
     }
 
     /**
-     * Backward-compatible constructor without UID prefix. Delegates to the full constructor with a
-     * null {@code sourceUidPrefix}.
+     * Backward-compatible constructor without UID prefix and rescale. Delegates to the full
+     * constructor with null {@code sourceUidPrefix} and false {@code enableRescale}.
      */
     public PscDynamicSource(
             DataType physicalDataType,
@@ -270,7 +275,8 @@ public class PscDynamicSource
                 boundedTimestampMillis,
                 upsertMode,
                 tableIdentifier,
-                null);
+                null,
+                false);
     }
 
     @Override
@@ -302,16 +308,24 @@ public class PscDynamicSource
                 DataStreamSource<RowData> sourceStream =
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
+                
+                // Let Flink handle source parallelism automatically (defaults to partition count)
+                // Only add rescale if explicitly enabled to redistribute data across downstream operators
+                DataStream<RowData> resultStream = sourceStream;
+                if (enableRescale) {
+                    resultStream = sourceStream.rescale();
+                }
+                
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
                 if (sourceUidPrefix != null) {
                     final String trimmedPrefix = sourceUidPrefix.trim();
                     if (!trimmedPrefix.isEmpty()) {
                         sourceStream.uid(trimmedPrefix + ":" + PSC_TRANSFORMATION + ":" + tableIdentifier);
-                        return sourceStream;
+                        return resultStream;
                     }
                 }
                 providerContext.generateUid(PSC_TRANSFORMATION).ifPresent(sourceStream::uid);
-                return sourceStream;
+                return resultStream;
             }
 
             @Override
@@ -396,7 +410,8 @@ public class PscDynamicSource
                         boundedTimestampMillis,
                         upsertMode,
                         tableIdentifier,
-                        sourceUidPrefix);
+                        sourceUidPrefix,
+                        enableRescale);
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;
@@ -436,6 +451,8 @@ public class PscDynamicSource
                 && boundedTimestampMillis == that.boundedTimestampMillis
                 && Objects.equals(upsertMode, that.upsertMode)
                 && Objects.equals(tableIdentifier, that.tableIdentifier)
+                && Objects.equals(sourceUidPrefix, that.sourceUidPrefix)
+                && enableRescale == that.enableRescale
                 && Objects.equals(watermarkStrategy, that.watermarkStrategy);
     }
 
@@ -461,6 +478,8 @@ public class PscDynamicSource
                 boundedTimestampMillis,
                 upsertMode,
                 tableIdentifier,
+                sourceUidPrefix,
+                enableRescale,
                 watermarkStrategy);
     }
 

@@ -75,6 +75,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_TOPIC_PARTITION_DISCOVERY;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARTITIONER;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
@@ -95,6 +96,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateDeliveryGuarantee;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSinkOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSourceOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.shouldApplyRescale;
 
 /**
  * Factory for creating configured instances of {@link PscDynamicSource} and {@link
@@ -149,6 +151,7 @@ public class PscDynamicTableFactory
         options.add(SCAN_BOUNDED_MODE);
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(SCAN_ENABLE_RESCALE);
         options.add(SOURCE_UID_PREFIX);
         return options;
     }
@@ -212,6 +215,13 @@ public class PscDynamicTableFactory
 
         final String keyPrefix = tableOptions.getOptional(KEY_FIELDS_PREFIX).orElse(null);
 
+        // Determine if rescale should be applied based on parallelism vs partition count
+        final boolean shouldRescale = shouldApplyRescale(
+                tableOptions,
+                context.getConfiguration(),
+                getSourceTopicUris(tableOptions),
+                properties);
+
         return createPscTableSource(
                 physicalDataType,
                 keyDecodingFormat.orElse(null),
@@ -229,7 +239,8 @@ public class PscDynamicTableFactory
                 boundedOptions.specificOffsets,
                 boundedOptions.boundedTimestampMillis,
                 context.getObjectIdentifier().asSummaryString(),
-                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null));
+                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
+                shouldRescale);
     }
 
     @Override
@@ -395,7 +406,8 @@ public class PscDynamicTableFactory
             Map<PscTopicUriPartition, Long> specificEndOffsets,
             long endTimestampMillis,
             String tableIdentifier,
-            @Nullable String sourceUidPrefix) {
+            @Nullable String sourceUidPrefix,
+            boolean enableRescale) {
         return new PscDynamicSource(
                 physicalDataType,
                 keyDecodingFormat,
@@ -414,7 +426,8 @@ public class PscDynamicTableFactory
                 endTimestampMillis,
                 false,
                 tableIdentifier,
-                sourceUidPrefix);
+                sourceUidPrefix,
+                enableRescale);
     }
 
     protected PscDynamicSink creatPscTableSink(
