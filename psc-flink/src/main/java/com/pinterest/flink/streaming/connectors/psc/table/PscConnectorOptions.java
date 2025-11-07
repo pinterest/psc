@@ -121,6 +121,19 @@ public class PscConnectorOptions {
                             "higher parallelism than the source partition count. " +
                             "Default: false (no automatic shuffling).");
 
+    public static final ConfigOption<Double> SCAN_RATE_LIMIT =
+            ConfigOptions.key("scan.rate-limit.records-per-second")
+                    .doubleType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Optional rate limit for the source in records per second. " +
+                            "When specified, the source will throttle consumption to not exceed this rate. " +
+                            "The rate is distributed evenly across all parallel source subtasks. " +
+                            "For example, with a rate limit of 1000 and parallelism of 4, each subtask will " +
+                            "process approximately 250 records/second. " +
+                            "If not set, no rate limiting is applied. " +
+                            "Default: disabled.");
+
     // --------------------------------------------------------------------------------------------
     // Psc specific options
     // --------------------------------------------------------------------------------------------

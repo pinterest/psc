@@ -172,6 +172,9 @@ public class PscDynamicSource
     /** Enable rescale() shuffle to redistribute data across downstream operators. */
     protected final boolean enableRescale;
 
+    /** Optional rate limit in records per second. */
+    protected final @Nullable Double rateLimitRecordsPerSecond;
+
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -191,7 +194,8 @@ public class PscDynamicSource
             boolean upsertMode,
             String tableIdentifier,
             @Nullable String sourceUidPrefix,
-            boolean enableRescale) {
+            boolean enableRescale,
+            @Nullable Double rateLimitRecordsPerSecond) {
         // Format attributes
         this.physicalDataType =
                 Preconditions.checkNotNull(
@@ -233,6 +237,7 @@ public class PscDynamicSource
         this.tableIdentifier = tableIdentifier;
         this.sourceUidPrefix = sourceUidPrefix;
         this.enableRescale = enableRescale;
+        this.rateLimitRecordsPerSecond = rateLimitRecordsPerSecond;
     }
 
     /**
@@ -276,7 +281,8 @@ public class PscDynamicSource
                 upsertMode,
                 tableIdentifier,
                 null,
-                false);
+                false,
+                null);
     }
 
     @Override
@@ -314,6 +320,14 @@ public class PscDynamicSource
                 DataStream<RowData> resultStream = sourceStream;
                 if (enableRescale) {
                     resultStream = sourceStream.rescale();
+                }
+                
+                // Apply rate limiting if configured
+                if (rateLimitRecordsPerSecond != null && rateLimitRecordsPerSecond > 0) {
+                    resultStream = resultStream
+                            .map(new PscRateLimitMap<>(rateLimitRecordsPerSecond))
+                            .name("PscRateLimit-" + tableIdentifier)
+                            .uid("PscRateLimit-" + tableIdentifier);
                 }
                 
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
@@ -411,7 +425,8 @@ public class PscDynamicSource
                         upsertMode,
                         tableIdentifier,
                         sourceUidPrefix,
-                        enableRescale);
+                        enableRescale,
+                        rateLimitRecordsPerSecond);
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;
@@ -453,6 +468,7 @@ public class PscDynamicSource
                 && Objects.equals(tableIdentifier, that.tableIdentifier)
                 && Objects.equals(sourceUidPrefix, that.sourceUidPrefix)
                 && enableRescale == that.enableRescale
+                && Objects.equals(rateLimitRecordsPerSecond, that.rateLimitRecordsPerSecond)
                 && Objects.equals(watermarkStrategy, that.watermarkStrategy);
     }
 
@@ -480,6 +496,7 @@ public class PscDynamicSource
                 tableIdentifier,
                 sourceUidPrefix,
                 enableRescale,
+                rateLimitRecordsPerSecond,
                 watermarkStrategy);
     }
 

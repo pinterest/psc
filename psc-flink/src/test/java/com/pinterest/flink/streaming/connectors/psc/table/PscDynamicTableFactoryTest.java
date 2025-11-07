@@ -1280,6 +1280,70 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
+    public void testTableSourceWithRateLimitDisabled() {
+        // Verify default behavior - no rate limiting
+        final Map<String, String> modifiedOptions = getBasicSourceOptions();
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitEnabled() {
+        // When rate limit is configured, it should be set on the source
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.put("scan.rate-limit.records-per-second", "1000.0"));
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitAndRescale() {
+        // Verify both features can be enabled together
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("scan.enable-rescale", "true");
+                            options.put("scan.rate-limit.records-per-second", "5000.0");
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+        // Note: enableRescale depends on runtime conditions (partition count vs parallelism)
+    }
+
+    @Test
+    public void testTableSourceWithFractionalRateLimit() {
+        // Test that fractional rate limits are supported
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.put("scan.rate-limit.records-per-second", "123.45"));
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(123.45);
+    }
+
+    @Test
     public void testTableSinkAutoCompleteSchemaRegistrySubject() {
         // only format
         verifyEncoderSubject(
@@ -1764,7 +1828,8 @@ public class PscDynamicTableFactoryTest {
                 false,
                 FactoryMocks.IDENTIFIER.asSummaryString(),
                 null,
-                false);
+                false,
+                null);  // rateLimitRecordsPerSecond
     }
 
     private static PscDynamicSink createExpectedSink(

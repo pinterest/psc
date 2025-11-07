@@ -76,6 +76,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_TOPIC_PARTITION_DISCOVERY;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_RATE_LIMIT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARTITIONER;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
@@ -152,6 +153,7 @@ public class PscDynamicTableFactory
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
         options.add(SCAN_ENABLE_RESCALE);
+        options.add(SCAN_RATE_LIMIT);
         options.add(SOURCE_UID_PREFIX);
         return options;
     }
@@ -222,6 +224,17 @@ public class PscDynamicTableFactory
                 getSourceTopicUris(tableOptions),
                 properties);
 
+        // Get rate limit configuration
+        final Double rateLimitRecordsPerSecond = tableOptions.getOptional(SCAN_RATE_LIMIT).orElse(null);
+
+        // Log rate limiting configuration
+        if (rateLimitRecordsPerSecond != null && rateLimitRecordsPerSecond > 0) {
+            LOG.info("Rate limiting enabled: {} records/second (total across all subtasks)", 
+                     rateLimitRecordsPerSecond);
+        } else {
+            LOG.debug("Rate limiting disabled");
+        }
+
         return createPscTableSource(
                 physicalDataType,
                 keyDecodingFormat.orElse(null),
@@ -240,7 +253,8 @@ public class PscDynamicTableFactory
                 boundedOptions.boundedTimestampMillis,
                 context.getObjectIdentifier().asSummaryString(),
                 tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
-                shouldRescale);
+                shouldRescale,
+                rateLimitRecordsPerSecond);
     }
 
     @Override
@@ -407,7 +421,8 @@ public class PscDynamicTableFactory
             long endTimestampMillis,
             String tableIdentifier,
             @Nullable String sourceUidPrefix,
-            boolean enableRescale) {
+            boolean enableRescale,
+            @Nullable Double rateLimitRecordsPerSecond) {
         return new PscDynamicSource(
                 physicalDataType,
                 keyDecodingFormat,
@@ -427,7 +442,8 @@ public class PscDynamicTableFactory
                 false,
                 tableIdentifier,
                 sourceUidPrefix,
-                enableRescale);
+                enableRescale,
+                rateLimitRecordsPerSecond);
     }
 
     protected PscDynamicSink creatPscTableSink(
