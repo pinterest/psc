@@ -25,7 +25,6 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
@@ -61,6 +60,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_INTERVAL;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_MAX_ROWS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
@@ -80,6 +80,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateScanBoundedMode;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateConsumerClientOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateProducerClientOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.shouldApplyRescale;
 
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
@@ -112,6 +113,7 @@ public class UpsertPscDynamicTableFactory
         options.add(SCAN_BOUNDED_MODE);
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(SCAN_ENABLE_RESCALE);
         options.add(DELIVERY_GUARANTEE);
         options.add(TRANSACTIONAL_ID_PREFIX);
         options.add(SOURCE_UID_PREFIX);
@@ -150,6 +152,13 @@ public class UpsertPscDynamicTableFactory
 
         final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
 
+        // Determine if rescale should be applied based on parallelism vs partition count
+        final boolean shouldRescale = shouldApplyRescale(
+                tableOptions,
+                context.getConfiguration(),
+                getSourceTopicUris(tableOptions),
+                properties);
+
         return new PscDynamicSource(
                 context.getPhysicalRowDataType(),
                 keyDecodingFormat,
@@ -168,7 +177,8 @@ public class UpsertPscDynamicTableFactory
                 boundedOptions.boundedTimestampMillis,
                 true,
                 context.getObjectIdentifier().asSummaryString(),
-                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null));
+                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
+                shouldRescale);
     }
 
     @Override
@@ -428,4 +438,5 @@ public class UpsertPscDynamicTableFactory
             return Objects.hash(innerEncodingFormat);
         }
     }
+
 }

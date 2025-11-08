@@ -109,6 +109,18 @@ public class PscConnectorOptions {
 
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
+    public static final ConfigOption<Boolean> SCAN_ENABLE_RESCALE =
+            ConfigOptions.key("scan.enable-rescale")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Enable smart rescale() to redistribute data when needed. When enabled, the connector " +
+                            "automatically compares the configured pipeline parallelism (table.exec.resource.default-parallelism) " +
+                            "with the topic's partition count. Rescale is applied ONLY when parallelism > partition count, " +
+                            "avoiding unnecessary shuffle overhead otherwise. This allows downstream operators to fully utilize " +
+                            "higher parallelism than the source partition count. " +
+                            "Default: false (no automatic shuffling).");
+
     // --------------------------------------------------------------------------------------------
     // Psc specific options
     // --------------------------------------------------------------------------------------------
