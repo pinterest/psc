@@ -315,19 +315,32 @@ public class PscDynamicSource
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
                 
-                // Let Flink handle source parallelism automatically (defaults to partition count)
-                // Only add rescale if explicitly enabled to redistribute data across downstream operators
-                DataStream<RowData> resultStream = sourceStream;
-                if (enableRescale) {
-                    resultStream = sourceStream.rescale();
-                }
+                // Get configured global parallelism for determining rate limiter parallelism
+                int configuredParallelism = execEnv.getParallelism();
                 
-                // Apply rate limiting if configured
+                // Let Flink handle source parallelism automatically (defaults to partition count)
+                DataStream<RowData> resultStream = sourceStream;
+                
+                // Apply rate limiting BEFORE rescale if configured
+                // This ensures the rate limiter has the correct target parallelism for proper rate distribution
                 if (rateLimitRecordsPerSecond != null && rateLimitRecordsPerSecond > 0) {
+                    // If rescale is enabled, rate limiter should match downstream parallelism
+                    // Otherwise, match source parallelism to avoid unnecessary operator overhead
+                    int rateLimiterParallelism = enableRescale 
+                            ? configuredParallelism 
+                            : sourceStream.getParallelism();
+                    
                     resultStream = resultStream
                             .map(new PscRateLimitMap<>(rateLimitRecordsPerSecond))
+                            .setParallelism(rateLimiterParallelism)
                             .name("PscRateLimit-" + tableIdentifier)
                             .uid("PscRateLimit-" + tableIdentifier);
+                }
+                
+                // Apply rescale AFTER rate limiting to redistribute data to downstream operators
+                // This is only applied when parallelism > partition count to avoid unnecessary shuffle
+                if (enableRescale) {
+                    resultStream = resultStream.rescale();
                 }
                 
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
