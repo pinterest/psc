@@ -175,6 +175,9 @@ public class PscDynamicSource
     /** Optional rate limit in records per second. */
     protected final @Nullable Double rateLimitRecordsPerSecond;
 
+    /** Optional explicit source parallelism from scan.parallelism configuration. */
+    protected final @Nullable Integer scanParallelism;
+
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -195,7 +198,8 @@ public class PscDynamicSource
             String tableIdentifier,
             @Nullable String sourceUidPrefix,
             boolean enableRescale,
-            @Nullable Double rateLimitRecordsPerSecond) {
+            @Nullable Double rateLimitRecordsPerSecond,
+            @Nullable Integer scanParallelism) {
         // Format attributes
         this.physicalDataType =
                 Preconditions.checkNotNull(
@@ -238,6 +242,7 @@ public class PscDynamicSource
         this.sourceUidPrefix = sourceUidPrefix;
         this.enableRescale = enableRescale;
         this.rateLimitRecordsPerSecond = rateLimitRecordsPerSecond;
+        this.scanParallelism = scanParallelism;
     }
 
     /**
@@ -282,6 +287,7 @@ public class PscDynamicSource
                 tableIdentifier,
                 null,
                 false,
+                null,
                 null);
     }
 
@@ -315,19 +321,34 @@ public class PscDynamicSource
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
                 
-                // Get configured global parallelism for determining rate limiter parallelism
-                int configuredParallelism = execEnv.getParallelism();
+                // Source parallelism is determined by partition count (Flink's default for Kafka-like sources)
+                // We do NOT set it explicitly even if scan.parallelism is configured, because:
+                // - A Kafka source can only have as many active subtasks as there are partitions
+                // - Setting higher parallelism would create idle subtasks
+                // - Instead, we use rescale() to redistribute data to the intended downstream parallelism
                 
-                // Let Flink handle source parallelism automatically (defaults to partition count)
                 DataStream<RowData> resultStream = sourceStream;
                 
-                // Apply rate limiting BEFORE rescale if configured
-                // This ensures the rate limiter has the correct target parallelism for proper rate distribution
+                // Determine the intended downstream parallelism for rate limiting
+                // This is scan.parallelism if set, otherwise global default parallelism
+                int intendedParallelism = scanParallelism != null 
+                        ? scanParallelism 
+                        : execEnv.getParallelism();
+                
+                // Apply rescale FIRST if enabled
+                // This redistributes data from source parallelism (= partition count) to intended parallelism
+                // Ensures all downstream subtasks (including rate limiters) receive traffic
+                if (enableRescale) {
+                    resultStream = resultStream.rescale();
+                }
+                
+                // Apply rate limiting AFTER rescale if configured
+                // Rate limiter parallelism must match the actual parallelism of incoming data:
+                // - If rescale enabled: use intendedParallelism (all subtasks are active after rescale)
+                // - If rescale disabled: use source parallelism (rate limiter stays with source)
                 if (rateLimitRecordsPerSecond != null && rateLimitRecordsPerSecond > 0) {
-                    // If rescale is enabled, rate limiter should match downstream parallelism
-                    // Otherwise, match source parallelism to avoid unnecessary operator overhead
                     int rateLimiterParallelism = enableRescale 
-                            ? configuredParallelism 
+                            ? intendedParallelism 
                             : sourceStream.getParallelism();
                     
                     resultStream = resultStream
@@ -335,12 +356,6 @@ public class PscDynamicSource
                             .setParallelism(rateLimiterParallelism)
                             .name("PscRateLimit-" + tableIdentifier)
                             .uid("PscRateLimit-" + tableIdentifier);
-                }
-                
-                // Apply rescale AFTER rate limiting to redistribute data to downstream operators
-                // This is only applied when parallelism > partition count to avoid unnecessary shuffle
-                if (enableRescale) {
-                    resultStream = resultStream.rescale();
                 }
                 
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
@@ -439,7 +454,8 @@ public class PscDynamicSource
                         tableIdentifier,
                         sourceUidPrefix,
                         enableRescale,
-                        rateLimitRecordsPerSecond);
+                        rateLimitRecordsPerSecond,
+                        scanParallelism);
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;
@@ -482,6 +498,7 @@ public class PscDynamicSource
                 && Objects.equals(sourceUidPrefix, that.sourceUidPrefix)
                 && enableRescale == that.enableRescale
                 && Objects.equals(rateLimitRecordsPerSecond, that.rateLimitRecordsPerSecond)
+                && Objects.equals(scanParallelism, that.scanParallelism)
                 && Objects.equals(watermarkStrategy, that.watermarkStrategy);
     }
 
@@ -510,6 +527,7 @@ public class PscDynamicSource
                 sourceUidPrefix,
                 enableRescale,
                 rateLimitRecordsPerSecond,
+                scanParallelism,
                 watermarkStrategy);
     }
 

@@ -27,6 +27,7 @@ import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -47,35 +48,48 @@ public class PscTableCommonUtils {
     /**
      * Determines whether rescale() should be applied based on:
      * 1. scan.enable-rescale flag must be true
-     * 2. Global parallelism (table.exec.resource.default-parallelism) > partition count
+     * 2. Effective parallelism (scan.parallelism or global default) > partition count
      * 
-     * <p>This automatically avoids unnecessary shuffle overhead when partitions >= parallelism.
+     * <p>When scan.parallelism is set, it takes precedence over global default for
+     * rescale decision logic. This ensures rescale is only applied when the user's
+     * intended source parallelism exceeds partition count.
      *
      * @param tableOptions User's table configuration options
      * @param globalConfig Global Flink configuration
      * @param topicUris List of topic URIs to query for partition counts
      * @param pscProperties PSC properties for metadata client connection
+     * @param scanParallelism Optional explicit scan.parallelism configuration
      * @return true if rescale should be applied, false otherwise
      */
     public static boolean shouldApplyRescale(
             ReadableConfig tableOptions,
             ReadableConfig globalConfig,
             List<String> topicUris,
-            Properties pscProperties) {
+            Properties pscProperties,
+            @Nullable Integer scanParallelism) {
         
         // First check if rescale is enabled by user
         if (!tableOptions.get(SCAN_ENABLE_RESCALE)) {
             return false;
         }
 
-        // Get the global default parallelism
-        int defaultParallelism = globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
+        // Determine effective parallelism: scan.parallelism takes precedence over global default
+        Integer effectiveParallelism;
+        String parallelismSource;
         
-        // If parallelism is -1 (not set) or <= 0, cannot determine, so don't apply rescale
-        if (defaultParallelism <= 0) {
-            LOG.info("scan.enable-rescale is true, but table.exec.resource.default-parallelism is {} (not set). " +
-                    "Rescale will not be applied. Set a positive parallelism value to enable automatic rescale.", 
-                    defaultParallelism);
+        if (scanParallelism != null && scanParallelism > 0) {
+            effectiveParallelism = scanParallelism;
+            parallelismSource = "scan.parallelism";
+        } else {
+            effectiveParallelism = globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
+            parallelismSource = "table.exec.resource.default-parallelism (global)";
+        }
+        
+        // If parallelism is not set or invalid, cannot determine
+        if (effectiveParallelism == null || effectiveParallelism <= 0) {
+            LOG.info("scan.enable-rescale is true, but effective parallelism from {} is {} (not set or invalid). " +
+                    "Rescale will not be applied.", 
+                    parallelismSource, effectiveParallelism);
             return false;
         }
 
@@ -89,17 +103,17 @@ public class PscTableCommonUtils {
             return false;
         }
 
-        // Apply rescale only if user-configured parallelism exceeds partition count
-        boolean shouldRescale = defaultParallelism > partitionCount;
+        // Apply rescale only if effective parallelism exceeds partition count
+        boolean shouldRescale = effectiveParallelism > partitionCount;
         
         if (shouldRescale) {
-            LOG.info("Applying rescale(): configured parallelism ({}) > partition count ({}). " +
+            LOG.info("Applying rescale(): {} ({}) > partition count ({}). " +
                     "Data will be redistributed to fully utilize downstream operators.",
-                    defaultParallelism, partitionCount);
+                    parallelismSource, effectiveParallelism, partitionCount);
         } else {
-            LOG.info("Skipping rescale(): configured parallelism ({}) <= partition count ({}). " +
-                    "No shuffle needed as source will naturally match or exceed desired parallelism.",
-                    defaultParallelism, partitionCount);
+            LOG.info("Skipping rescale(): {} ({}) <= partition count ({}). " +
+                    "No shuffle needed as source parallelism matches or is less than partition count.",
+                    parallelismSource, effectiveParallelism, partitionCount);
         }
         
         return shouldRescale;

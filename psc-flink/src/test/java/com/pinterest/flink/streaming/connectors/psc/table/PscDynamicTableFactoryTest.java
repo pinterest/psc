@@ -1829,7 +1829,8 @@ public class PscDynamicTableFactoryTest {
                 FactoryMocks.IDENTIFIER.asSummaryString(),
                 null,
                 false,
-                null);  // rateLimitRecordsPerSecond
+                null,  // rateLimitRecordsPerSecond
+                null);  // scanParallelism
     }
 
     private static PscDynamicSink createExpectedSink(

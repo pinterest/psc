@@ -134,6 +134,18 @@ public class PscConnectorOptions {
                             "If not set, no rate limiting is applied. " +
                             "Default: disabled.");
 
+    public static final ConfigOption<Integer> SCAN_PARALLELISM =
+            ConfigOptions.key("scan.parallelism")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Defines the parallelism for the PSC source operator. " +
+                            "If not specified, the source parallelism defaults to the number of topic partitions. " +
+                            "This configuration affects both rescale decision logic and rate limiting distribution. " +
+                            "When set, this value is compared against partition count to determine if rescale() is needed. " +
+                            "Example: With 10 partitions and scan.parallelism=100, rescale will be applied " +
+                            "(if scan.enable-rescale=true) to redistribute data across 100+ downstream operators.");
+
     // --------------------------------------------------------------------------------------------
     // Psc specific options
     // --------------------------------------------------------------------------------------------

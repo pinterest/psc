@@ -46,8 +46,10 @@ public class PscRateLimitMap<T> extends RichMapFunction<T, T> {
     private final double rateLimitRecordsPerSecond;
     private transient Counter throttleOccurredCounter;
     private transient Gauge<Long> maxThrottleDelayGauge;
+    private transient Gauge<Long> currentThrottleDelayGauge;
     private transient RateLimiter subtaskRateLimiter;
     private volatile long maxThrottleDelayMs = 0;
+    private volatile long currentThrottleDelayMs = 0;
 
     /**
      * Creates a new rate limiting map function.
@@ -70,6 +72,10 @@ public class PscRateLimitMap<T> extends RichMapFunction<T, T> {
         maxThrottleDelayGauge = getRuntimeContext()
                 .getMetricGroup()
                 .gauge("maxThrottleDelayMs", () -> maxThrottleDelayMs);
+        
+        currentThrottleDelayGauge = getRuntimeContext()
+                .getMetricGroup()
+                .gauge("currentThrottleDelayMs", () -> currentThrottleDelayMs);
 
         // Calculate per-subtask rate limit
         int numberOfParallelSubtasks = getRuntimeContext().getNumberOfParallelSubtasks();
@@ -110,10 +116,14 @@ public class PscRateLimitMap<T> extends RichMapFunction<T, T> {
             long endTime = System.currentTimeMillis();
             long delayMs = endTime - startTime;
             
-            // Update max throttle delay for monitoring
+            // Update both current and max throttle delay
+            currentThrottleDelayMs = delayMs;
             if (delayMs > maxThrottleDelayMs) {
                 maxThrottleDelayMs = delayMs;
             }
+        } else {
+            // No throttling occurred, reset current delay
+            currentThrottleDelayMs = 0;
         }
     }
 }
