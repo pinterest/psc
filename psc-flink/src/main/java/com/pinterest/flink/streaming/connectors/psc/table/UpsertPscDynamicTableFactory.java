@@ -181,7 +181,7 @@ public class UpsertPscDynamicTableFactory
         final Double rateLimitRecordsPerSecond = tableOptions.getOptional(SCAN_RATE_LIMIT).orElse(null);
 
         // Log configurations
-        if (rateLimitRecordsPerSecond != null && rateLimitRecordsPerSecond > 0) {
+        if (PscDynamicSource.isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
             LOG.info("Rate limiting enabled: {} records/second (total across all subtasks)", 
                      rateLimitRecordsPerSecond);
         }

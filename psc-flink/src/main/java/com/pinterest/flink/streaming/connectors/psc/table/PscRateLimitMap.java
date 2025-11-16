@@ -42,6 +42,9 @@ import org.apache.flink.util.Preconditions;
 public class PscRateLimitMap<T> extends RichMapFunction<T, T> {
 
     private static final long serialVersionUID = 1L;
+    
+    /** Minimum allowed rate limit per subtask in queries per second. */
+    private static final double MIN_SUBTASK_RATE_LIMIT_QPS = 0.1;
 
     private final double rateLimitRecordsPerSecond;
     private transient Counter throttleOccurredCounter;
@@ -82,10 +85,11 @@ public class PscRateLimitMap<T> extends RichMapFunction<T, T> {
         double subtaskRateLimit = rateLimitRecordsPerSecond / numberOfParallelSubtasks;
 
         Preconditions.checkArgument(
-                subtaskRateLimit > 0.1,
-                "Subtask rate limit should be greater than 0.1 QPS. " +
+                subtaskRateLimit > MIN_SUBTASK_RATE_LIMIT_QPS,
+                "Subtask rate limit should be greater than %s QPS. " +
                         "Current rate: %s records/second divided by %s subtasks = %s records/second per subtask. " +
                         "Consider increasing the rate limit or decreasing parallelism.",
+                MIN_SUBTASK_RATE_LIMIT_QPS,
                 rateLimitRecordsPerSecond,
                 numberOfParallelSubtasks,
                 subtaskRateLimit);

@@ -178,6 +178,42 @@ public class PscDynamicSource
     /** Optional explicit source parallelism from scan.parallelism configuration. */
     protected final @Nullable Integer scanParallelism;
 
+    /**
+     * Checks if rate limiting is enabled.
+     * 
+     * @param rateLimitRecordsPerSecond the rate limit configuration value
+     * @return true if rate limiting is enabled (not null and > 0), false otherwise
+     */
+    public static boolean isRateLimitingEnabled(@Nullable Double rateLimitRecordsPerSecond) {
+        return rateLimitRecordsPerSecond != null && rateLimitRecordsPerSecond > 0;
+    }
+
+    /**
+     * Determines the intended downstream parallelism.
+     * Uses scan.parallelism if configured, otherwise falls back to global default.
+     * 
+     * @param execEnv the stream execution environment
+     * @return the intended parallelism for downstream operators
+     */
+    private int getIntendedParallelism(StreamExecutionEnvironment execEnv) {
+        return scanParallelism != null ? scanParallelism : execEnv.getParallelism();
+    }
+
+    /**
+     * Determines the appropriate parallelism for the rate limiter operator.
+     * 
+     * @param enableRescale whether rescale is enabled
+     * @param intendedParallelism the intended downstream parallelism
+     * @param sourceParallelism the actual source parallelism (partition count)
+     * @return the parallelism to use for the rate limiter
+     */
+    private static int getRateLimiterParallelism(
+            boolean enableRescale,
+            int intendedParallelism,
+            int sourceParallelism) {
+        return enableRescale ? intendedParallelism : sourceParallelism;
+    }
+
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -331,9 +367,7 @@ public class PscDynamicSource
                 
                 // Determine the intended downstream parallelism for rate limiting
                 // This is scan.parallelism if set, otherwise global default parallelism
-                int intendedParallelism = scanParallelism != null 
-                        ? scanParallelism 
-                        : execEnv.getParallelism();
+                int intendedParallelism = getIntendedParallelism(execEnv);
                 
                 // Apply rescale FIRST if enabled
                 // This redistributes data from source parallelism (= partition count) to intended parallelism
@@ -346,16 +380,18 @@ public class PscDynamicSource
                 // Rate limiter parallelism must match the actual parallelism of incoming data:
                 // - If rescale enabled: use intendedParallelism (all subtasks are active after rescale)
                 // - If rescale disabled: use source parallelism (rate limiter stays with source)
-                if (rateLimitRecordsPerSecond != null && rateLimitRecordsPerSecond > 0) {
-                    int rateLimiterParallelism = enableRescale 
-                            ? intendedParallelism 
-                            : sourceStream.getParallelism();
+                if (isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
+                    int rateLimiterParallelism = getRateLimiterParallelism(
+                            enableRescale, 
+                            intendedParallelism, 
+                            sourceStream.getParallelism());
                     
+                    String rateLimiterOperatorName = "PscRateLimit-" + tableIdentifier;
                     resultStream = resultStream
                             .map(new PscRateLimitMap<>(rateLimitRecordsPerSecond))
                             .setParallelism(rateLimiterParallelism)
-                            .name("PscRateLimit-" + tableIdentifier)
-                            .uid("PscRateLimit-" + tableIdentifier);
+                            .name(rateLimiterOperatorName)
+                            .uid(rateLimiterOperatorName);
                 }
                 
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
