@@ -45,6 +45,7 @@ public class PscMetadataClientCreatorManager {
                         (PscBackendMetadataClientCreator) annotatedClass.getDeclaredConstructor().newInstance();
                 List<PscBackendMetadataClientCreator> creators =
                         backendCreatorRegistry.computeIfAbsent(backend, ignored -> new ArrayList<>());
+                logger.info("Adding PscBackendMetadataClientCreator: {} with priority: {}", creator.getClass().getName(), getPriority(creator));
                 creators.add(creator);
                 creators.sort(Comparator.comparingInt(PscMetadataClientCreatorManager::getPriority));
                 Collections.reverse(creators); // Sort in descending order of priority
