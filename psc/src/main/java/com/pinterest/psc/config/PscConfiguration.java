@@ -125,6 +125,7 @@ public class PscConfiguration extends PropertiesConfiguration implements Seriali
     protected static final String POLL_TIMEOUT_MS = "poll.timeout.ms";
     protected static final String VALUE_DESERIALIZER = "value.deserializer";
     protected static final String CONSUMER_CLIENT_RACK = "client.rack";
+    protected static final String KAFKA_CONSUMER_CLASS = "kafka.consumer.class";
 
     // security-related configs
     protected static final String SECURITY_PROTOCOL = "security.protocol";
@@ -280,6 +281,19 @@ public class PscConfiguration extends PropertiesConfiguration implements Seriali
      * string so the backend client default value is used.
      */
     public static final String PSC_CONSUMER_CLIENT_RACK = PSC_CONSUMER + "." + CONSUMER_CLIENT_RACK;
+
+    /**
+     * The consumer configuration {@value PSC_CONSUMER_KAFKA_CONSUMER_CLASS} expects the FQDN of the Kafka consumer
+     * class to use. Defaults to empty string so the backend client default value is used.
+     * <p>
+     * This configuration is used to allow the user to specify a custom Kafka consumer class to use. This is useful for
+     * cases where the user wants to use a custom Kafka consumer class that is not the default KafkaConsumer class.
+     * <p>
+     * The custom Kafka consumer class must be a subclass of {@link org.apache.kafka.clients.consumer.Consumer} and
+     * must have a constructor that takes a {@link java.util.Properties} object as an argument.
+     * <p>
+     */
+    public static final String PSC_CONSUMER_KAFKA_CONSUMER_CLASS = PSC_CONSUMER + "." + KAFKA_CONSUMER_CLASS;
 
 
     // **********************

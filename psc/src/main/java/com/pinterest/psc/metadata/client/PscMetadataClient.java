@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -148,7 +149,12 @@ public class PscMetadataClient implements AutoCloseable {
         TopicUri convertedClusterUri = validateTopicUri(clusterUri);
         String topicUriPrefix = convertedClusterUri.getTopicUriPrefix();
         pscBackendMetadataClientByTopicUriPrefix.computeIfAbsent(topicUriPrefix, k -> {
-           PscBackendMetadataClientCreator backendMetadataClientCreator = creatorManager.getBackendCreators().get(convertedClusterUri.getBackend());
+            List<PscBackendMetadataClientCreator> backendMetadataClientCreators =
+                    creatorManager.getBackendCreators().get(convertedClusterUri.getBackend());
+            if (backendMetadataClientCreators == null || backendMetadataClientCreators.isEmpty()) {
+                throw new IllegalArgumentException("Invalid backend type: " + convertedClusterUri.getBackend());
+            }
+            PscBackendMetadataClientCreator backendMetadataClientCreator = backendMetadataClientCreators.get(0);
             try {
                 return backendMetadataClientCreator.create(environment, pscConfigurationInternal, convertedClusterUri);
             } catch (ConfigurationException e) {
@@ -162,11 +168,13 @@ public class PscMetadataClient implements AutoCloseable {
         if (topicUri == null)
             throw new IllegalArgumentException("Null topic URI was passed to the producer API.");
 
-        Map<String, PscBackendMetadataClientCreator> backendCreators = creatorManager.getBackendCreators();
+        Map<String, List<PscBackendMetadataClientCreator>> backendCreators = creatorManager.getBackendCreators();
         String backend = topicUri.getBackend();
-        if (!backendCreators.containsKey(backend))
+        List<PscBackendMetadataClientCreator> backendMetadataClientCreators = backendCreators.get(backend);
+        if (backendMetadataClientCreators == null || backendMetadataClientCreators.isEmpty()) {
             throw new IllegalArgumentException("Invalid backend type: " + backend);
-        topicUri = backendCreators.get(backend).validateBackendTopicUri(topicUri);
+        }
+        topicUri = backendMetadataClientCreators.get(0).validateBackendTopicUri(topicUri);
         return topicUri;
     }
 
