@@ -79,10 +79,10 @@ public class PscTableCommonUtils {
         
         if (scanParallelism != null && scanParallelism > 0) {
             effectiveParallelism = scanParallelism;
-            parallelismSource = "scan.parallelism";
+            parallelismSource = PscConnectorOptions.SCAN_PARALLELISM.key();
         } else {
             effectiveParallelism = globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
-            parallelismSource = "table.exec.resource.default-parallelism (global)";
+            parallelismSource = ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM.key();
         }
         
         // If parallelism is not set or invalid, cannot determine

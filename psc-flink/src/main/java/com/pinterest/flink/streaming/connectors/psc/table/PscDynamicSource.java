@@ -199,21 +199,6 @@ public class PscDynamicSource
         return scanParallelism != null ? scanParallelism : execEnv.getParallelism();
     }
 
-    /**
-     * Determines the appropriate parallelism for the rate limiter operator.
-     * 
-     * @param enableRescale whether rescale is enabled
-     * @param intendedParallelism the intended downstream parallelism
-     * @param sourceParallelism the actual source parallelism (partition count)
-     * @return the parallelism to use for the rate limiter
-     */
-    private static int getRateLimiterParallelism(
-            boolean enableRescale,
-            int intendedParallelism,
-            int sourceParallelism) {
-        return enableRescale ? intendedParallelism : sourceParallelism;
-    }
-
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
@@ -381,10 +366,7 @@ public class PscDynamicSource
                 // - If rescale enabled: use intendedParallelism (all subtasks are active after rescale)
                 // - If rescale disabled: use source parallelism (rate limiter stays with source)
                 if (isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
-                    int rateLimiterParallelism = getRateLimiterParallelism(
-                            enableRescale, 
-                            intendedParallelism, 
-                            sourceStream.getParallelism());
+                    int rateLimiterParallelism = enableRescale ? intendedParallelism : sourceStream.getParallelism();
                     
                     String rateLimiterOperatorName = "PscRateLimit-" + tableIdentifier;
                     resultStream = resultStream

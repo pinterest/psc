@@ -1344,6 +1344,172 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
+    public void testOperatorChainingWithRateLimitOnly() {
+        // When only rate limiting is enabled (rescale disabled), verify rate limiter is applied
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("scan.enable-rescale", "false");
+                            options.put("scan.rate-limit.records-per-second", "1000.0");
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+        
+        // Get the runtime provider and produce the data stream
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider = 
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(runtimeProvider).isInstanceOf(DataStreamScanProvider.class);
+        
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        
+        // Create a local environment with controlled parallelism
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(10);
+        
+        // Produce the data stream and get the transformation chain
+        final Transformation<RowData> transformation = 
+                dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+        
+        // The transformation should be a OneInputTransformation (the rate limiter map)
+        // Since rescale is disabled, there should be no intermediate rescale transformation
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).contains("PscRateLimit");
+    }
+
+    @Test
+    public void testOperatorChainingWithRescaleAndRateLimit() {
+        // When both rescale and rate limiting are enabled, verify configuration
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("scan.enable-rescale", "true");
+                            options.put("scan.rate-limit.records-per-second", "5000.0");
+                            options.put("scan.parallelism", "100");  // Explicitly set higher than partition count
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration is correctly set
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+        assertThat(pscSource.scanParallelism).isEqualTo(100);
+        
+        // Get the runtime provider and produce the data stream
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider = 
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(runtimeProvider).isInstanceOf(DataStreamScanProvider.class);
+        
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        
+        // Create a local environment with controlled parallelism
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(10);  // Default parallelism
+        
+        // Produce the data stream and get the transformation chain
+        final Transformation<RowData> transformation = 
+                dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+        
+        // The final transformation should be the rate limiter
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).contains("PscRateLimit");
+        
+        // In test environment without real partitions, runtime rescale decision may differ
+        // The key verification is that configuration is properly passed through
+        // In production, with actual partition count > scan.parallelism, rescale would be applied
+    }
+
+    @Test
+    public void testOperatorChainingWithRescaleWithoutRateLimit() {
+        // When rescale is enabled but rate limiting is disabled
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("scan.enable-rescale", "true");
+                            options.put("scan.parallelism", "50");
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+        assertThat(pscSource.scanParallelism).isEqualTo(50);
+        
+        // Get the runtime provider and produce the data stream
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider = 
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(runtimeProvider).isInstanceOf(DataStreamScanProvider.class);
+        
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        
+        // Create a local environment
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(10);
+        
+        // Produce the data stream and get the transformation chain
+        final Transformation<RowData> transformation = 
+                dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+        
+        // When rescale is enabled without rate limiting, the final transformation should be
+        // a PartitionTransformation (rescale), not a rate limiter
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).doesNotContain("PscRateLimit");
+    }
+
+    @Test
+    public void testRateLimiterParallelismConfiguration() {
+        // Verify that scan.parallelism and rate limiting configurations are properly stored
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("scan.enable-rescale", "true");
+                            options.put("scan.parallelism", "200");
+                            options.put("scan.rate-limit.records-per-second", "10000.0");
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify all configuration values are correctly stored in the source
+        assertThat(pscSource.scanParallelism).isEqualTo(200);
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(10000.0);
+        
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider = 
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(10);
+        
+        final Transformation<RowData> transformation = 
+                dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+        
+        // Rate limiter operator should be present
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).contains("PscRateLimit");
+        
+        // Note: Exact parallelism in test environment depends on partition count
+        // In production with real partitions and scan.parallelism > partition count,
+        // rate limiter would use scan.parallelism after rescale
+    }
+
+    @Test
     public void testTableSinkAutoCompleteSchemaRegistrySubject() {
         // only format
         verifyEncoderSubject(
