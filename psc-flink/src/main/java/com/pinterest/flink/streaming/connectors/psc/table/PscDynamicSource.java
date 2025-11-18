@@ -55,8 +55,13 @@ import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.utils.DataTypeUtils;
 import org.apache.flink.util.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_MODE;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -76,6 +81,8 @@ import java.util.stream.Stream;
 @Internal
 public class PscDynamicSource
         implements ScanTableSource, SupportsReadingMetadata, SupportsWatermarkPushDown {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PscDynamicSource.class);
 
     private static final String PSC_TRANSFORMATION = "psc";
 
@@ -502,12 +509,15 @@ public class PscDynamicSource
             pscSourceBuilder.setTopicUriPattern(topicUriPattern);
         }
 
+        LOG.info("{}: {}", SCAN_STARTUP_MODE, startupMode);
         switch (startupMode) {
             case EARLIEST:
                 pscSourceBuilder.setStartingOffsets(OffsetsInitializer.earliest());
+                LOG.info("Setting starting offsets to earliest");
                 break;
             case LATEST:
                 pscSourceBuilder.setStartingOffsets(OffsetsInitializer.latest());
+                LOG.info("Setting starting offsets to latest");
                 break;
             case GROUP_OFFSETS:
                 String offsetResetConfig =
@@ -517,6 +527,7 @@ public class PscDynamicSource
                 offsetResetConfig = getResetStrategy(offsetResetConfig);
                 pscSourceBuilder.setStartingOffsets(
                         OffsetsInitializer.committedOffsets(offsetResetConfig));
+                LOG.info("Setting starting offsets to committed offsets with reset strategy: {}", offsetResetConfig);
                 break;
             case SPECIFIC_OFFSETS:
                 Map<TopicUriPartition, Long> offsets = new HashMap<>();
@@ -526,10 +537,12 @@ public class PscDynamicSource
                                         new TopicUriPartition(tp.getTopicUriStr(), tp.getPartition()),
                                         offset));
                 pscSourceBuilder.setStartingOffsets(OffsetsInitializer.offsets(offsets));
+                LOG.info("Setting starting offsets to specific offsets: {}", offsets);
                 break;
             case TIMESTAMP:
                 pscSourceBuilder.setStartingOffsets(
                         OffsetsInitializer.timestamp(startupTimestampMillis));
+                LOG.info("Setting starting offsets to timestamp: {}", startupTimestampMillis);
                 break;
         }
 
