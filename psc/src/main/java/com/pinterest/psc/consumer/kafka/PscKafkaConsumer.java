@@ -60,7 +60,6 @@ import java.util.stream.Collectors;
 
 public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
     private static final PscLogger logger = PscLogger.getLogger(PscKafkaConsumer.class);
-    private static final String PSC_CONSUMER_KAFKA_CONSUMER_CLASS = "psc.consumer.kafka.consumer.class";
     private Consumer<byte[], byte[]> kafkaConsumer;
     private final Set<TopicUri> currentSubscription = new HashSet<>();
     private final Set<TopicUriPartition> currentAssignment = new HashSet<>();
@@ -113,7 +112,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         String
             kafkaConsumerClassName =
             pscConfigurationInternal.getConfiguration()
-                .getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS);
+                .getString(PscConfiguration.PSC_CONSUMER_KAFKA_CONSUMER_CLASS);
         try {
             logger.info("Initializing Kafka consumer with class: " + kafkaConsumerClassName);
             if (kafkaConsumerClassName != null) {
@@ -644,7 +643,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
 
         // alternate reflection-based approach using a one-time call - performs ~ 20x faster
         SubscriptionState subscriptions;
-        if (pscConfigurationInternal.getConfiguration().getString(PSC_CONSUMER_KAFKA_CONSUMER_CLASS)
+        if (pscConfigurationInternal.getConfiguration().getString(PscConfiguration.PSC_CONSUMER_KAFKA_CONSUMER_CLASS)
             != null) {
             // Retrieve subscriptions from underlying KafkaConsumer.
             // NOTE: if custom consumer class does not contain an underlying KafkaConsumer "kafkaConsumer" field, this call
