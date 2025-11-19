@@ -600,6 +600,7 @@ public class PscSourceEnumerator
         private Map<TopicUriPartition, Long> listOffsetsForTimestamps(
                 Map<TopicUriPartition, Long> topicUriPartitionsAndTimestamps) {
             try {
+                LOG.info("listOffsetsForTimestamps: {}", topicUriPartitionsAndTimestamps);
                 return metadataClient
                         .listOffsetsForTimestamps(clusterUri, topicUriPartitionsAndTimestamps, Duration.ofMillis(Long.MAX_VALUE));
             } catch (InterruptedException e) {
@@ -641,6 +642,7 @@ public class PscSourceEnumerator
         @Override
         public Map<TopicUriPartition, Long> offsetsForTimes(
                 Map<TopicUriPartition, Long> timestampsToSearch) {
+            LOG.info("offsetsForTimes: {}", timestampsToSearch);
             return listOffsetsForTimestamps(timestampsToSearch).entrySet().stream()
                     .filter(entry -> entry.getValue() >= 0)
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));

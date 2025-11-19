@@ -25,6 +25,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * An implementation of {@link OffsetsInitializer} to initialize the offsets based on a timestamp.
  * If the message meeting the requirement of the timestamp have not been produced yet, just
@@ -33,6 +36,7 @@ import java.util.Map;
  * <p>Package private and should be instantiated via {@link OffsetsInitializer}.
  */
 class TimestampOffsetsInitializer implements OffsetsInitializer {
+    private static final Logger LOG = LoggerFactory.getLogger(TimestampOffsetsInitializer.class);
     private static final long serialVersionUID = 2932230571773627233L;
     private final long startingTimestamp;
 
@@ -57,6 +61,7 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
         partitions.forEach(tp -> startingTimestamps.put(tp, startingTimestamp));
         Map<TopicUriPartition, Long> topicPartitionOffsetMap =
                 partitionOffsetsRetriever.offsetsForTimes(startingTimestamps);
+        LOG.info("topicPartitionOffsetMap: {}", topicPartitionOffsetMap);
 
         for (TopicUriPartition tp : partitions) {
             // offset may not have been resolved
@@ -66,6 +71,7 @@ class TimestampOffsetsInitializer implements OffsetsInitializer {
                 initialOffsets.put(tp, endOffsets.get(tp));
             }
         }
+        LOG.info("initialOffsets: {}", initialOffsets);
         return initialOffsets;
     }
 
