@@ -22,6 +22,7 @@ import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.slf4j.Logger;
@@ -44,6 +45,49 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 public class PscTableCommonUtils {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscTableCommonUtils.class);
+
+    /**
+     * Functional interface for providing partition count.
+     * Allows injection of mock implementations for testing.
+     */
+    @FunctionalInterface
+    public interface PartitionCountProvider {
+        /**
+         * Retrieves the partition count for the given topic URIs.
+         * 
+         * @param topicUris List of topic URIs to query
+         * @param pscProperties PSC properties for metadata client connection
+         * @return Minimum partition count across all topics, or -1 if count cannot be determined
+         */
+        int getPartitionCount(List<String> topicUris, Properties pscProperties);
+    }
+
+    /**
+     * Default partition count provider that uses real PSC metadata client.
+     * Can be overridden for testing purposes.
+     */
+    private static PartitionCountProvider partitionCountProvider = 
+        PscTableCommonUtils::getTopicPartitionCountInternal;
+
+    /**
+     * Sets a custom partition count provider for testing.
+     * Must be reset after test using {@link #resetPartitionCountProvider()}.
+     * 
+     * @param provider Custom partition count provider
+     */
+    @VisibleForTesting
+    static synchronized void setPartitionCountProviderForTesting(PartitionCountProvider provider) {
+        partitionCountProvider = provider;
+    }
+
+    /**
+     * Resets the partition count provider to the default implementation.
+     * Should be called in test teardown to prevent test pollution.
+     */
+    @VisibleForTesting
+    static synchronized void resetPartitionCountProvider() {
+        partitionCountProvider = PscTableCommonUtils::getTopicPartitionCountInternal;
+    }
 
     /**
      * Determines whether rescale() should be applied based on:
@@ -93,8 +137,8 @@ public class PscTableCommonUtils {
             return false;
         }
 
-        // Query partition count from PSC metadata
-        int partitionCount = getTopicPartitionCount(topicUris, pscProperties);
+        // Query partition count using the configured provider (mockable for testing)
+        int partitionCount = partitionCountProvider.getPartitionCount(topicUris, pscProperties);
         
         // If partition count couldn't be determined, don't apply rescale (fail-safe)
         if (partitionCount <= 0) {
@@ -120,16 +164,19 @@ public class PscTableCommonUtils {
     }
 
     /**
-     * Queries the minimum partition count across all specified topic URIs.
+     * Internal implementation that queries the minimum partition count across all specified topic URIs.
      * 
      * <p>For multi-topic sources, returns the minimum partition count as a conservative approach.
      * If any topic has fewer partitions, that becomes the bottleneck.
+     * 
+     * <p>This method is used as the default implementation for {@link PartitionCountProvider}.
+     * In tests, a mock provider can be injected via {@link #setPartitionCountProviderForTesting(PartitionCountProvider)}.
      *
      * @param topicUris List of topic URIs to query
      * @param pscProperties PSC properties for metadata client connection
      * @return Minimum partition count across all topics, or -1 if count cannot be determined
      */
-    private static int getTopicPartitionCount(List<String> topicUris, Properties pscProperties) {
+    private static int getTopicPartitionCountInternal(List<String> topicUris, Properties pscProperties) {
         if (topicUris == null || topicUris.isEmpty()) {
             LOG.warn("No topic URIs provided for partition count query.");
             return -1;

@@ -78,6 +78,7 @@ import org.apache.flink.table.runtime.connector.source.ScanRuntimeProviderContex
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.util.TestLoggerExtension;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -193,6 +194,15 @@ public class PscDynamicTableFactoryTest {
                     null);
 
     private static final DataType SCHEMA_DATA_TYPE = SCHEMA.toPhysicalRowDataType();
+
+    /**
+     * Reset partition count provider after each test to prevent test pollution.
+     * This ensures tests that mock partition counts don't affect other tests.
+     */
+    @AfterEach
+    public void tearDown() {
+        PscTableCommonUtils.resetPartitionCountProvider();
+    }
 
     @Test
     public void testTableSource() {
