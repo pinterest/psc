@@ -45,7 +45,7 @@ public class PscTableCommonUtilsTest {
     @Before
     public void setup() {
         // Reset partition count provider to default before each test
-        PscTableCommonUtils.resetPartitionCountProvider();
+        PscTableCommonUtils.resetProvider();
         
         // Initialize common test fixtures
         tableOptions = new Configuration();
@@ -57,7 +57,7 @@ public class PscTableCommonUtilsTest {
     @After
     public void tearDown() {
         // Always reset provider after each test to prevent test pollution
-        PscTableCommonUtils.resetPartitionCountProvider();
+        PscTableCommonUtils.resetProvider();
     }
 
     // ============================================
@@ -88,7 +88,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 2); // Should be ignored
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 5);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 5);
         
         // When: shouldApplyRescale is called with scan.parallelism = 10
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -104,7 +104,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 100); // Should be ignored
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 20);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 20);
         
         // When: shouldApplyRescale is called with scan.parallelism = 5
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -119,7 +119,7 @@ public class PscTableCommonUtilsTest {
         // Given: scan.parallelism = 10, partition count = 10, rescale enabled
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 10);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
         
         // When: shouldApplyRescale is called with scan.parallelism = 10
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -139,7 +139,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 50);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 10);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
         
         // When: shouldApplyRescale is called with no scan.parallelism
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -155,7 +155,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 5);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 20);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 20);
         
         // When: shouldApplyRescale is called with no scan.parallelism
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -175,7 +175,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 5);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 5);
         
         // When: shouldApplyRescale is called with scan.parallelism = 0
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -191,7 +191,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 5);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 5);
         
         // When: shouldApplyRescale is called with scan.parallelism = -1
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -207,7 +207,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         // globalConfig has no default parallelism set (returns null)
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 10);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
         
         // When: shouldApplyRescale is called
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -227,7 +227,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> -1);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> -1);
         
         // When: shouldApplyRescale is called
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -243,7 +243,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 0);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 0);
         
         // When: shouldApplyRescale is called
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -263,7 +263,7 @@ public class PscTableCommonUtilsTest {
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 5);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 10);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
         
         // When: shouldApplyRescale is called with scan.parallelism = 100
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -286,7 +286,7 @@ public class PscTableCommonUtilsTest {
             "plaintext:kafka:local:test-cluster:/topic2"
         );
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 8);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 8);
         
         // When: shouldApplyRescale is called
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -305,7 +305,7 @@ public class PscTableCommonUtilsTest {
         // Given: scan.parallelism = 2000, partition count = 10, rescale enabled
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 10);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
         
         // When: shouldApplyRescale is called with high parallelism
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -320,7 +320,7 @@ public class PscTableCommonUtilsTest {
         // Given: scan.parallelism = 2, partition count = 1000, rescale enabled
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 1000);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 1000);
         
         // When: shouldApplyRescale is called
         boolean result = PscTableCommonUtils.shouldApplyRescale(
@@ -337,7 +337,7 @@ public class PscTableCommonUtilsTest {
     @Test
     public void testProviderResetRestoresDefaultBehavior() {
         // Given: custom provider is set
-        PscTableCommonUtils.setPartitionCountProviderForTesting((topicUris, props) -> 42);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 42);
         
         tableOptions.set(SCAN_ENABLE_RESCALE, true);
         globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 100);
@@ -348,7 +348,7 @@ public class PscTableCommonUtilsTest {
         assertThat(resultWithMock).isTrue(); // 100 > 42
         
         // When: provider is reset
-        PscTableCommonUtils.resetPartitionCountProvider();
+        PscTableCommonUtils.resetProvider();
         
         // Then: default behavior is restored (returns -1 in unit test environment)
         boolean resultAfterReset = PscTableCommonUtils.shouldApplyRescale(
