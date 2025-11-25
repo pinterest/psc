@@ -22,11 +22,13 @@ import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -45,42 +47,98 @@ public class PscTableCommonUtils {
     private static final Logger LOG = LoggerFactory.getLogger(PscTableCommonUtils.class);
 
     /**
+     * Functional interface for providing partition count.
+     * Package-private for testing purposes only.
+     */
+    @FunctionalInterface
+    interface PartitionCountProvider {
+        /**
+         * Retrieves the partition count for the given topic URIs.
+         * 
+         * @param topicUris List of topic URIs to query
+         * @param pscProperties PSC properties for metadata client connection
+         * @return Minimum partition count across all topics, or -1 if count cannot be determined
+         */
+        int getPartitionCount(List<String> topicUris, Properties pscProperties);
+    }
+
+    /**
+     * Default partition count provider that uses real PSC metadata client.
+     * Can be overridden for testing purposes.
+     */
+    private static PartitionCountProvider partitionCountProvider = 
+        PscTableCommonUtils::getTopicPartitionCount;
+
+    /**
+     * Sets a custom partition count provider for testing.
+     * Must be reset after test using {@link #resetProvider()}.
+     * 
+     * @param provider Custom partition count provider
+     */
+    @VisibleForTesting
+    static synchronized void setProviderForTest(PartitionCountProvider provider) {
+        partitionCountProvider = provider;
+    }
+
+    /**
+     * Resets the partition count provider to the default implementation.
+     * Should be called in test teardown to prevent test pollution.
+     */
+    @VisibleForTesting
+    static synchronized void resetProvider() {
+        partitionCountProvider = PscTableCommonUtils::getTopicPartitionCount;
+    }
+
+    /**
      * Determines whether rescale() should be applied based on:
      * 1. scan.enable-rescale flag must be true
-     * 2. Global parallelism (table.exec.resource.default-parallelism) > partition count
+     * 2. Effective parallelism (scan.parallelism or global default) > partition count
      * 
-     * <p>This automatically avoids unnecessary shuffle overhead when partitions >= parallelism.
+     * <p>When scan.parallelism is set, it takes precedence over global default for
+     * rescale decision logic. This ensures rescale is only applied when the user's
+     * intended source parallelism exceeds partition count.
      *
      * @param tableOptions User's table configuration options
      * @param globalConfig Global Flink configuration
      * @param topicUris List of topic URIs to query for partition counts
      * @param pscProperties PSC properties for metadata client connection
+     * @param scanParallelism Optional explicit scan.parallelism configuration
      * @return true if rescale should be applied, false otherwise
      */
     public static boolean shouldApplyRescale(
             ReadableConfig tableOptions,
             ReadableConfig globalConfig,
             List<String> topicUris,
-            Properties pscProperties) {
+            Properties pscProperties,
+            @Nullable Integer scanParallelism) {
         
         // First check if rescale is enabled by user
         if (!tableOptions.get(SCAN_ENABLE_RESCALE)) {
             return false;
         }
 
-        // Get the global default parallelism
-        int defaultParallelism = globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
+        // Determine effective parallelism: scan.parallelism takes precedence over global default
+        Integer effectiveParallelism;
+        String parallelismSource;
         
-        // If parallelism is -1 (not set) or <= 0, cannot determine, so don't apply rescale
-        if (defaultParallelism <= 0) {
-            LOG.info("scan.enable-rescale is true, but table.exec.resource.default-parallelism is {} (not set). " +
-                    "Rescale will not be applied. Set a positive parallelism value to enable automatic rescale.", 
-                    defaultParallelism);
+        if (scanParallelism != null && scanParallelism > 0) {
+            effectiveParallelism = scanParallelism;
+            parallelismSource = PscConnectorOptions.SCAN_PARALLELISM.key();
+        } else {
+            effectiveParallelism = globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
+            parallelismSource = ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM.key();
+        }
+        
+        // If parallelism is not set or invalid, cannot determine
+        if (effectiveParallelism == null || effectiveParallelism <= 0) {
+            LOG.info("scan.enable-rescale is true, but effective parallelism from {} is {} (not set or invalid). " +
+                    "Rescale will not be applied.", 
+                    parallelismSource, effectiveParallelism);
             return false;
         }
 
-        // Query partition count from PSC metadata
-        int partitionCount = getTopicPartitionCount(topicUris, pscProperties);
+        // Query partition count using the configured provider (mockable for testing)
+        int partitionCount = partitionCountProvider.getPartitionCount(topicUris, pscProperties);
         
         // If partition count couldn't be determined, don't apply rescale (fail-safe)
         if (partitionCount <= 0) {
@@ -89,17 +147,17 @@ public class PscTableCommonUtils {
             return false;
         }
 
-        // Apply rescale only if user-configured parallelism exceeds partition count
-        boolean shouldRescale = defaultParallelism > partitionCount;
+        // Apply rescale only if effective parallelism exceeds partition count
+        boolean shouldRescale = effectiveParallelism > partitionCount;
         
         if (shouldRescale) {
-            LOG.info("Applying rescale(): configured parallelism ({}) > partition count ({}). " +
+            LOG.info("Applying rescale(): {} ({}) > partition count ({}). " +
                     "Data will be redistributed to fully utilize downstream operators.",
-                    defaultParallelism, partitionCount);
+                    parallelismSource, effectiveParallelism, partitionCount);
         } else {
-            LOG.info("Skipping rescale(): configured parallelism ({}) <= partition count ({}). " +
-                    "No shuffle needed as source will naturally match or exceed desired parallelism.",
-                    defaultParallelism, partitionCount);
+            LOG.info("Skipping rescale(): {} ({}) <= partition count ({}). " +
+                    "No shuffle needed as source parallelism matches or is less than partition count.",
+                    parallelismSource, effectiveParallelism, partitionCount);
         }
         
         return shouldRescale;
@@ -110,6 +168,9 @@ public class PscTableCommonUtils {
      * 
      * <p>For multi-topic sources, returns the minimum partition count as a conservative approach.
      * If any topic has fewer partitions, that becomes the bottleneck.
+     * 
+     * <p>This method is used as the default implementation for {@link PartitionCountProvider}.
+     * In tests, a mock provider can be injected via {@link #setProviderForTest(PartitionCountProvider)}.
      *
      * @param topicUris List of topic URIs to query
      * @param pscProperties PSC properties for metadata client connection

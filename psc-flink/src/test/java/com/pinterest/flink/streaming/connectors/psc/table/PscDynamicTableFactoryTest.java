@@ -49,6 +49,7 @@ import org.apache.flink.formats.avro.registry.confluent.ConfluentRegistryAvroSer
 import org.apache.flink.formats.avro.registry.confluent.debezium.DebeziumAvroSerializationSchema;
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
 import org.apache.flink.table.api.DataTypes;
 import org.apache.flink.table.api.ValidationException;
@@ -76,6 +77,7 @@ import org.apache.flink.table.runtime.connector.source.ScanRuntimeProviderContex
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.util.TestLoggerExtension;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -191,6 +193,15 @@ public class PscDynamicTableFactoryTest {
                     null);
 
     private static final DataType SCHEMA_DATA_TYPE = SCHEMA.toPhysicalRowDataType();
+
+    /**
+     * Reset partition count provider after each test to prevent test pollution.
+     * This ensures tests that mock partition counts don't affect other tests.
+     */
+    @AfterEach
+    public void tearDown() {
+        PscTableCommonUtils.resetProvider();
+    }
 
     @Test
     public void testTableSource() {
@@ -1260,23 +1271,444 @@ public class PscDynamicTableFactoryTest {
 
     @Test
     public void testTableSourceWithRescaleEnabled() {
-        // When scan.enable-rescale is true but parallelism is not configured,
-        // rescale should not be applied (fail-safe behavior)
-        final Map<String, String> modifiedOptions =
-                getModifiedOptions(
-                        getBasicSourceOptions(),
-                        options -> options.put("scan.enable-rescale", "true"));
+        // Verifies that rescale is applied when scan.parallelism > partition count
+        // Uses setProviderForTest() to simulate partition count without real metadata query
+        
+        try {
+            // Mock partition count = 10
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
+            
+            // Create source with scan.parallelism = 50 (> 10), rescale enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 50);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration is correctly parsed
+            assertThat(pscSource.enableRescale).isTrue();
+            assertThat(pscSource.scanParallelism).isEqualTo(50);
+            
+            // Verify rescale is applied by checking transformation type
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // With scan.parallelism (50) > partition count (10), rescale should be applied
+            // The transformation should be a PartitionTransformation (rescale operator)
+            assertThat(transformation).isNotNull();
+            assertThat(transformation).isInstanceOf(PartitionTransformation.class);
+            
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitDisabled() {
+        // Verify default behavior - no rate limiting
+        final Map<String, String> modifiedOptions = getBasicSourceOptions();
         
         final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
         assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
         
-        // Note: The actual rescale decision is made in the factory based on
-        // partition count vs parallelism comparison. This test just verifies
-        // that the flag can be enabled without errors.
-        // In real scenarios, rescale will only be applied if:
-        // 1. scan.enable-rescale = true
-        // 2. table.exec.resource.default-parallelism > partition count
-        // 3. Metadata query succeeds
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitEnabled() {
+        // When rate limit is configured, it should be set on the source
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.put("scan.rate-limit.records-per-second", "1000.0"));
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitAndRescale() {
+        // Verify both features can be enabled together
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("scan.enable-rescale", "true");
+                            options.put("scan.rate-limit.records-per-second", "5000.0");
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+        // Note: enableRescale depends on runtime conditions (partition count vs parallelism)
+    }
+
+    @Test
+    public void testTableSourceWithFractionalRateLimit() {
+        // Test that fractional rate limits are supported
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.put("scan.rate-limit.records-per-second", "123.45"));
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(123.45);
+    }
+
+    /**
+     * Helper method to create a transformation from a PscDynamicSource.
+     * Reduces repetitive code in operator chaining tests.
+     * 
+     * @param pscSource the PSC dynamic source
+     * @param globalParallelism global parallelism for the execution environment
+     * @return the final transformation in the operator chain
+     */
+    private Transformation<RowData> produceTransformationFromSource(
+            PscDynamicSource pscSource,
+            int globalParallelism) {
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider = 
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(runtimeProvider).isInstanceOf(DataStreamScanProvider.class);
+        
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(globalParallelism);
+        
+        return dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+    }
+    
+    /**
+     * Helper method to add rescale configuration to options map.
+     * Uses ConfigOption.key() to avoid hard-coded strings.
+     */
+    private void addRescaleConfig(Map<String, String> options, boolean enableRescale) {
+        options.put(PscConnectorOptions.SCAN_ENABLE_RESCALE.key(), String.valueOf(enableRescale));
+    }
+    
+    /**
+     * Helper method to add rate limit configuration to options map.
+     * Uses ConfigOption.key() to avoid hard-coded strings.
+     */
+    private void addRateLimitConfig(Map<String, String> options, double rateLimit) {
+        options.put(PscConnectorOptions.SCAN_RATE_LIMIT.key(), String.valueOf(rateLimit));
+    }
+    
+    /**
+     * Helper method to add scan parallelism configuration to options map.
+     * Uses ConfigOption.key() to avoid hard-coded strings.
+     */
+    private void addScanParallelismConfig(Map<String, String> options, int parallelism) {
+        options.put(PscConnectorOptions.SCAN_PARALLELISM.key(), String.valueOf(parallelism));
+    }
+
+    @Test
+    public void testOperatorChainingWithRateLimitOnly() {
+        // When only rate limiting is enabled (rescale disabled), verify rate limiter is applied
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, false);
+                            addRateLimitConfig(options, 1000.0);
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+        
+        // Get transformation using helper method (reuses same source)
+        final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+        
+        // The transformation should be a OneInputTransformation (the rate limiter map)
+        // Since rescale is disabled, there should be no intermediate rescale transformation
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).contains("PscRateLimit");
+    }
+
+    @Test
+    public void testOperatorChainingWithRescaleAndRateLimit() {
+        // When both rescale and rate limiting are enabled, verify configuration
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addRateLimitConfig(options, 5000.0);
+                            addScanParallelismConfig(options, 100);  // Explicitly set higher than partition count
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration is correctly set
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+        assertThat(pscSource.scanParallelism).isEqualTo(100);
+        
+        // Get transformation using helper method (reuses same source)
+        final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+        
+        // The final transformation should be the rate limiter
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).contains("PscRateLimit");
+        
+        // In test environment without real partitions, runtime rescale decision may differ
+        // The key verification is that configuration is properly passed through
+        // In production, with actual partition count > scan.parallelism, rescale would be applied
+    }
+
+    @Test
+    public void testOperatorChainingWithRescaleWithoutRateLimit() {
+        // When rescale is enabled but rate limiting is disabled
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addScanParallelismConfig(options, 50);
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+        assertThat(pscSource.scanParallelism).isEqualTo(50);
+        
+        // Get transformation using helper method (reuses same source)
+        final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+        
+        // Verify that rate limiter is not applied
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).doesNotContain("PscRateLimit");
+        
+        // Note: See testRescaleCreatesPartitionTransformation() for PartitionTransformation verification
+        // with mocked partition counts.
+    }
+
+    @Test
+    public void testRateLimiterParallelismConfiguration() {
+        // Verify that scan.parallelism and rate limiting configurations are properly stored
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addScanParallelismConfig(options, 200);
+                            addRateLimitConfig(options, 10000.0);
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify all configuration values are correctly stored in the source
+        assertThat(pscSource.scanParallelism).isEqualTo(200);
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(10000.0);
+        
+        // Get transformation using helper method (reuses same source)
+        final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+        
+        // Rate limiter operator should be present
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).contains("PscRateLimit");
+        
+        // Note: See testRescaleAndRateLimitChain() and testSkipsRescaleWhenNotNeeded()
+        // for comprehensive partition count testing with mocked providers.
+    }
+
+    @Test
+    public void testRescaleCreatesPartitionTransformation() {
+        // Verifies PartitionTransformation is created when scan.parallelism > partition count
+        
+        try {
+            // Mock partition count = 10
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
+            
+            // Create source with scan.parallelism = 50 (> 10), rescale enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 50);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration
+            assertThat(pscSource.scanParallelism).isEqualTo(50);
+            assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+            
+            // Get transformation - should apply rescale since 50 > 10
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // With scan.parallelism (50) > partition count (10), rescale is applied
+            // The transformation should be a PartitionTransformation
+            assertThat(transformation).isNotNull();
+            assertThat(transformation).isInstanceOf(PartitionTransformation.class);
+            assertThat(transformation.getName()).doesNotContain("PscRateLimit");
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testRescaleAndRateLimitChain() {
+        // Verifies complete operator chain: Source → Rescale → RateLimit
+        
+        try {
+            // Mock partition count = 20
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 20);
+            
+            // Create source with scan.parallelism = 100 (> 20), rescale and rate limiting enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 100);
+                                addRateLimitConfig(options, 5000.0);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration
+            assertThat(pscSource.scanParallelism).isEqualTo(100);
+            assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+            
+            // Get transformation - should apply rescale since 100 > 20
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // The final transformation should be the rate limiter
+            assertThat(transformation).isNotNull();
+            assertThat(transformation.getName()).contains("PscRateLimit");
+            assertThat(transformation.getParallelism()).isEqualTo(100);
+            
+            // The input to rate limiter should be PartitionTransformation (rescale)
+            assertThat(transformation.getInputs()).isNotEmpty();
+            Transformation<?> inputTransformation = transformation.getInputs().get(0);
+            assertThat(inputTransformation).isInstanceOf(PartitionTransformation.class);
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testSkipsRescaleWhenNotNeeded() {
+        // Verifies rescale is NOT applied when scan.parallelism <= partition count
+        
+        try {
+            // Mock partition count = 50
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 50);
+            
+            // Create source with scan.parallelism = 20 (< 50), rescale enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 20);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration
+            assertThat(pscSource.scanParallelism).isEqualTo(20);
+            
+            // Get transformation - should NOT apply rescale since 20 < 50
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // With scan.parallelism (20) < partition count (50), rescale is NOT applied
+            // The transformation should be SourceTransformation, not PartitionTransformation
+            assertThat(transformation).isNotNull();
+            assertThat(transformation).isInstanceOf(SourceTransformation.class);
+            assertThat(transformation).isNotInstanceOf(PartitionTransformation.class);
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testRescaleAndRateLimitWithDifferentParallelism() {
+        // Verifies PartitionTransformation and correct rate limiter parallelism
+        // when scan.parallelism > partition count with both rescale and rate limiting
+        
+        try {
+            // Mock partition count = 15
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 15);
+            
+            // Create source with scan.parallelism = 80 (> 15), rescale and rate limiting
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 80);
+                                addRateLimitConfig(options, 10000.0);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration
+            assertThat(pscSource.scanParallelism).isEqualTo(80);
+            assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(10000.0);
+            assertThat(pscSource.enableRescale).isTrue();
+            
+            // Get transformation with global parallelism = 10 (different from scan.parallelism)
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // The final transformation should be the rate limiter
+            assertThat(transformation).isNotNull();
+            assertThat(transformation.getName()).contains("PscRateLimit");
+            // Rate limiter parallelism should be scan.parallelism (80), not global (10)
+            assertThat(transformation.getParallelism()).isEqualTo(80);
+            
+            // The input to rate limiter should be PartitionTransformation (rescale)
+            assertThat(transformation.getInputs()).isNotEmpty();
+            Transformation<?> inputTransformation = transformation.getInputs().get(0);
+            assertThat(inputTransformation).isInstanceOf(PartitionTransformation.class);
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
     }
 
     @Test
@@ -1764,7 +2196,9 @@ public class PscDynamicTableFactoryTest {
                 false,
                 FactoryMocks.IDENTIFIER.asSummaryString(),
                 null,
-                false);
+                false,
+                null,  // rateLimitRecordsPerSecond
+                null);  // scanParallelism
     }
 
     private static PscDynamicSink createExpectedSink(

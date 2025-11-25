@@ -76,6 +76,8 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_TOPIC_PARTITION_DISCOVERY;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_RATE_LIMIT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARTITIONER;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
@@ -152,6 +154,8 @@ public class PscDynamicTableFactory
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
         options.add(SCAN_ENABLE_RESCALE);
+        options.add(SCAN_RATE_LIMIT);
+        options.add(SCAN_PARALLELISM);
         options.add(SOURCE_UID_PREFIX);
         return options;
     }
@@ -215,12 +219,31 @@ public class PscDynamicTableFactory
 
         final String keyPrefix = tableOptions.getOptional(KEY_FIELDS_PREFIX).orElse(null);
 
-        // Determine if rescale should be applied based on parallelism vs partition count
+        // Read scan.parallelism configuration
+        final Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
+
+        // Log scan parallelism configuration if set
+        if (scanParallelism != null) {
+            LOG.info("scan.parallelism configured: {} (will override partition-based parallelism)", 
+                     scanParallelism);
+        }
+
+        // Determine if rescale should be applied based on scan.parallelism (if set) or global default
         final boolean shouldRescale = shouldApplyRescale(
                 tableOptions,
                 context.getConfiguration(),
                 getSourceTopicUris(tableOptions),
-                properties);
+                properties,
+                scanParallelism);
+
+        // Get rate limit configuration
+        final Double rateLimitRecordsPerSecond = tableOptions.getOptional(SCAN_RATE_LIMIT).orElse(null);
+
+        // Log configurations
+        if (PscDynamicSource.isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
+            LOG.info("Rate limiting enabled: {} records/second (total across all subtasks)", 
+                     rateLimitRecordsPerSecond);
+        }
 
         return createPscTableSource(
                 physicalDataType,
@@ -240,7 +263,9 @@ public class PscDynamicTableFactory
                 boundedOptions.boundedTimestampMillis,
                 context.getObjectIdentifier().asSummaryString(),
                 tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
-                shouldRescale);
+                shouldRescale,
+                rateLimitRecordsPerSecond,
+                scanParallelism);
     }
 
     @Override
@@ -407,7 +432,9 @@ public class PscDynamicTableFactory
             long endTimestampMillis,
             String tableIdentifier,
             @Nullable String sourceUidPrefix,
-            boolean enableRescale) {
+            boolean enableRescale,
+            @Nullable Double rateLimitRecordsPerSecond,
+            @Nullable Integer scanParallelism) {
         return new PscDynamicSource(
                 physicalDataType,
                 keyDecodingFormat,
@@ -427,7 +454,9 @@ public class PscDynamicTableFactory
                 false,
                 tableIdentifier,
                 sourceUidPrefix,
-                enableRescale);
+                enableRescale,
+                rateLimitRecordsPerSecond,
+                scanParallelism);
     }
 
     protected PscDynamicSink creatPscTableSink(
