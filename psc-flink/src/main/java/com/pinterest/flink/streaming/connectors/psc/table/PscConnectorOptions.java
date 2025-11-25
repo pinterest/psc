@@ -121,6 +121,31 @@ public class PscConnectorOptions {
                             "higher parallelism than the source partition count. " +
                             "Default: false (no automatic shuffling).");
 
+    public static final ConfigOption<Double> SCAN_RATE_LIMIT =
+            ConfigOptions.key("scan.rate-limit.records-per-second")
+                    .doubleType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Optional rate limit for the source in records per second. " +
+                            "When specified, the source will throttle consumption to not exceed this rate. " +
+                            "The rate is distributed evenly across all parallel source subtasks. " +
+                            "For example, with a rate limit of 1000 and parallelism of 4, each subtask will " +
+                            "process approximately 250 records/second. " +
+                            "If not set, no rate limiting is applied. " +
+                            "Default: disabled.");
+
+    public static final ConfigOption<Integer> SCAN_PARALLELISM =
+            ConfigOptions.key("scan.parallelism")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Defines the parallelism for the PSC source operator. " +
+                            "If not specified, the source parallelism defaults to the number of topic partitions. " +
+                            "This configuration affects both rescale decision logic and rate limiting distribution. " +
+                            "When set, this value is compared against partition count to determine if rescale() is needed. " +
+                            "Example: With 10 partitions and scan.parallelism=100, rescale will be applied " +
+                            "(if scan.enable-rescale=true) to redistribute data across 100+ downstream operators.");
+
     // --------------------------------------------------------------------------------------------
     // Psc specific options
     // --------------------------------------------------------------------------------------------

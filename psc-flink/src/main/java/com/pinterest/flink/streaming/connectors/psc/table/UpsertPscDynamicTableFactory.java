@@ -42,6 +42,8 @@ import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.factories.SerializationFormatFactory;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.RowKind;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -61,6 +63,8 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_RATE_LIMIT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_INTERVAL;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_MAX_ROWS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
@@ -85,6 +89,8 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonU
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
         implements DynamicTableSourceFactory, DynamicTableSinkFactory {
+
+    private static final Logger LOG = LoggerFactory.getLogger(UpsertPscDynamicTableFactory.class);
 
     public static final String IDENTIFIER = "upsert-psc";
 
@@ -114,6 +120,8 @@ public class UpsertPscDynamicTableFactory
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
         options.add(SCAN_ENABLE_RESCALE);
+        options.add(SCAN_RATE_LIMIT);
+        options.add(SCAN_PARALLELISM);
         options.add(DELIVERY_GUARANTEE);
         options.add(TRANSACTIONAL_ID_PREFIX);
         options.add(SOURCE_UID_PREFIX);
@@ -152,12 +160,31 @@ public class UpsertPscDynamicTableFactory
 
         final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
 
-        // Determine if rescale should be applied based on parallelism vs partition count
+        // Read scan.parallelism configuration
+        final Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
+
+        // Log scan parallelism configuration if set
+        if (scanParallelism != null) {
+            LOG.info("scan.parallelism configured: {} (will override partition-based parallelism)", 
+                     scanParallelism);
+        }
+
+        // Determine if rescale should be applied based on scan.parallelism (if set) or global default
         final boolean shouldRescale = shouldApplyRescale(
                 tableOptions,
                 context.getConfiguration(),
                 getSourceTopicUris(tableOptions),
-                properties);
+                properties,
+                scanParallelism);
+
+        // Get rate limit configuration
+        final Double rateLimitRecordsPerSecond = tableOptions.getOptional(SCAN_RATE_LIMIT).orElse(null);
+
+        // Log configurations
+        if (PscDynamicSource.isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
+            LOG.info("Rate limiting enabled: {} records/second (total across all subtasks)", 
+                     rateLimitRecordsPerSecond);
+        }
 
         return new PscDynamicSource(
                 context.getPhysicalRowDataType(),
@@ -178,7 +205,9 @@ public class UpsertPscDynamicTableFactory
                 true,
                 context.getObjectIdentifier().asSummaryString(),
                 tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
-                shouldRescale);
+                shouldRescale,
+                rateLimitRecordsPerSecond,
+                scanParallelism);
     }
 
     @Override
