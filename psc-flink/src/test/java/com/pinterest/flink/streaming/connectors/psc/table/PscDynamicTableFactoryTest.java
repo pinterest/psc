@@ -1271,23 +1271,42 @@ public class PscDynamicTableFactoryTest {
 
     @Test
     public void testTableSourceWithRescaleEnabled() {
-        // When scan.enable-rescale is true but parallelism is not configured,
-        // rescale should not be applied (fail-safe behavior)
-        final Map<String, String> modifiedOptions =
-                getModifiedOptions(
-                        getBasicSourceOptions(),
-                        options -> options.put("scan.enable-rescale", "true"));
+        // Verifies that rescale is applied when scan.parallelism > partition count
+        // Uses setProviderForTest() to simulate partition count without real metadata query
         
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
-        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
-        
-        // Note: The actual rescale decision is made in the factory based on
-        // partition count vs parallelism comparison. This test just verifies
-        // that the flag can be enabled without errors.
-        // In real scenarios, rescale will only be applied if:
-        // 1. scan.enable-rescale = true
-        // 2. table.exec.resource.default-parallelism > partition count
-        // 3. Metadata query succeeds
+        try {
+            // Mock partition count = 10
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
+            
+            // Create source with scan.parallelism = 50 (> 10), rescale enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 50);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration is correctly parsed
+            assertThat(pscSource.enableRescale).isTrue();
+            assertThat(pscSource.scanParallelism).isEqualTo(50);
+            
+            // Verify rescale is applied by checking transformation type
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // With scan.parallelism (50) > partition count (10), rescale should be applied
+            // The transformation should be a PartitionTransformation (rescale operator)
+            assertThat(transformation).isNotNull();
+            assertThat(transformation).isInstanceOf(PartitionTransformation.class);
+            
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
     }
 
     @Test
