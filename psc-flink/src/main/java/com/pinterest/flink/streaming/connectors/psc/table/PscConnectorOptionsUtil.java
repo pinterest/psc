@@ -92,6 +92,9 @@ class PscConnectorOptionsUtil {
     // Prefix for PSC specific properties.
     public static final String PROPERTIES_PREFIX = "properties.";
 
+    // Prefix for generic metadata.
+    public static final String METADATA_PREFIX = "metadata.";
+
     // AUTO_GEN_UUID keyword for UUID generation.
     public static final String AUTO_GEN_UUID_VALUE = "AUTO_GEN_UUID";
 

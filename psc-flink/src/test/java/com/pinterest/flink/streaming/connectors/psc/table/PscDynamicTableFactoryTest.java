@@ -1181,6 +1181,25 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
+    public void testTableSinkAllowsMetadataAndCustomPropertiesPrefixes() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("metadata.custom.tag", "enabled");
+                            options.put("properties.custom.flag", "true");
+                            options.put("sink.delivery-guarantee", "exactly-once");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
+                        });
+
+        final Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        assertThat(processedProperties.getProperty("custom.flag")).isEqualTo("true");
+
+        final DynamicTableSink sink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(sink).isInstanceOf(PscDynamicSink.class);
+    }
+
+    @Test
     public void testTableSinkWithKeyValue() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(

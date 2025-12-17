@@ -318,6 +318,25 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     }
 
     @Test
+    public void testTableSinkAllowsMetadataAndCustomPropertiesPrefixes() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getFullSinkOptions(),
+                        options -> {
+                            options.put("metadata.audit.tag", "enabled");
+                            options.put("properties.custom.flag", "true");
+                            options.put("sink.delivery-guarantee", "exactly-once");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
+                        });
+
+        final Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        assertThat(processedProperties.getProperty("custom.flag")).isEqualTo("true");
+
+        final DynamicTableSink sink = createTableSink(SINK_SCHEMA, modifiedOptions);
+        assertThat(sink).isInstanceOf(PscDynamicSink.class);
+    }
+
+    @Test
     public void testTableSinkAutoCompleteSchemaRegistrySubject() {
         // value.format + key.format
         verifyEncoderSubject(
