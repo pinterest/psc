@@ -73,6 +73,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TRANSACTIONAL_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FIELDS_INCLUDE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.METADATA_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.PROPERTIES_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.autoCompleteSchemaRegistrySubject;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createKeyFormatProjection;
@@ -144,7 +145,7 @@ public class UpsertPscDynamicTableFactory
                 helper.discoverDecodingFormat(DeserializationFormatFactory.class, VALUE_FORMAT);
 
         // Validate the option data type.
-        helper.validateExcept(PROPERTIES_PREFIX);
+        helper.validateExcept(PROPERTIES_PREFIX, METADATA_PREFIX);
         validateSource(
                 tableOptions,
                 keyDecodingFormat,
@@ -224,7 +225,7 @@ public class UpsertPscDynamicTableFactory
                 helper.discoverEncodingFormat(SerializationFormatFactory.class, VALUE_FORMAT);
 
         // Validate the option data type.
-        helper.validateExcept(PROPERTIES_PREFIX);
+        helper.validateExcept(PROPERTIES_PREFIX, METADATA_PREFIX);
         validateSink(
                 tableOptions,
                 keyEncodingFormat,
