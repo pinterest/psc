@@ -185,11 +185,23 @@ public class PscTableCommonUtils {
 
         PscMetadataClient metadataClient = null;
         try {
-            // Create PSC configuration using the proper utility method.
-            // This ensures psc.conf is loaded and all default configurations
-            // (environment provider, SSL certs, etc.) are properly initialized,
-            // matching the behavior of PscSourceEnumerator at runtime.
-            PscConfiguration pscConfig = PscConfigurationUtils.propertiesToPscConfiguration(pscProperties);
+            // Create a copy of properties to avoid modifying the original
+            Properties metadataClientProps = new Properties();
+            metadataClientProps.putAll(pscProperties);
+            
+            // Set the required psc.metadata.client.id if not already present.
+            // This is required by PscMetadataClient validation (see PscConfigurationInternal.validateMetadataClientConfiguration).
+            // PscSourceEnumerator also sets this before creating its metadata client.
+            if (!metadataClientProps.containsKey(PscConfiguration.PSC_METADATA_CLIENT_ID)) {
+                metadataClientProps.setProperty(
+                        PscConfiguration.PSC_METADATA_CLIENT_ID, 
+                        "psc-table-partition-count-query");
+            }
+            
+            // Convert properties to PSC configuration.
+            // When passed to PscMetadataClient, it will be wrapped in PscConfigurationInternal
+            // which loads psc.conf defaults and validates the configuration.
+            PscConfiguration pscConfig = PscConfigurationUtils.propertiesToPscConfiguration(metadataClientProps);
             
             metadataClient = new PscMetadataClient(pscConfig);
             
