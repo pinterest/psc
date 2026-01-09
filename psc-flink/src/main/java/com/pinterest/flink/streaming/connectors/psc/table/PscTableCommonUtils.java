@@ -20,6 +20,7 @@ package com.pinterest.flink.streaming.connectors.psc.table;
 
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -184,11 +185,11 @@ public class PscTableCommonUtils {
 
         PscMetadataClient metadataClient = null;
         try {
-            // Create PSC configuration from properties
-            PscConfiguration pscConfig = new PscConfiguration();
-            for (String key : pscProperties.stringPropertyNames()) {
-                pscConfig.setProperty(key, pscProperties.getProperty(key));
-            }
+            // Create PSC configuration using the proper utility method.
+            // This ensures psc.conf is loaded and all default configurations
+            // (environment provider, SSL certs, etc.) are properly initialized,
+            // matching the behavior of PscSourceEnumerator at runtime.
+            PscConfiguration pscConfig = PscConfigurationUtils.propertiesToPscConfiguration(pscProperties);
             
             metadataClient = new PscMetadataClient(pscConfig);
             
