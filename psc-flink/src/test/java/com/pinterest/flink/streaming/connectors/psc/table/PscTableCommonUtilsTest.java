@@ -18,6 +18,10 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationInternal;
+import com.pinterest.psc.config.PscConfigurationUtils;
+import com.pinterest.psc.exception.startup.ConfigurationException;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.junit.After;
@@ -30,6 +34,7 @@ import java.util.Properties;
 
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * Comprehensive test suite for PscTableCommonUtils, focusing on rescale decision logic
@@ -354,6 +359,30 @@ public class PscTableCommonUtilsTest {
         boolean resultAfterReset = PscTableCommonUtils.shouldApplyRescale(
             tableOptions, globalConfig, topicUris, pscProperties, null);
         assertThat(resultAfterReset).isFalse(); // partition count = -1, fail-safe
+    }
+
+    // ============================================
+    // Tests validating PscMetadataClient configuration fix
+    // ============================================
+
+    @Test
+    public void testMetadataClientValidationPassesWithClientId() {
+        // This test proves the FIX works:
+        // With psc.metadata.client.id set, PscConfigurationInternal validation passes
+        
+        // Given: Properties WITH psc.metadata.client.id (matching our fix)
+        Properties propsWithClientId = new Properties();
+        propsWithClientId.setProperty(
+            PscConfiguration.PSC_METADATA_CLIENT_ID, 
+            "psc-table-partition-count-query"
+        );
+        
+        PscConfiguration pscConfig = PscConfigurationUtils.propertiesToPscConfiguration(propsWithClientId);
+        
+        // When/Then: Creating PscConfigurationInternal for metadata client does NOT throw
+        assertThatCode(() -> 
+            new PscConfigurationInternal(pscConfig, PscConfigurationInternal.PSC_CLIENT_TYPE_METADATA)
+        ).doesNotThrowAnyException();
     }
 }
 
