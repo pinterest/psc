@@ -1,5 +1,6 @@
 package com.pinterest.psc.metadata.creation;
 
+import com.pinterest.psc.common.PscUtils;
 import com.pinterest.psc.logging.PscLogger;
 import org.reflections.Reflections;
 
@@ -26,36 +27,38 @@ public class PscMetadataClientCreatorManager {
             findAndRegisterMetadataClientCreators(PscMetadataClientCreatorManager.class.getPackage().getName());
 
     private static Map<String, List<PscBackendMetadataClientCreator>> findAndRegisterMetadataClientCreators(String packageName) {
-        Map<String, List<PscBackendMetadataClientCreator>> backendCreatorRegistry = new HashMap<>();
-        Reflections reflections = new Reflections(packageName.trim());
-        Set<Class<?>> annotatedClasses = reflections.getTypesAnnotatedWith(PscMetadataClientCreatorPlugin.class);
-        for (Class<?> annotatedClass : annotatedClasses) {
-            PscMetadataClientCreatorPlugin plugin = annotatedClass.getAnnotation(PscMetadataClientCreatorPlugin.class);
-            if (plugin == null) {
-                logger.error("Plugin info null: " + annotatedClass.getName());
-                continue;
+        synchronized (PscUtils.lock) {
+            Map<String, List<PscBackendMetadataClientCreator>> backendCreatorRegistry = new HashMap<>();
+            Reflections reflections = new Reflections(packageName.trim());
+            Set<Class<?>> annotatedClasses = reflections.getTypesAnnotatedWith(PscMetadataClientCreatorPlugin.class);
+            for (Class<?> annotatedClass : annotatedClasses) {
+                PscMetadataClientCreatorPlugin plugin = annotatedClass.getAnnotation(PscMetadataClientCreatorPlugin.class);
+                if (plugin == null) {
+                    logger.error("Plugin info null: " + annotatedClass.getName());
+                    continue;
+                }
+                String backend = plugin.backend();
+                if (backend.isEmpty()) {
+                    logger.warn("Ignoring due to empty backend for plugin: " + annotatedClass.getName());
+                    continue;
+                }
+                try {
+                    PscBackendMetadataClientCreator creator =
+                            (PscBackendMetadataClientCreator) annotatedClass.getDeclaredConstructor().newInstance();
+                    List<PscBackendMetadataClientCreator> creators =
+                            backendCreatorRegistry.computeIfAbsent(backend, ignored -> new ArrayList<>());
+                    logger.info("Adding PscBackendMetadataClientCreator: {} with priority: {}", creator.getClass().getName(), getPriority(creator));
+                    creators.add(creator);
+                    creators.sort(Comparator.comparingInt(PscMetadataClientCreatorManager::getPriority));
+                    Collections.reverse(creators); // Sort in descending order of priority
+                } catch (ReflectiveOperationException e) {
+                    throw new RuntimeException("Failed to register PscBackendMetadataClientCreator", e);
+                }
             }
-            String backend = plugin.backend();
-            if (backend.isEmpty()) {
-                logger.warn("Ignoring due to empty backend for plugin: " + annotatedClass.getName());
-                continue;
-            }
-            try {
-                PscBackendMetadataClientCreator creator =
-                        (PscBackendMetadataClientCreator) annotatedClass.getDeclaredConstructor().newInstance();
-                List<PscBackendMetadataClientCreator> creators =
-                        backendCreatorRegistry.computeIfAbsent(backend, ignored -> new ArrayList<>());
-                logger.info("Adding PscBackendMetadataClientCreator: {} with priority: {}", creator.getClass().getName(), getPriority(creator));
-                creators.add(creator);
-                creators.sort(Comparator.comparingInt(PscMetadataClientCreatorManager::getPriority));
-                Collections.reverse(creators); // Sort in descending order of priority
-            } catch (ReflectiveOperationException e) {
-                throw new RuntimeException("Failed to register PscBackendMetadataClientCreator", e);
-            }
+            backendCreatorRegistry.replaceAll((backend, creators) ->
+                    Collections.unmodifiableList(new ArrayList<>(creators)));
+            return Collections.unmodifiableMap(backendCreatorRegistry);
         }
-        backendCreatorRegistry.replaceAll((backend, creators) ->
-                Collections.unmodifiableList(new ArrayList<>(creators)));
-        return Collections.unmodifiableMap(backendCreatorRegistry);
     }
 
     private static int getPriority(PscBackendMetadataClientCreator creator) {
