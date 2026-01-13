@@ -20,6 +20,7 @@ package com.pinterest.flink.streaming.connectors.psc.table;
 
 import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -184,11 +185,23 @@ public class PscTableCommonUtils {
 
         PscMetadataClient metadataClient = null;
         try {
-            // Create PSC configuration from properties
-            PscConfiguration pscConfig = new PscConfiguration();
-            for (String key : pscProperties.stringPropertyNames()) {
-                pscConfig.setProperty(key, pscProperties.getProperty(key));
+            // Create a copy of properties to avoid modifying the original
+            Properties metadataClientProps = new Properties();
+            metadataClientProps.putAll(pscProperties);
+            
+            // Set the required psc.metadata.client.id if not already present.
+            // This is required by PscMetadataClient validation (see PscConfigurationInternal.validateMetadataClientConfiguration).
+            // PscSourceEnumerator also sets this before creating its metadata client.
+            if (!metadataClientProps.containsKey(PscConfiguration.PSC_METADATA_CLIENT_ID)) {
+                metadataClientProps.setProperty(
+                        PscConfiguration.PSC_METADATA_CLIENT_ID, 
+                        "psc-table-partition-count-query");
             }
+            
+            // Convert properties to PSC configuration.
+            // When passed to PscMetadataClient, it will be wrapped in PscConfigurationInternal
+            // which loads psc.conf defaults and validates the configuration.
+            PscConfiguration pscConfig = PscConfigurationUtils.propertiesToPscConfiguration(metadataClientProps);
             
             metadataClient = new PscMetadataClient(pscConfig);
             
