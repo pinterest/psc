@@ -113,11 +113,21 @@ public class PscTopicUriPartitionSplitReader
             // This happens if all assigned partitions are invalid or empty (starting offset >=
             // stopping offset). We just mark empty partitions as finished and return an empty
             // record container, and this consumer will be closed by SplitFetcherManager.
-            PscPartitionSplitRecords recordsBySplits =
-                    new PscPartitionSplitRecords(
-                            PscConsumerMessagesIterable.emptyIterable(), pscSourceReaderMetrics);
-            markEmptySplitsAsFinished(recordsBySplits);
-            return recordsBySplits;
+            if (e.getCause() != null &&
+                    (e.getCause().getClass().equals(IllegalStateException.class) || e.getCause().getClass().equals(WakeupException.class))) {
+                LOG.warn("Caught IllegalStateException or WakeupException in poll(), marking partitions as finished", e);
+                PscPartitionSplitRecords recordsBySplits =
+                        new PscPartitionSplitRecords(
+                                PscConsumerMessagesIterable.emptyIterable(), pscSourceReaderMetrics);
+                markEmptySplitsAsFinished(recordsBySplits);
+                return recordsBySplits;
+            } else {
+                LOG.error("Unrecoverable ConsumerException caught in poll()", e);
+                throw new RuntimeException(e);
+            }
+        } catch (Exception e) {
+            LOG.error("Unrecoverable Exception caught in poll()", e);
+            throw new RuntimeException(e);
         }
         PscPartitionSplitRecords recordsBySplits =
                 new PscPartitionSplitRecords(consumerMessagesIterable, pscSourceReaderMetrics);
