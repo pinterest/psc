@@ -24,8 +24,10 @@ import com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv;
 import com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfiguration;
+import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.ClientException;
+import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.consumer.DeserializerException;
 import com.pinterest.psc.exception.startup.ConfigurationException;
 import com.pinterest.psc.serde.ByteArrayDeserializer;
@@ -46,6 +48,7 @@ import org.apache.flink.runtime.metrics.groups.InternalSourceReaderMetricGroup;
 import org.apache.flink.runtime.metrics.groups.UnregisteredMetricGroups;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.NoOffsetForPartitionException;
+import org.apache.kafka.common.KafkaException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
@@ -56,7 +59,9 @@ import org.junit.jupiter.params.provider.EmptySource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.lang.reflect.Field;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -73,6 +78,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import static com.pinterest.flink.connector.psc.testutils.PscSourceTestEnv.NUM_RECORDS_PER_PARTITION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** Unit tests for {@link PscTopicUriPartitionSplitReader}. */
 public class PscTopicUriPartitionSplitReaderTest {
@@ -159,6 +167,44 @@ public class PscTopicUriPartitionSplitReaderTest {
                 Collections.singletonMap(
                         PscTopicUriPartitionSplit.toSplitId(tp),
                         new PscTopicUriPartitionSplit(tp, PscTopicUriPartitionSplit.EARLIEST_OFFSET)));
+    }
+
+    @Test
+    public void testFetchThrowsOnNonWakeupConsumerException() throws Exception {
+        PscTopicUriPartitionSplitReader reader = createReader();
+        @SuppressWarnings("unchecked")
+        PscConsumer<byte[], byte[]> mockConsumer = (PscConsumer<byte[], byte[]>) mock(PscConsumer.class);
+        when(mockConsumer.poll(any(Duration.class)))
+                .thenThrow(new ConsumerException(new KafkaException("boom")));
+
+        Field consumerField = PscTopicUriPartitionSplitReader.class.getDeclaredField("consumer");
+        consumerField.setAccessible(true);
+        consumerField.set(reader, mockConsumer);
+
+        assertThatThrownBy(reader::fetch)
+                .isInstanceOf(RuntimeException.class)
+                .hasCauseInstanceOf(ConsumerException.class)
+                .hasRootCauseInstanceOf(KafkaException.class);
+    }
+
+    @Test
+    public void testFetchThrowsOnKafkaExceptionWithOomCause() throws Exception {
+        PscTopicUriPartitionSplitReader reader = createReader();
+        @SuppressWarnings("unchecked")
+        PscConsumer<byte[], byte[]> mockConsumer = (PscConsumer<byte[], byte[]>) mock(PscConsumer.class);
+        KafkaException kafkaException =
+                new KafkaException("Failed to load record batch", new OutOfMemoryError("Java heap space"));
+        when(mockConsumer.poll(any(Duration.class)))
+                .thenThrow(new ConsumerException(kafkaException));
+
+        Field consumerField = PscTopicUriPartitionSplitReader.class.getDeclaredField("consumer");
+        consumerField.setAccessible(true);
+        consumerField.set(reader, mockConsumer);
+
+        assertThatThrownBy(reader::fetch)
+                .isInstanceOf(RuntimeException.class)
+                .hasCauseInstanceOf(ConsumerException.class)
+                .hasRootCauseInstanceOf(OutOfMemoryError.class);
     }
 
     @Test
