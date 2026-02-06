@@ -702,9 +702,9 @@ public class PscConsumer<K, V> implements AutoCloseable {
         acquireAndEnsureOpen();
         try {
             if (messageListener != null) {
-                throw new ConsumerException(ExceptionMessage.MUTUALLY_EXCLUSIVE_APIS("poll()", "MessageListener"));
+                throw new ConsumerException(ExceptionMessage.MUTUALLY_EXCLUSIVE_APIS("poll()", "MessageListener"), new IllegalStateException());
             } else if (!subscribed.get() && !assigned.get()) {
-                throw new ConsumerException(ExceptionMessage.NO_SUBSCRIPTION_ASSIGNMENT("poll()"));
+                throw new ConsumerException(ExceptionMessage.NO_SUBSCRIPTION_ASSIGNMENT("poll()"), new IllegalStateException());
             }
             return internalPoll(pollTimeout);
         } finally {
