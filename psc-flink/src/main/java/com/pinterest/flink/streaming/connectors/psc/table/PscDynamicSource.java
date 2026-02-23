@@ -46,6 +46,7 @@ import org.apache.flink.table.connector.format.DecodingFormat;
 import org.apache.flink.table.connector.source.DataStreamScanProvider;
 import org.apache.flink.table.connector.source.DynamicTableSource;
 import org.apache.flink.table.connector.source.ScanTableSource;
+import org.apache.flink.table.connector.source.abilities.SupportsProjectionPushDown;
 import org.apache.flink.table.connector.source.abilities.SupportsReadingMetadata;
 import org.apache.flink.table.connector.source.abilities.SupportsWatermarkPushDown;
 import org.apache.flink.table.data.GenericMapData;
@@ -53,6 +54,9 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.LogicalTypeRoot;
+import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
 import org.apache.flink.table.types.utils.DataTypeUtils;
 import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
@@ -80,7 +84,11 @@ import java.util.stream.Stream;
 /** A version-agnostic PSC {@link ScanTableSource}. */
 @Internal
 public class PscDynamicSource
-        implements ScanTableSource, SupportsReadingMetadata, SupportsWatermarkPushDown {
+        implements
+                ScanTableSource,
+                SupportsReadingMetadata,
+                SupportsWatermarkPushDown,
+                SupportsProjectionPushDown {
 
     private static final Logger LOG = LoggerFactory.getLogger(PscDynamicSource.class);
 
@@ -119,6 +127,14 @@ public class PscDynamicSource
 
     /** Indices that determine the value fields and the target position in the produced row. */
     protected final int[] valueProjection;
+
+    // Query-specific projections (see SupportsProjectionPushDown).
+    // - *Format* projections are indices into physicalDataType (control what gets deserialized).
+    // - *Output* projections are indices into the projected physical row (control where fields land).
+    protected int[] keyFormatProjection;
+    protected int[] valueFormatProjection;
+    protected int[] keyOutputProjection;
+    protected int[] valueOutputProjection;
 
     /** Prefix that needs to be removed from fields when constructing the physical data type. */
     protected final @Nullable String keyPrefix;
@@ -241,6 +257,12 @@ public class PscDynamicSource
         this.valueProjection =
                 Preconditions.checkNotNull(valueProjection, "Value projection must not be null.");
         this.keyPrefix = keyPrefix;
+
+        // Default behavior: no projection pushdown, keep the DDL-level projections.
+        this.keyFormatProjection = this.keyProjection;
+        this.valueFormatProjection = this.valueProjection;
+        this.keyOutputProjection = this.keyProjection;
+        this.valueOutputProjection = this.valueProjection;
         // Mutable attributes
         this.producedDataType = physicalDataType;
         this.metadataKeys = Collections.emptyList();
@@ -327,10 +349,10 @@ public class PscDynamicSource
     @Override
     public ScanRuntimeProvider getScanRuntimeProvider(ScanContext context) {
         final DeserializationSchema<RowData> keyDeserialization =
-                createDeserialization(context, keyDecodingFormat, keyProjection, keyPrefix);
+                createDeserialization(context, keyDecodingFormat, keyFormatProjection, keyPrefix);
 
         final DeserializationSchema<RowData> valueDeserialization =
-                createDeserialization(context, valueDecodingFormat, valueProjection, null);
+                createDeserialization(context, valueDecodingFormat, valueFormatProjection, null);
 
         final TypeInformation<RowData> producedTypeInfo =
                 context.createTypeInformation(producedDataType);
@@ -457,6 +479,73 @@ public class PscDynamicSource
     }
 
     @Override
+    public boolean supportsNestedProjection() {
+        return true;
+    }
+
+    @Override
+    public void applyProjection(int[][] projectedFields, DataType producedDataType) {
+        Preconditions.checkNotNull(projectedFields, "Projected fields must not be null.");
+        Preconditions.checkNotNull(producedDataType, "Produced data type must not be null.");
+
+        final LogicalType physicalType = physicalDataType.getLogicalType();
+        Preconditions.checkArgument(
+                physicalType.is(LogicalTypeRoot.ROW), "Row data type expected.");
+        final int physicalFieldCount = LogicalTypeChecks.getFieldCount(physicalType);
+
+        // projectedFields is a 2D array where:
+        // - The first dimension represents the output field position (order in the projected row)
+        // - The second dimension is the path to the field: [topLevelIndex] for top-level fields,
+        //   or [topLevelIndex, nestedIndex, ...] for nested fields within ROW types
+        // Example: For schema (a INT, b ROW<x STRING, y INT>, c BIGINT):
+        //   - [[2], [1, 0]] means SELECT c, b.x → output row has c at position 0, b.x at position 1
+        //   - [2] is the path to top-level field 'c'
+        //   - [1, 0] is the path to nested field 'x' within 'b'
+        final int[] physicalIndexToOutputIndex = new int[physicalFieldCount];
+        Arrays.fill(physicalIndexToOutputIndex, -1);
+        for (int outputPos = 0; outputPos < projectedFields.length; outputPos++) {
+            final int[] path = projectedFields[outputPos];
+            Preconditions.checkArgument(
+                    path != null && path.length >= 1,
+                    "Projection path must have at least one element but got: %s",
+                    Arrays.toString(path));
+            // For nested projection, we only need the top-level field index to determine
+            // which fields to deserialize. The format (e.g., Thrift) handles nested extraction.
+            final int physicalPos = path[0];
+            Preconditions.checkArgument(
+                    physicalPos >= 0 && physicalPos < physicalFieldCount,
+                    "Projected field index out of bounds: %s",
+                    physicalPos);
+            physicalIndexToOutputIndex[physicalPos] = outputPos;
+        }
+
+        // This sets the physical output type. Note that SupportsReadingMetadata#applyReadableMetadata
+        // may overwrite producedDataType later with appended metadata columns.
+        this.producedDataType = producedDataType;
+
+        // Restrict the decoded fields (indices into physicalDataType), preserving existing key/value
+        // ordering.
+        this.keyFormatProjection =
+                IntStream.of(keyProjection)
+                        .filter(physicalPos -> physicalIndexToOutputIndex[physicalPos] >= 0)
+                        .toArray();
+        this.valueFormatProjection =
+                IntStream.of(valueProjection)
+                        .filter(physicalPos -> physicalIndexToOutputIndex[physicalPos] >= 0)
+                        .toArray();
+
+        // Remap decoded fields into the projected output row order.
+        this.keyOutputProjection =
+                IntStream.of(this.keyFormatProjection)
+                        .map(physicalPos -> physicalIndexToOutputIndex[physicalPos])
+                        .toArray();
+        this.valueOutputProjection =
+                IntStream.of(this.valueFormatProjection)
+                        .map(physicalPos -> physicalIndexToOutputIndex[physicalPos])
+                        .toArray();
+    }
+
+    @Override
     public DynamicTableSource copy() {
         final PscDynamicSource copy =
                 new PscDynamicSource(
@@ -484,6 +573,10 @@ public class PscDynamicSource
         copy.producedDataType = producedDataType;
         copy.metadataKeys = metadataKeys;
         copy.watermarkStrategy = watermarkStrategy;
+        copy.keyFormatProjection = keyFormatProjection;
+        copy.valueFormatProjection = valueFormatProjection;
+        copy.keyOutputProjection = keyOutputProjection;
+        copy.valueOutputProjection = valueOutputProjection;
         return copy;
     }
 
@@ -685,16 +778,16 @@ public class PscDynamicSource
         // adjust value format projection to include value format's metadata columns at the end
         final int[] adjustedValueProjection =
                 IntStream.concat(
-                                IntStream.of(valueProjection),
+                                IntStream.of(valueOutputProjection),
                                 IntStream.range(
-                                        keyProjection.length + valueProjection.length,
+                                        keyOutputProjection.length + valueOutputProjection.length,
                                         adjustedPhysicalArity))
                         .toArray();
 
         return new DynamicPscDeserializationSchema(
                 adjustedPhysicalArity,
                 keyDeserialization,
-                keyProjection,
+                keyOutputProjection,
                 valueDeserialization,
                 adjustedValueProjection,
                 hasMetadata,
