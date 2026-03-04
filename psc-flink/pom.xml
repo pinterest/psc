@@ -23,6 +23,20 @@
         <snakeyaml.version>2.2</snakeyaml.version>
     </properties>
 
+<!--    this is needed due to io.confluent:kafka-schema-registry-client not found in mvn central-->
+
+    <repositories>
+        <repository>
+            <id>io-confluent</id>
+            <name>io-confluent</name>
+            <url>https://packages.confluent.io/maven</url>
+            <releases>
+                <enabled>true</enabled>
+                <updatePolicy>interval:60</updatePolicy>
+            </releases>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>org.apache.flink</groupId>
