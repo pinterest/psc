@@ -22,9 +22,7 @@ jobs:
       - name: Build with Maven (psc-flink)
         shell: bash
         run: >
-          mvn -B install -Dgpg.skip -pl psc-flink \
-            -Dtest="*,!com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSourceITTest" \
-            -Dsurefire.failIfNoSpecifiedTests=false
+          mvn -B install -Dgpg.skip -pl psc-flink -Dtest="*,!com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSourceITTest" -Dsurefire.failIfNoSpecifiedTests=false
 
       # Collect docker logs/state ONLY if the build fails
       - name: Collect docker logs (on failure)
