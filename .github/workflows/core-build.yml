@@ -16,11 +16,11 @@ jobs:
 
       - name: Build with Maven
         shell: bash
-        run: |
-          mvn -B install --file pom.xml \
-            -Dtest="*,!DynamicPscSourceITTest" \
-            -Dsurefire.failIfNoSpecifiedTests=false \
-            -Dgpg.skip
+        run: >
+          mvn -B install --file pom.xml
+          -DforkCount=1 -DreuseForks=false
+          -Dtest="*,!com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSourceITTest"
+          -Dgpg.skip
 
       # Collect docker logs/state ONLY if the build fails
       - name: Collect docker logs (on failure)
