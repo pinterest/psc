@@ -54,6 +54,7 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
@@ -135,6 +136,12 @@ public class PscDynamicSource
     protected int[] valueFormatProjection;
     protected int[] keyOutputProjection;
     protected int[] valueOutputProjection;
+
+    // Full nested projection paths for each format field.
+    // Each int[] is a path: [topLevelIndex] for top-level, [topLevelIndex, nestedIndex, ...] for nested.
+    // Used by formats that support nested projection (e.g., Thrift's PartialThriftDeserializer).
+    protected int[][] keyNestedProjection;
+    protected int[][] valueNestedProjection;
 
     /** Prefix that needs to be removed from fields when constructing the physical data type. */
     protected final @Nullable String keyPrefix;
@@ -263,6 +270,9 @@ public class PscDynamicSource
         this.valueFormatProjection = this.valueProjection;
         this.keyOutputProjection = this.keyProjection;
         this.valueOutputProjection = this.valueProjection;
+        // Default nested projections: single-element paths for each top-level field
+        this.keyNestedProjection = toNestedProjection(this.keyProjection);
+        this.valueNestedProjection = toNestedProjection(this.valueProjection);
         // Mutable attributes
         this.producedDataType = physicalDataType;
         this.metadataKeys = Collections.emptyList();
@@ -349,10 +359,20 @@ public class PscDynamicSource
     @Override
     public ScanRuntimeProvider getScanRuntimeProvider(ScanContext context) {
         final DeserializationSchema<RowData> keyDeserialization =
-                createDeserialization(context, keyDecodingFormat, keyFormatProjection, keyPrefix);
+                createDeserialization(
+                        context,
+                        keyDecodingFormat,
+                        keyFormatProjection,
+                        keyNestedProjection,
+                        keyPrefix);
 
         final DeserializationSchema<RowData> valueDeserialization =
-                createDeserialization(context, valueDecodingFormat, valueFormatProjection, null);
+                createDeserialization(
+                        context,
+                        valueDecodingFormat,
+                        valueFormatProjection,
+                        valueNestedProjection,
+                        null);
 
         final TypeInformation<RowData> producedTypeInfo =
                 context.createTypeInformation(producedDataType);
@@ -501,38 +521,65 @@ public class PscDynamicSource
         //   - [[2], [1, 0]] means SELECT c, b.x → output row has c at position 0, b.x at position 1
         //   - [2] is the path to top-level field 'c'
         //   - [1, 0] is the path to nested field 'x' within 'b'
+
+        // Build mapping from top-level physical index to output position
         final int[] physicalIndexToOutputIndex = new int[physicalFieldCount];
         Arrays.fill(physicalIndexToOutputIndex, -1);
+
+        // Group projected paths by their top-level field index
+        // This allows us to track all nested paths for each top-level field
+        final Map<Integer, List<int[]>> pathsByTopLevelIndex = new LinkedHashMap<>();
+
         for (int outputPos = 0; outputPos < projectedFields.length; outputPos++) {
             final int[] path = projectedFields[outputPos];
             Preconditions.checkArgument(
                     path != null && path.length >= 1,
                     "Projection path must have at least one element but got: %s",
                     Arrays.toString(path));
-            // For nested projection, we only need the top-level field index to determine
-            // which fields to deserialize. The format (e.g., Thrift) handles nested extraction.
             final int physicalPos = path[0];
             Preconditions.checkArgument(
                     physicalPos >= 0 && physicalPos < physicalFieldCount,
                     "Projected field index out of bounds: %s",
                     physicalPos);
             physicalIndexToOutputIndex[physicalPos] = outputPos;
+
+            // Collect all paths for this top-level field
+            pathsByTopLevelIndex.computeIfAbsent(physicalPos, k -> new ArrayList<>()).add(path);
         }
 
         // This sets the physical output type. Note that SupportsReadingMetadata#applyReadableMetadata
         // may overwrite producedDataType later with appended metadata columns.
         this.producedDataType = producedDataType;
 
-        // Restrict the decoded fields (indices into physicalDataType), preserving existing key/value
-        // ordering.
-        this.keyFormatProjection =
-                IntStream.of(keyProjection)
-                        .filter(physicalPos -> physicalIndexToOutputIndex[physicalPos] >= 0)
-                        .toArray();
-        this.valueFormatProjection =
-                IntStream.of(valueProjection)
-                        .filter(physicalPos -> physicalIndexToOutputIndex[physicalPos] >= 0)
-                        .toArray();
+        // Build key format projection and nested paths
+        List<Integer> keyFormatList = new ArrayList<>();
+        List<int[]> keyNestedList = new ArrayList<>();
+        for (int physicalPos : keyProjection) {
+            if (physicalIndexToOutputIndex[physicalPos] >= 0) {
+                keyFormatList.add(physicalPos);
+                List<int[]> paths = pathsByTopLevelIndex.get(physicalPos);
+                if (paths != null) {
+                    keyNestedList.addAll(paths);
+                }
+            }
+        }
+        this.keyFormatProjection = keyFormatList.stream().mapToInt(Integer::intValue).toArray();
+        this.keyNestedProjection = keyNestedList.toArray(new int[0][]);
+
+        // Build value format projection and nested paths
+        List<Integer> valueFormatList = new ArrayList<>();
+        List<int[]> valueNestedList = new ArrayList<>();
+        for (int physicalPos : valueProjection) {
+            if (physicalIndexToOutputIndex[physicalPos] >= 0) {
+                valueFormatList.add(physicalPos);
+                List<int[]> paths = pathsByTopLevelIndex.get(physicalPos);
+                if (paths != null) {
+                    valueNestedList.addAll(paths);
+                }
+            }
+        }
+        this.valueFormatProjection = valueFormatList.stream().mapToInt(Integer::intValue).toArray();
+        this.valueNestedProjection = valueNestedList.toArray(new int[0][]);
 
         // Remap decoded fields into the projected output row order.
         this.keyOutputProjection =
@@ -543,6 +590,71 @@ public class PscDynamicSource
                 IntStream.of(this.valueFormatProjection)
                         .map(physicalPos -> physicalIndexToOutputIndex[physicalPos])
                         .toArray();
+    }
+
+    /** Converts a 1D projection (top-level indices) to 2D nested projection format. */
+    private static int[][] toNestedProjection(int[] projection) {
+        int[][] result = new int[projection.length][];
+        for (int i = 0; i < projection.length; i++) {
+            result[i] = new int[] {projection[i]};
+        }
+        return result;
+    }
+
+    /**
+     * Converts nested projection paths to dot-separated field names.
+     * Example: [[1, 0], [2]] with schema (a, b ROW&lt;x, y&gt;, c) → ["b.x", "c"]
+     */
+    public static List<String> convertPathsToFieldNames(int[][] paths, DataType dataType) {
+        List<String> fieldNames = new ArrayList<>();
+        List<String> topLevelNames = DataType.getFieldNames(dataType);
+        List<DataType> topLevelTypes = DataType.getFieldDataTypes(dataType);
+
+        for (int[] path : paths) {
+            StringBuilder name = new StringBuilder();
+            List<String> currentNames = topLevelNames;
+            List<DataType> currentTypes = topLevelTypes;
+
+            for (int i = 0; i < path.length; i++) {
+                int index = path[i];
+                if (i > 0) {
+                    name.append(".");
+                }
+                name.append(currentNames.get(index));
+
+                // Navigate to nested type for next iteration
+                if (i < path.length - 1) {
+                    DataType nestedType = currentTypes.get(index);
+                    // Unwrap collection types (ARRAY, MAP) to get to element/value type
+                    nestedType = unwrapCollectionType(nestedType);
+                    currentNames = DataType.getFieldNames(nestedType);
+                    currentTypes = DataType.getFieldDataTypes(nestedType);
+                }
+            }
+            fieldNames.add(name.toString());
+        }
+        return fieldNames;
+    }
+
+    /**
+     * Unwraps collection types (ARRAY, MAP) to get the element/value type containing ROW fields.
+     */
+    private static DataType unwrapCollectionType(DataType dataType) {
+        LogicalType logicalType = dataType.getLogicalType();
+        if (logicalType instanceof ArrayType) {
+            // ARRAY<ROW<...>> - get the element type
+            List<DataType> children = dataType.getChildren();
+            if (!children.isEmpty()) {
+                return children.get(0);
+            }
+        } else if (logicalType instanceof org.apache.flink.table.types.logical.MapType) {
+            // MAP<K, ROW<...>> - get the value type (second child)
+            List<DataType> children = dataType.getChildren();
+            if (children.size() >= 2) {
+                return children.get(1);
+            }
+        }
+        return dataType;
     }
 
     @Override
@@ -577,6 +689,8 @@ public class PscDynamicSource
         copy.valueFormatProjection = valueFormatProjection;
         copy.keyOutputProjection = keyOutputProjection;
         copy.valueOutputProjection = valueOutputProjection;
+        copy.keyNestedProjection = keyNestedProjection;
+        copy.valueNestedProjection = valueNestedProjection;
         return copy;
     }
 
@@ -800,11 +914,18 @@ public class PscDynamicSource
             Context context,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> format,
             int[] projection,
+            int[][] nestedProjection,
             @Nullable String prefix) {
         if (format == null) {
             return null;
         }
-        DataType physicalFormatDataType = Projection.of(projection).project(this.physicalDataType);
+        // Use nested projection if available for proper nested field pruning
+        DataType physicalFormatDataType;
+        if (nestedProjection != null && nestedProjection.length > 0) {
+            physicalFormatDataType = Projection.of(nestedProjection).project(this.physicalDataType);
+        } else {
+            physicalFormatDataType = Projection.of(projection).project(this.physicalDataType);
+        }
         if (prefix != null) {
             physicalFormatDataType = DataTypeUtils.stripRowPrefix(physicalFormatDataType, prefix);
         }
