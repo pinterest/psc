@@ -14,13 +14,17 @@ jobs:
         with:
           java-version: 1.8
 
-      - name: Build with Maven
+      - name: Build with Maven (except psc-flink)
         shell: bash
         run: >
-          mvn -B install --file pom.xml
-          -DforkCount=1 -DreuseForks=false
-          -Dtest="*,!com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSourceITTest"
-          -Dgpg.skip
+          mvn -B install -Dgpg.skip -pl '!psc-flink'
+          
+      - name: Build with Maven (psc-flink)
+        shell: bash
+        run: >
+          mvn -B install -Dgpg.skip -pl psc-flink \
+            -Dtest="*,!com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSourceITTest" \
+            -Dsurefire.failIfNoSpecifiedTests=false
 
       # Collect docker logs/state ONLY if the build fails
       - name: Collect docker logs (on failure)
