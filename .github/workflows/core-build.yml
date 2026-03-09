@@ -14,43 +14,5 @@ jobs:
         with:
           java-version: 1.8
 
-      - name: Build with Maven (except psc-flink)
-        shell: bash
-        run: >
-          mvn -B install -Dgpg.skip -pl '!psc-flink'
-          
-      - name: Build with Maven (psc-flink)
-        shell: bash
-        run: >
-          mvn -B install -Dgpg.skip -pl psc-flink -Dtest="*,!com.pinterest.flink.connector.psc.dynamic.source.DynamicPscSourceITTest" -Dsurefire.failIfNoSpecifiedTests=false
-
-      # Collect docker logs/state ONLY if the build fails
-      - name: Collect docker logs (on failure)
-        if: failure()
-        shell: bash
-        run: |
-          set -euxo pipefail
-          mkdir -p docker-logs
-
-          docker ps -a --no-trunc | tee docker-logs/ps-a.txt || true
-          docker images | tee docker-logs/images.txt || true
-          docker system df | tee docker-logs/system-df.txt || true
-
-          # Docker daemon events can show OOM kills / restarts / etc.
-          docker events --since 30m --until 0s > docker-logs/events.txt 2>&1 || true
-
-          # Save logs+inspect for any container that looks relevant
-          while read -r id image name; do
-            echo "Saving logs for: $id $image $name"
-            docker logs --timestamps --details "$id" > "docker-logs/${name}_${id}.log" 2>&1 || true
-            docker inspect "$id" > "docker-logs/${name}_${id}.inspect.json" 2>&1 || true
-          done < <(docker ps -a --format '{{.ID}} {{.Image}} {{.Names}}' | egrep 'confluentinc/cp-kafka|cp-kafka|testcontainers|ryuk|zookeeper|kafka' || true)
-
-      - name: Upload docker logs artifact
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-logs
-          path: docker-logs
-          if-no-files-found: warn
-          retention-days: 7
+      - name: Build with Maven
+        run: mvn -B install --file pom.xml -Dgpg.skip
