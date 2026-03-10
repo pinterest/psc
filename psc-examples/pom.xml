@@ -15,7 +15,7 @@
     <name>psc-examples</name>
 
     <properties>
-        <memq.version>0.2.21</memq.version>
+        <memq.version>1.0.2</memq.version>
     </properties>
 
     <dependencies>

@@ -29,6 +29,7 @@ import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.consumer.WakeupException;
 import com.pinterest.psc.logging.PscLogger;
+import com.pinterest.psc.common.PscUtils;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
@@ -55,6 +56,7 @@ import java.util.stream.Collectors;
 public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     public static final String END_OF_BATCH_EVENT = "end_of_batch";
+    private static final String MEMQ_CONSUMER_METRIC_GROUP = "memq-consumer-metrics";
 
     private static final PscLogger logger = PscLogger.getLogger(PscMemqConsumer.class);
     @VisibleForTesting
@@ -599,6 +601,7 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
     public void close() throws ConsumerException {
         if (memqConsumer == null)
             throw new ConsumerException("[Memq] Consumer is not initialized prior to call to close().");
+        scheduler.shutdown();
         currentSubscription.clear();
         try {
             memqConsumer.close();
@@ -640,7 +643,8 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         Map<Integer, Long> startOffsets = memqConsumer
                 .getEarliestOffsets(partitionToTopicUriPartition.keySet());
         return startOffsets.entrySet().stream().collect(Collectors
-                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()), Map.Entry::getValue));
+                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()),
+                       entry -> kafkaOffsetToComposite(entry.getValue())));
     }
 
     @Override
@@ -654,7 +658,8 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         Map<Integer, Long> endOffsets = memqConsumer
                 .getLatestOffsets(partitionToTopicUriPartition.keySet());
         return endOffsets.entrySet().stream().collect(Collectors
-                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()), Map.Entry::getValue));
+                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()),
+                       entry -> kafkaOffsetToComposite(entry.getValue())));
     }
 
     @Override
@@ -714,7 +719,57 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     @Override
     public Map<MetricName, ? extends Metric> metrics() throws ConsumerException {
-        return Collections.emptyMap();
+        if (memqConsumer == null) {
+            return Collections.emptyMap();
+        }
+
+        MetricRegistry registry = memqConsumer.getMetricRegistry();
+        if (registry == null) {
+            return Collections.emptyMap();
+        }
+
+        Map<MetricName, Metric> result = new HashMap<>();
+        for (Map.Entry<String, com.codahale.metrics.Metric> entry : registry.getMetrics().entrySet()) {
+            String name = entry.getKey();
+            com.codahale.metrics.Metric dropwizardMetric = entry.getValue();
+
+            Map<String, String> tags = new HashMap<>();
+            tags.put("backend", PscUtils.BACKEND_TYPE_MEMQ);
+
+            MetricName metricName = new MetricName(name, MEMQ_CONSUMER_METRIC_GROUP, "", tags);
+            result.put(metricName, new LiveDropwizardMetric(metricName, dropwizardMetric));
+        }
+
+        return result;
+    }
+
+    /**
+     * A PSC Metric backed by a live Dropwizard metric reference.
+     * Each call to {@link #metricValue()} reads the current value from the
+     * underlying Dropwizard metric rather than returning a stale snapshot.
+     */
+    private static class LiveDropwizardMetric extends Metric {
+        private final com.codahale.metrics.Metric dropwizardMetric;
+
+        LiveDropwizardMetric(MetricName metricName, com.codahale.metrics.Metric dropwizardMetric) {
+            super(metricName, null);
+            this.dropwizardMetric = dropwizardMetric;
+        }
+
+        @Override
+        public Object metricValue() {
+            if (dropwizardMetric instanceof Counter)
+                return ((Counter) dropwizardMetric).getCount();
+            if (dropwizardMetric instanceof Gauge)
+                return ((Gauge<?>) dropwizardMetric).getValue();
+            if (dropwizardMetric instanceof Meter)
+                return ((Meter) dropwizardMetric).getCount();
+            if (dropwizardMetric instanceof Histogram)
+                return ((Histogram) dropwizardMetric).getSnapshot().getMax();
+            if (dropwizardMetric instanceof Timer)
+                return ((Timer) dropwizardMetric).getSnapshot().getMax();
+            return -1L;
+        }
     }
 
     /**
@@ -744,6 +799,16 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     private boolean isCurrentTopicPartition(TopicUriPartition topicUriPartition) {
         return this.currentSubscription.contains(topicUriPartition.getTopicUri()) || this.currentAssignment.contains(topicUriPartition);
+    }
+
+    /**
+     * Converts a raw Kafka notification offset to a composite MemqOffset (with message offset 0).
+     * All offsets exposed by PscMemqConsumer must be in composite format so that
+     * {@link #seekToOffset} can correctly decode them back via
+     * {@link MemqOffset#convertPscOffsetToMemqOffset}.
+     */
+    private static long kafkaOffsetToComposite(long kafkaOffset) {
+        return new MemqOffset(kafkaOffset, 0).toLong();
     }
 
     private MemqConsumer<byte[], byte[]> getMetadataConsumer(TopicUri topicUri) throws ConsumerException {
