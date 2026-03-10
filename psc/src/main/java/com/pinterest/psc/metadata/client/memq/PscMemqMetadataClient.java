@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -52,9 +51,9 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
                 .convert(pscConfigurationInternal, topicUri);
         properties.setProperty(ConsumerConfigs.BOOTSTRAP_SERVERS, discoveryConfig.getConnect());
         properties.setProperty(ConsumerConfigs.CLIENT_ID,
-                pscConfigurationInternal.getMetadataClientId() + "_metadata");
+                pscConfigurationInternal.getMetadataClientId());
         properties.setProperty(ConsumerConfigs.GROUP_ID,
-                "psc-metadata-client-" + UUID.randomUUID());
+                pscConfigurationInternal.getMetadataClientId());
         properties.setProperty(ConsumerConfigs.KEY_DESERIALIZER_CLASS_KEY,
                 ByteArrayDeserializer.class.getName());
         properties.put(ConsumerConfigs.KEY_DESERIALIZER_CLASS_CONFIGS_KEY, new Properties());
