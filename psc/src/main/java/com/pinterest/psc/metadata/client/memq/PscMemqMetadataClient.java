@@ -28,19 +28,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
 
 /**
  * A Memq-specific implementation of the {@link PscBackendMetadataClient}.
- * Uses short-lived {@link MemqConsumer} instances to query metadata since Memq
- * does not have a dedicated admin client.
+ * Uses a {@link MemqConsumer} to query metadata since Memq does not have a dedicated admin client.
  */
 public class PscMemqMetadataClient extends PscBackendMetadataClient {
 
     private static final PscLogger logger = PscLogger.getLogger(PscMemqMetadataClient.class);
-    private Properties baseProperties;
+    private MemqConsumer<byte[], byte[]> memqConsumer;
 
     @Override
     public void initialize(
@@ -49,18 +48,26 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
             PscConfigurationInternal pscConfigurationInternal
     ) throws ConfigurationException {
         super.initialize(topicUri, env, pscConfigurationInternal);
-        baseProperties = new PscMetadataClientToMemqConsumerConfigConverter()
+        Properties properties = new PscMetadataClientToMemqConsumerConfigConverter()
                 .convert(pscConfigurationInternal, topicUri);
-        baseProperties.setProperty(ConsumerConfigs.BOOTSTRAP_SERVERS, discoveryConfig.getConnect());
-        baseProperties.setProperty(ConsumerConfigs.CLIENT_ID, pscConfigurationInternal.getMetadataClientId());
-        baseProperties.setProperty(ConsumerConfigs.KEY_DESERIALIZER_CLASS_KEY,
+        properties.setProperty(ConsumerConfigs.BOOTSTRAP_SERVERS, discoveryConfig.getConnect());
+        properties.setProperty(ConsumerConfigs.CLIENT_ID,
+                pscConfigurationInternal.getMetadataClientId() + "_metadata");
+        properties.setProperty(ConsumerConfigs.GROUP_ID,
+                "psc-metadata-client-" + UUID.randomUUID());
+        properties.setProperty(ConsumerConfigs.KEY_DESERIALIZER_CLASS_KEY,
                 ByteArrayDeserializer.class.getName());
-        baseProperties.put(ConsumerConfigs.KEY_DESERIALIZER_CLASS_CONFIGS_KEY, new Properties());
-        baseProperties.setProperty(ConsumerConfigs.VALUE_DESERIALIZER_CLASS_KEY,
+        properties.put(ConsumerConfigs.KEY_DESERIALIZER_CLASS_CONFIGS_KEY, new Properties());
+        properties.setProperty(ConsumerConfigs.VALUE_DESERIALIZER_CLASS_KEY,
                 ByteArrayDeserializer.class.getName());
-        baseProperties.put(ConsumerConfigs.VALUE_DESERIALIZER_CLASS_CONFIGS_KEY, new Properties());
-        baseProperties.setProperty(ConsumerConfigs.DIRECT_CONSUMER, "false");
-        logger.info("Initialized PscMemqMetadataClient with base properties: " + baseProperties);
+        properties.put(ConsumerConfigs.VALUE_DESERIALIZER_CLASS_CONFIGS_KEY, new Properties());
+        properties.setProperty(ConsumerConfigs.DIRECT_CONSUMER, "false");
+        try {
+            this.memqConsumer = new MemqConsumer<>(properties);
+        } catch (Exception e) {
+            throw new ConfigurationException("Failed to create Memq consumer for metadata client", e);
+        }
+        logger.info("Initialized PscMemqMetadataClient with properties: " + properties);
     }
 
     @Override
@@ -77,18 +84,13 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
     ) throws ExecutionException, InterruptedException, TimeoutException {
         Map<TopicUri, TopicUriMetadata> result = new HashMap<>();
         for (TopicUri tu : topicUris) {
-            try (MemqConsumer<byte[], byte[]> consumer = createConsumer(tu.getTopic())) {
-                List<Integer> partitions = consumer.getPartition();
-                List<TopicUriPartition> topicUriPartitions = new ArrayList<>();
-                for (int partition : partitions) {
-                    topicUriPartitions.add(createMemqTopicUriPartition(tu, partition));
-                }
-                result.put(tu, new TopicUriMetadata(tu, topicUriPartitions));
-            } catch (IOException e) {
-                throw new ExecutionException("Failed to close Memq metadata consumer for " + tu, e);
-            } catch (Exception e) {
-                throw new ExecutionException("Failed to describe topic " + tu, e);
+            subscribe(tu.getTopic());
+            List<Integer> partitions = memqConsumer.getPartition();
+            List<TopicUriPartition> topicUriPartitions = new ArrayList<>();
+            for (int partition : partitions) {
+                topicUriPartitions.add(createMemqTopicUriPartition(tu, partition));
             }
+            result.put(tu, new TopicUriMetadata(tu, topicUriPartitions));
         }
         return result;
     }
@@ -100,13 +102,11 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
     ) throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, Set<Integer>> earliestByTopic = new HashMap<>();
         Map<String, Set<Integer>> latestByTopic = new HashMap<>();
-        Map<String, TopicUri> topicToUri = new HashMap<>();
 
         for (Map.Entry<TopicUriPartition, PscMetadataClient.MetadataClientOption> entry :
                 topicUriPartitionsAndOptions.entrySet()) {
             TopicUriPartition tup = entry.getKey();
             String topic = tup.getTopicUri().getTopic();
-            topicToUri.put(topic, tup.getTopicUri());
 
             if (entry.getValue() == PscMetadataClient.MetadataClientOption.OFFSET_SPEC_EARLIEST) {
                 earliestByTopic.computeIfAbsent(topic, k -> new HashSet<>()).add(tup.getPartition());
@@ -124,28 +124,24 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
         allTopics.addAll(latestByTopic.keySet());
 
         for (String topic : allTopics) {
-            try (MemqConsumer<byte[], byte[]> consumer = createConsumer(topic)) {
-                Set<Integer> earliestPartitions = earliestByTopic.getOrDefault(topic, new HashSet<>());
-                if (!earliestPartitions.isEmpty()) {
-                    Map<Integer, Long> offsets = consumer.getEarliestOffsets(earliestPartitions);
-                    for (Map.Entry<Integer, Long> e : offsets.entrySet()) {
-                        TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
-                        result.put(createMemqTopicUriPartition(topicRn, e.getKey()), e.getValue());
-                    }
-                }
+            subscribe(topic);
 
-                Set<Integer> latestPartitions = latestByTopic.getOrDefault(topic, new HashSet<>());
-                if (!latestPartitions.isEmpty()) {
-                    Map<Integer, Long> offsets = consumer.getLatestOffsets(latestPartitions);
-                    for (Map.Entry<Integer, Long> e : offsets.entrySet()) {
-                        TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
-                        result.put(createMemqTopicUriPartition(topicRn, e.getKey()), e.getValue());
-                    }
+            Set<Integer> earliestPartitions = earliestByTopic.getOrDefault(topic, new HashSet<>());
+            if (!earliestPartitions.isEmpty()) {
+                Map<Integer, Long> offsets = memqConsumer.getEarliestOffsets(earliestPartitions);
+                for (Map.Entry<Integer, Long> e : offsets.entrySet()) {
+                    TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
+                    result.put(createMemqTopicUriPartition(topicRn, e.getKey()), e.getValue());
                 }
-            } catch (IOException e) {
-                throw new ExecutionException("Failed to close Memq metadata consumer for topic " + topic, e);
-            } catch (Exception e) {
-                throw new ExecutionException("Failed to list offsets for topic " + topic, e);
+            }
+
+            Set<Integer> latestPartitions = latestByTopic.getOrDefault(topic, new HashSet<>());
+            if (!latestPartitions.isEmpty()) {
+                Map<Integer, Long> offsets = memqConsumer.getLatestOffsets(latestPartitions);
+                for (Map.Entry<Integer, Long> e : offsets.entrySet()) {
+                    TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
+                    result.put(createMemqTopicUriPartition(topicRn, e.getKey()), e.getValue());
+                }
             }
         }
         return result;
@@ -157,36 +153,25 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
             Duration duration
     ) throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, Map<Integer, Long>> timestampsByTopic = new HashMap<>();
-        Map<String, Map<Integer, TopicUriPartition>> partitionLookupByTopic = new HashMap<>();
 
         for (Map.Entry<TopicUriPartition, Long> entry : topicUriPartitionsAndTimes.entrySet()) {
             TopicUriPartition tup = entry.getKey();
             String topic = tup.getTopicUri().getTopic();
             timestampsByTopic.computeIfAbsent(topic, k -> new HashMap<>())
                     .put(tup.getPartition(), entry.getValue());
-            partitionLookupByTopic.computeIfAbsent(topic, k -> new HashMap<>())
-                    .put(tup.getPartition(), tup);
         }
 
         Map<TopicUriPartition, Long> result = new HashMap<>();
         for (Map.Entry<String, Map<Integer, Long>> entry : timestampsByTopic.entrySet()) {
             String topic = entry.getKey();
-            try (MemqConsumer<byte[], byte[]> consumer = createConsumer(topic)) {
-                Map<Integer, Long> offsets = consumer.offsetsOfTimestamps(entry.getValue());
-                Map<Integer, TopicUriPartition> partitionLookup = partitionLookupByTopic.get(topic);
-                for (Map.Entry<Integer, Long> offsetEntry : offsets.entrySet()) {
-                    TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
-                    result.put(
-                            createMemqTopicUriPartition(topicRn, offsetEntry.getKey()),
-                            offsetEntry.getValue()
-                    );
-                }
-            } catch (IOException e) {
-                throw new ExecutionException(
-                        "Failed to close Memq metadata consumer for topic " + topic, e);
-            } catch (Exception e) {
-                throw new ExecutionException(
-                        "Failed to list offsets for timestamps for topic " + topic, e);
+            subscribe(topic);
+            Map<Integer, Long> offsets = memqConsumer.offsetsOfTimestamps(entry.getValue());
+            for (Map.Entry<Integer, Long> offsetEntry : offsets.entrySet()) {
+                TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
+                result.put(
+                        createMemqTopicUriPartition(topicRn, offsetEntry.getKey()),
+                        offsetEntry.getValue()
+                );
             }
         }
         return result;
@@ -207,25 +192,18 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
         Map<TopicUriPartition, Long> result = new HashMap<>();
         for (Map.Entry<String, Set<Integer>> entry : partitionsByTopic.entrySet()) {
             String topic = entry.getKey();
-            try (MemqConsumer<byte[], byte[]> consumer = createConsumer(topic, consumerGroupId)) {
-                for (int partition : entry.getValue()) {
-                    long committedOffset = consumer.committed(partition);
-                    if (committedOffset == -1L) {
-                        logger.warn(
-                                "Consumer group {} has no committed offset for topic {} partition {}",
-                                consumerGroupId, topic, partition
-                        );
-                        continue;
-                    }
-                    TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
-                    result.put(createMemqTopicUriPartition(topicRn, partition), committedOffset);
+            subscribe(topic);
+            for (int partition : entry.getValue()) {
+                long committedOffset = memqConsumer.committed(partition);
+                if (committedOffset == -1L) {
+                    logger.warn(
+                            "Consumer group {} has no committed offset for topic {} partition {}",
+                            consumerGroupId, topic, partition
+                    );
+                    continue;
                 }
-            } catch (IOException e) {
-                throw new ExecutionException(
-                        "Failed to close Memq metadata consumer for topic " + topic, e);
-            } catch (Exception e) {
-                throw new ExecutionException(
-                        "Failed to list consumer group offsets for topic " + topic, e);
+                TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
+                result.put(createMemqTopicUriPartition(topicRn, partition), committedOffset);
             }
         }
         return result;
@@ -233,27 +211,17 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
 
     @Override
     public void close() throws IOException {
+        if (memqConsumer != null)
+            memqConsumer.close();
         logger.info("Closed PscMemqMetadataClient");
     }
 
-    private MemqConsumer<byte[], byte[]> createConsumer(String topic) throws Exception {
-        return createConsumer(topic, null);
-    }
-
-    private MemqConsumer<byte[], byte[]> createConsumer(String topic, String groupId) throws Exception {
-        Properties props = new Properties();
-        props.putAll(baseProperties);
-        props.setProperty(ConsumerConfigs.CLIENT_ID,
-                baseProperties.getProperty(ConsumerConfigs.CLIENT_ID) + "_metadata");
-        if (groupId != null) {
-            props.setProperty(ConsumerConfigs.GROUP_ID, groupId);
-        } else {
-            props.setProperty(ConsumerConfigs.GROUP_ID,
-                    topic + "_metadata_cg_" + ThreadLocalRandom.current().nextInt());
+    private void subscribe(String topic) throws ExecutionException {
+        try {
+            memqConsumer.subscribe(topic);
+        } catch (Exception e) {
+            throw new ExecutionException("Failed to subscribe to Memq topic " + topic, e);
         }
-        MemqConsumer<byte[], byte[]> consumer = new MemqConsumer<>(props);
-        consumer.subscribe(topic);
-        return consumer;
     }
 
     private TopicUriPartition createMemqTopicUriPartition(TopicRn topicRn, int partition) {
