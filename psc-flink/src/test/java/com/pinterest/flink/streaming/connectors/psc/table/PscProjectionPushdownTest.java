@@ -23,9 +23,13 @@ import org.apache.flink.table.connector.source.abilities.SupportsProjectionPushD
 import org.apache.flink.table.factories.TestFormatFactory.DecodingFormatMock;
 import org.apache.flink.table.runtime.connector.source.ScanRuntimeProviderContext;
 import org.apache.flink.table.types.DataType;
+import org.apache.flink.table.types.logical.ArrayType;
+import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.utils.DataTypeUtils;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -469,7 +473,7 @@ public class PscProjectionPushdownTest {
             new int[] {2}   // c
         };
 
-        List<String> fieldNames = PscDynamicSource.convertPathsToFieldNames(paths, FULL_PHYSICAL_TYPE);
+        List<String> fieldNames = convertPathsToFieldNames(paths, FULL_PHYSICAL_TYPE);
 
         assertThat(fieldNames).containsExactly("a", "c");
     }
@@ -485,7 +489,7 @@ public class PscProjectionPushdownTest {
             new int[] {1, 1}    // b.y
         };
 
-        List<String> fieldNames = PscDynamicSource.convertPathsToFieldNames(paths, NESTED_PHYSICAL_TYPE);
+        List<String> fieldNames = convertPathsToFieldNames(paths, NESTED_PHYSICAL_TYPE);
 
         assertThat(fieldNames).containsExactly("a", "b.x", "b.y");
     }
@@ -513,7 +517,7 @@ public class PscProjectionPushdownTest {
             new int[] {1, 1, 1}    // b.y.q
         };
 
-        List<String> fieldNames = PscDynamicSource.convertPathsToFieldNames(paths, deeplyNestedType);
+        List<String> fieldNames = convertPathsToFieldNames(paths, deeplyNestedType);
 
         assertThat(fieldNames).containsExactly("a", "b.x", "b.y.p", "b.y.q");
     }
@@ -537,7 +541,7 @@ public class PscProjectionPushdownTest {
             new int[] {0, 1}    // items.name
         };
 
-        List<String> fieldNames = PscDynamicSource.convertPathsToFieldNames(paths, arrayOfRowType);
+        List<String> fieldNames = convertPathsToFieldNames(paths, arrayOfRowType);
 
         assertThat(fieldNames).containsExactly("items.id", "items.name");
     }
@@ -565,6 +569,77 @@ public class PscProjectionPushdownTest {
         // DataTypeUtils.flattenToNames returns "b_x" and "b_y" (flattened)
         assertThat(decodedColumns)
                 .containsExactlyInAnyOrderElementsOf(Arrays.asList("b_x", "b_y"));
+    }
+
+    /**
+     * Test: Verify that output projection correctly maps multiple nested fields
+     * from the same parent to their respective output positions.
+     *
+     * This tests the fix for the collision issue where physicalIndexToOutputIndex
+     * was being overwritten when multiple nested fields shared the same top-level parent.
+     *
+     * For SELECT b.key, b.value FROM foo:
+     * - b.key should map to output position 0
+     * - b.value should map to output position 1
+     * - valueOutputProjection should be [0, 1], NOT [1] (the bug)
+     */
+    @Test
+    public void testOutputProjectionForMultipleNestedFieldsFromSameParent() {
+        PscDynamicSource source = createSourceWithNestedSchema();
+
+        // SELECT b.x, b.y FROM table -> paths [1, 0] (output 0) and [1, 1] (output 1)
+        final int[][] projectedFields = new int[][] {
+            new int[] {1, 0},   // b.x -> output position 0
+            new int[] {1, 1}    // b.y -> output position 1
+        };
+        final DataType projectedType =
+                DataTypes.ROW(
+                                DataTypes.FIELD("x", DataTypes.STRING()),
+                                DataTypes.FIELD("y", DataTypes.INT()))
+                        .notNull();
+
+        ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedType);
+
+        // Verify nested projection contains both paths
+        assertThat(source.valueNestedProjection.length).isEqualTo(2);
+        assertThat(source.valueNestedProjection[0]).containsExactly(1, 0);
+        assertThat(source.valueNestedProjection[1]).containsExactly(1, 1);
+
+        // Verify output projection maps each nested field to its correct position
+        // This is the key assertion - before the fix, this would be [1] instead of [0, 1]
+        assertThat(source.valueOutputProjection.length).isEqualTo(2);
+        assertThat(source.valueOutputProjection).containsExactly(0, 1);
+    }
+
+    /**
+     * Test: Verify output projection with interleaved nested and top-level fields.
+     *
+     * For SELECT a, b.y, c FROM table:
+     * - a (top-level) -> output position 0
+     * - b.y (nested) -> output position 1
+     * - c (top-level) -> output position 2
+     */
+    @Test
+    public void testOutputProjectionWithInterleavedFields() {
+        PscDynamicSource source = createSourceWithNestedSchema();
+
+        final int[][] projectedFields = new int[][] {
+            new int[] {0},      // a -> output position 0
+            new int[] {1, 1},   // b.y -> output position 1
+            new int[] {2}       // c -> output position 2
+        };
+        final DataType projectedType =
+                DataTypes.ROW(
+                                DataTypes.FIELD("a", DataTypes.INT()),
+                                DataTypes.FIELD("y", DataTypes.INT()),
+                                DataTypes.FIELD("c", DataTypes.BIGINT()))
+                        .notNull();
+
+        ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedType);
+
+        // All fields are value fields in our test schema
+        assertThat(source.valueNestedProjection.length).isEqualTo(3);
+        assertThat(source.valueOutputProjection).containsExactly(0, 1, 2);
     }
 
     /**
@@ -633,5 +708,63 @@ public class PscProjectionPushdownTest {
                 0L,
                 false,
                 "test-table");
+    }
+
+    // ==================== Test Utility Methods ====================
+
+    /**
+     * Converts nested projection paths to dot-separated field names.
+     * Example: [[1, 0], [2]] with schema (a, b ROW&lt;x, y&gt;, c) → ["b.x", "c"]
+     */
+    private static List<String> convertPathsToFieldNames(int[][] paths, DataType dataType) {
+        List<String> fieldNames = new ArrayList<>();
+        List<String> topLevelNames = DataType.getFieldNames(dataType);
+        List<DataType> topLevelTypes = DataType.getFieldDataTypes(dataType);
+
+        for (int[] path : paths) {
+            StringBuilder name = new StringBuilder();
+            List<String> currentNames = topLevelNames;
+            List<DataType> currentTypes = topLevelTypes;
+
+            for (int i = 0; i < path.length; i++) {
+                int index = path[i];
+                if (i > 0) {
+                    name.append(".");
+                }
+                name.append(currentNames.get(index));
+
+                // Navigate to nested type for next iteration
+                if (i < path.length - 1) {
+                    DataType nestedType = currentTypes.get(index);
+                    // Unwrap collection types (ARRAY, MAP) to get to element/value type
+                    nestedType = unwrapCollectionType(nestedType);
+                    currentNames = DataType.getFieldNames(nestedType);
+                    currentTypes = DataType.getFieldDataTypes(nestedType);
+                }
+            }
+            fieldNames.add(name.toString());
+        }
+        return fieldNames;
+    }
+
+    /**
+     * Unwraps collection types (ARRAY, MAP) to get the element/value type containing ROW fields.
+     */
+    private static DataType unwrapCollectionType(DataType dataType) {
+        LogicalType logicalType = dataType.getLogicalType();
+        if (logicalType instanceof ArrayType) {
+            // ARRAY<ROW<...>> - get the element type
+            List<DataType> children = dataType.getChildren();
+            if (!children.isEmpty()) {
+                return children.get(0);
+            }
+        } else if (logicalType instanceof MapType) {
+            // MAP<K, ROW<...>> - get the value type (second child)
+            List<DataType> children = dataType.getChildren();
+            if (children.size() >= 2) {
+                return children.get(1);
+            }
+        }
+        return dataType;
     }
 }

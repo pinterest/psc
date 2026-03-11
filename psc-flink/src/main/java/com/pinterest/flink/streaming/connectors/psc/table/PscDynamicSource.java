@@ -54,7 +54,6 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.StringData;
 import org.apache.flink.table.data.TimestampData;
 import org.apache.flink.table.types.DataType;
-import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.utils.LogicalTypeChecks;
@@ -522,13 +521,14 @@ public class PscDynamicSource
         //   - [2] is the path to top-level field 'c'
         //   - [1, 0] is the path to nested field 'x' within 'b'
 
-        // Build mapping from top-level physical index to output position
-        final int[] physicalIndexToOutputIndex = new int[physicalFieldCount];
-        Arrays.fill(physicalIndexToOutputIndex, -1);
+        // Track which top-level fields are projected (for filtering)
+        final boolean[] physicalFieldProjected = new boolean[physicalFieldCount];
 
-        // Group projected paths by their top-level field index
-        // This allows us to track all nested paths for each top-level field
-        final Map<Integer, List<int[]>> pathsByTopLevelIndex = new LinkedHashMap<>();
+        // Group projected paths by their top-level field index, preserving output positions.
+        // Each entry maps: path -> outputPosition
+        // This fixes the collision issue where multiple nested fields from the same parent
+        // (e.g., b.key and b.value) each need their own output position.
+        final Map<Integer, List<PathWithOutputPos>> pathsByTopLevelIndex = new LinkedHashMap<>();
 
         for (int outputPos = 0; outputPos < projectedFields.length; outputPos++) {
             final int[] path = projectedFields[outputPos];
@@ -541,55 +541,67 @@ public class PscDynamicSource
                     physicalPos >= 0 && physicalPos < physicalFieldCount,
                     "Projected field index out of bounds: %s",
                     physicalPos);
-            physicalIndexToOutputIndex[physicalPos] = outputPos;
 
-            // Collect all paths for this top-level field
-            pathsByTopLevelIndex.computeIfAbsent(physicalPos, k -> new ArrayList<>()).add(path);
+            physicalFieldProjected[physicalPos] = true;
+            pathsByTopLevelIndex
+                    .computeIfAbsent(physicalPos, k -> new ArrayList<>())
+                    .add(new PathWithOutputPos(path, outputPos));
         }
 
         // This sets the physical output type. Note that SupportsReadingMetadata#applyReadableMetadata
         // may overwrite producedDataType later with appended metadata columns.
         this.producedDataType = producedDataType;
 
-        // Build key format projection and nested paths
+        // Build key format projection, nested paths, and output mapping
         List<Integer> keyFormatList = new ArrayList<>();
         List<int[]> keyNestedList = new ArrayList<>();
+        List<Integer> keyOutputList = new ArrayList<>();
         for (int physicalPos : keyProjection) {
-            if (physicalIndexToOutputIndex[physicalPos] >= 0) {
+            if (physicalFieldProjected[physicalPos]) {
                 keyFormatList.add(physicalPos);
-                List<int[]> paths = pathsByTopLevelIndex.get(physicalPos);
-                if (paths != null) {
-                    keyNestedList.addAll(paths);
+                List<PathWithOutputPos> pathsWithPos = pathsByTopLevelIndex.get(physicalPos);
+                if (pathsWithPos != null) {
+                    for (PathWithOutputPos pwp : pathsWithPos) {
+                        keyNestedList.add(pwp.path);
+                        keyOutputList.add(pwp.outputPos);
+                    }
                 }
             }
         }
         this.keyFormatProjection = keyFormatList.stream().mapToInt(Integer::intValue).toArray();
         this.keyNestedProjection = keyNestedList.toArray(new int[0][]);
+        this.keyOutputProjection = keyOutputList.stream().mapToInt(Integer::intValue).toArray();
 
-        // Build value format projection and nested paths
+        // Build value format projection, nested paths, and output mapping
         List<Integer> valueFormatList = new ArrayList<>();
         List<int[]> valueNestedList = new ArrayList<>();
+        List<Integer> valueOutputList = new ArrayList<>();
         for (int physicalPos : valueProjection) {
-            if (physicalIndexToOutputIndex[physicalPos] >= 0) {
+            if (physicalFieldProjected[physicalPos]) {
                 valueFormatList.add(physicalPos);
-                List<int[]> paths = pathsByTopLevelIndex.get(physicalPos);
-                if (paths != null) {
-                    valueNestedList.addAll(paths);
+                List<PathWithOutputPos> pathsWithPos = pathsByTopLevelIndex.get(physicalPos);
+                if (pathsWithPos != null) {
+                    for (PathWithOutputPos pwp : pathsWithPos) {
+                        valueNestedList.add(pwp.path);
+                        valueOutputList.add(pwp.outputPos);
+                    }
                 }
             }
         }
         this.valueFormatProjection = valueFormatList.stream().mapToInt(Integer::intValue).toArray();
         this.valueNestedProjection = valueNestedList.toArray(new int[0][]);
+        this.valueOutputProjection = valueOutputList.stream().mapToInt(Integer::intValue).toArray();
+    }
 
-        // Remap decoded fields into the projected output row order.
-        this.keyOutputProjection =
-                IntStream.of(this.keyFormatProjection)
-                        .map(physicalPos -> physicalIndexToOutputIndex[physicalPos])
-                        .toArray();
-        this.valueOutputProjection =
-                IntStream.of(this.valueFormatProjection)
-                        .map(physicalPos -> physicalIndexToOutputIndex[physicalPos])
-                        .toArray();
+    /** Helper class to associate a projection path with its output position. */
+    private static class PathWithOutputPos {
+        final int[] path;
+        final int outputPos;
+
+        PathWithOutputPos(int[] path, int outputPos) {
+            this.path = path;
+            this.outputPos = outputPos;
+        }
     }
 
     /** Converts a 1D projection (top-level indices) to 2D nested projection format. */
@@ -599,62 +611,6 @@ public class PscDynamicSource
             result[i] = new int[] {projection[i]};
         }
         return result;
-    }
-
-    /**
-     * Converts nested projection paths to dot-separated field names.
-     * Example: [[1, 0], [2]] with schema (a, b ROW&lt;x, y&gt;, c) → ["b.x", "c"]
-     */
-    public static List<String> convertPathsToFieldNames(int[][] paths, DataType dataType) {
-        List<String> fieldNames = new ArrayList<>();
-        List<String> topLevelNames = DataType.getFieldNames(dataType);
-        List<DataType> topLevelTypes = DataType.getFieldDataTypes(dataType);
-
-        for (int[] path : paths) {
-            StringBuilder name = new StringBuilder();
-            List<String> currentNames = topLevelNames;
-            List<DataType> currentTypes = topLevelTypes;
-
-            for (int i = 0; i < path.length; i++) {
-                int index = path[i];
-                if (i > 0) {
-                    name.append(".");
-                }
-                name.append(currentNames.get(index));
-
-                // Navigate to nested type for next iteration
-                if (i < path.length - 1) {
-                    DataType nestedType = currentTypes.get(index);
-                    // Unwrap collection types (ARRAY, MAP) to get to element/value type
-                    nestedType = unwrapCollectionType(nestedType);
-                    currentNames = DataType.getFieldNames(nestedType);
-                    currentTypes = DataType.getFieldDataTypes(nestedType);
-                }
-            }
-            fieldNames.add(name.toString());
-        }
-        return fieldNames;
-    }
-
-    /**
-     * Unwraps collection types (ARRAY, MAP) to get the element/value type containing ROW fields.
-     */
-    private static DataType unwrapCollectionType(DataType dataType) {
-        LogicalType logicalType = dataType.getLogicalType();
-        if (logicalType instanceof ArrayType) {
-            // ARRAY<ROW<...>> - get the element type
-            List<DataType> children = dataType.getChildren();
-            if (!children.isEmpty()) {
-                return children.get(0);
-            }
-        } else if (logicalType instanceof org.apache.flink.table.types.logical.MapType) {
-            // MAP<K, ROW<...>> - get the value type (second child)
-            List<DataType> children = dataType.getChildren();
-            if (children.size() >= 2) {
-                return children.get(1);
-            }
-        }
-        return dataType;
     }
 
     @Override
