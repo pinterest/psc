@@ -122,11 +122,21 @@ public class PscDynamicSource
     /** Format for decoding values from PSC. */
     protected final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat;
 
-    /** Indices that determine the key fields and the target position in the produced row. */
-    protected final int[] keyProjection;
+    /**
+     * Projection paths for key fields. Each int[] is a path to a field:
+     * - [topLevelIndex] for top-level fields
+     * - [topLevelIndex, nestedIndex, ...] for nested fields within ROW types
+     * Used by formats that support nested projection (e.g., Thrift's PartialThriftDeserializer).
+     */
+    protected int[][] keyProjection;
 
-    /** Indices that determine the value fields and the target position in the produced row. */
-    protected final int[] valueProjection;
+    /**
+     * Projection paths for value fields. Each int[] is a path to a field:
+     * - [topLevelIndex] for top-level fields
+     * - [topLevelIndex, nestedIndex, ...] for nested fields within ROW types
+     * Used by formats that support nested projection (e.g., Thrift's PartialThriftDeserializer).
+     */
+    protected int[][] valueProjection;
 
     // Query-specific projections (see SupportsProjectionPushDown).
     // - *Format* projections are indices into physicalDataType (control what gets deserialized).
@@ -135,12 +145,6 @@ public class PscDynamicSource
     protected int[] valueFormatProjection;
     protected int[] keyOutputProjection;
     protected int[] valueOutputProjection;
-
-    // Full nested projection paths for each format field.
-    // Each int[] is a path: [topLevelIndex] for top-level, [topLevelIndex, nestedIndex, ...] for nested.
-    // Used by formats that support nested projection (e.g., Thrift's PartialThriftDeserializer).
-    protected int[][] keyNestedProjection;
-    protected int[][] valueNestedProjection;
 
     /** Prefix that needs to be removed from fields when constructing the physical data type. */
     protected final @Nullable String keyPrefix;
@@ -228,12 +232,65 @@ public class PscDynamicSource
         return scanParallelism != null ? scanParallelism : execEnv.getParallelism();
     }
 
+    /**
+     * Backwards-compatible constructor that accepts int[] projections.
+     * Converts them to int[][] format internally.
+     */
     public PscDynamicSource(
             DataType physicalDataType,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
             DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat,
             int[] keyProjection,
             int[] valueProjection,
+            @Nullable String keyPrefix,
+            @Nullable List<String> topics,
+            @Nullable Pattern topicPattern,
+            Properties properties,
+            StartupMode startupMode,
+            Map<PscTopicUriPartition, Long> specificStartupOffsets,
+            long startupTimestampMillis,
+            BoundedMode boundedMode,
+            Map<PscTopicUriPartition, Long> specificBoundedOffsets,
+            long boundedTimestampMillis,
+            boolean upsertMode,
+            String tableIdentifier,
+            @Nullable String sourceUidPrefix,
+            boolean enableRescale,
+            @Nullable Double rateLimitRecordsPerSecond,
+            @Nullable Integer scanParallelism) {
+        this(
+                physicalDataType,
+                keyDecodingFormat,
+                valueDecodingFormat,
+                toNestedProjection(keyProjection),
+                toNestedProjection(valueProjection),
+                keyPrefix,
+                topics,
+                topicPattern,
+                properties,
+                startupMode,
+                specificStartupOffsets,
+                startupTimestampMillis,
+                boundedMode,
+                specificBoundedOffsets,
+                boundedTimestampMillis,
+                upsertMode,
+                tableIdentifier,
+                sourceUidPrefix,
+                enableRescale,
+                rateLimitRecordsPerSecond,
+                scanParallelism);
+    }
+
+    /**
+     * Primary constructor that accepts int[][] projections for full nested field support.
+     */
+    public PscDynamicSource(
+            DataType physicalDataType,
+            @Nullable DecodingFormat<DeserializationSchema<RowData>> keyDecodingFormat,
+            DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat,
+            int[][] keyProjection,
+            int[][] valueProjection,
             @Nullable String keyPrefix,
             @Nullable List<String> topics,
             @Nullable Pattern topicPattern,
@@ -265,13 +322,10 @@ public class PscDynamicSource
         this.keyPrefix = keyPrefix;
 
         // Default behavior: no projection pushdown, keep the DDL-level projections.
-        this.keyFormatProjection = this.keyProjection;
-        this.valueFormatProjection = this.valueProjection;
-        this.keyOutputProjection = this.keyProjection;
-        this.valueOutputProjection = this.valueProjection;
-        // Default nested projections: single-element paths for each top-level field
-        this.keyNestedProjection = toNestedProjection(this.keyProjection);
-        this.valueNestedProjection = toNestedProjection(this.valueProjection);
+        this.keyFormatProjection = getTopLevelIndices(this.keyProjection);
+        this.valueFormatProjection = getTopLevelIndices(this.valueProjection);
+        this.keyOutputProjection = getTopLevelIndices(this.keyProjection);
+        this.valueOutputProjection = getTopLevelIndices(this.valueProjection);
         // Mutable attributes
         this.producedDataType = physicalDataType;
         this.metadataKeys = Collections.emptyList();
@@ -362,7 +416,7 @@ public class PscDynamicSource
                         context,
                         keyDecodingFormat,
                         keyFormatProjection,
-                        keyNestedProjection,
+                        keyProjection,
                         keyPrefix);
 
         final DeserializationSchema<RowData> valueDeserialization =
@@ -370,7 +424,7 @@ public class PscDynamicSource
                         context,
                         valueDecodingFormat,
                         valueFormatProjection,
-                        valueNestedProjection,
+                        valueProjection,
                         null);
 
         final TypeInformation<RowData> producedTypeInfo =
@@ -552,11 +606,15 @@ public class PscDynamicSource
         // may overwrite producedDataType later with appended metadata columns.
         this.producedDataType = producedDataType;
 
+        // Get original top-level indices from current projections
+        int[] originalKeyTopLevel = getTopLevelIndices(keyProjection);
+        int[] originalValueTopLevel = getTopLevelIndices(valueProjection);
+
         // Build key format projection, nested paths, and output mapping
         List<Integer> keyFormatList = new ArrayList<>();
         List<int[]> keyNestedList = new ArrayList<>();
         List<Integer> keyOutputList = new ArrayList<>();
-        for (int physicalPos : keyProjection) {
+        for (int physicalPos : originalKeyTopLevel) {
             if (physicalFieldProjected[physicalPos]) {
                 keyFormatList.add(physicalPos);
                 List<PathWithOutputPos> pathsWithPos = pathsByTopLevelIndex.get(physicalPos);
@@ -569,14 +627,14 @@ public class PscDynamicSource
             }
         }
         this.keyFormatProjection = keyFormatList.stream().mapToInt(Integer::intValue).toArray();
-        this.keyNestedProjection = keyNestedList.toArray(new int[0][]);
+        this.keyProjection = keyNestedList.toArray(new int[0][]);
         this.keyOutputProjection = keyOutputList.stream().mapToInt(Integer::intValue).toArray();
 
         // Build value format projection, nested paths, and output mapping
         List<Integer> valueFormatList = new ArrayList<>();
         List<int[]> valueNestedList = new ArrayList<>();
         List<Integer> valueOutputList = new ArrayList<>();
-        for (int physicalPos : valueProjection) {
+        for (int physicalPos : originalValueTopLevel) {
             if (physicalFieldProjected[physicalPos]) {
                 valueFormatList.add(physicalPos);
                 List<PathWithOutputPos> pathsWithPos = pathsByTopLevelIndex.get(physicalPos);
@@ -589,7 +647,7 @@ public class PscDynamicSource
             }
         }
         this.valueFormatProjection = valueFormatList.stream().mapToInt(Integer::intValue).toArray();
-        this.valueNestedProjection = valueNestedList.toArray(new int[0][]);
+        this.valueProjection = valueNestedList.toArray(new int[0][]);
         this.valueOutputProjection = valueOutputList.stream().mapToInt(Integer::intValue).toArray();
     }
 
@@ -611,6 +669,14 @@ public class PscDynamicSource
             result[i] = new int[] {projection[i]};
         }
         return result;
+    }
+
+    /** Extracts unique top-level indices from nested projection paths. */
+    private static int[] getTopLevelIndices(int[][] projection) {
+        return Arrays.stream(projection)
+                .mapToInt(path -> path[0])
+                .distinct()
+                .toArray();
     }
 
     @Override
@@ -645,8 +711,6 @@ public class PscDynamicSource
         copy.valueFormatProjection = valueFormatProjection;
         copy.keyOutputProjection = keyOutputProjection;
         copy.valueOutputProjection = valueOutputProjection;
-        copy.keyNestedProjection = keyNestedProjection;
-        copy.valueNestedProjection = valueNestedProjection;
         return copy;
     }
 
@@ -669,8 +733,8 @@ public class PscDynamicSource
                 && Objects.equals(physicalDataType, that.physicalDataType)
                 && Objects.equals(keyDecodingFormat, that.keyDecodingFormat)
                 && Objects.equals(valueDecodingFormat, that.valueDecodingFormat)
-                && Arrays.equals(keyProjection, that.keyProjection)
-                && Arrays.equals(valueProjection, that.valueProjection)
+                && Arrays.deepEquals(keyProjection, that.keyProjection)
+                && Arrays.deepEquals(valueProjection, that.valueProjection)
                 && Objects.equals(keyPrefix, that.keyPrefix)
                 && Objects.equals(topicUris, that.topicUris)
                 && Objects.equals(String.valueOf(topicUriPattern), String.valueOf(that.topicUriPattern))
@@ -698,8 +762,8 @@ public class PscDynamicSource
                 physicalDataType,
                 keyDecodingFormat,
                 valueDecodingFormat,
-                Arrays.hashCode(keyProjection),
-                Arrays.hashCode(valueProjection),
+                Arrays.deepHashCode(keyProjection),
+                Arrays.deepHashCode(valueProjection),
                 keyPrefix,
                 topicUris,
                 topicUriPattern,
@@ -869,19 +933,15 @@ public class PscDynamicSource
     private @Nullable DeserializationSchema<RowData> createDeserialization(
             Context context,
             @Nullable DecodingFormat<DeserializationSchema<RowData>> format,
-            int[] projection,
+            int[] formatProjection,
             int[][] nestedProjection,
             @Nullable String prefix) {
         if (format == null) {
             return null;
         }
-        // Use nested projection if available for proper nested field pruning
-        DataType physicalFormatDataType;
-        if (nestedProjection != null && nestedProjection.length > 0) {
-            physicalFormatDataType = Projection.of(nestedProjection).project(this.physicalDataType);
-        } else {
-            physicalFormatDataType = Projection.of(projection).project(this.physicalDataType);
-        }
+        // Use nested projection for proper nested field pruning
+        DataType physicalFormatDataType =
+                Projection.of(nestedProjection).project(this.physicalDataType);
         if (prefix != null) {
             physicalFormatDataType = DataTypeUtils.stripRowPrefix(physicalFormatDataType, prefix);
         }

@@ -601,9 +601,9 @@ public class PscProjectionPushdownTest {
         ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedType);
 
         // Verify nested projection contains both paths
-        assertThat(source.valueNestedProjection.length).isEqualTo(2);
-        assertThat(source.valueNestedProjection[0]).containsExactly(1, 0);
-        assertThat(source.valueNestedProjection[1]).containsExactly(1, 1);
+        assertThat(source.valueProjection.length).isEqualTo(2);
+        assertThat(source.valueProjection[0]).containsExactly(1, 0);
+        assertThat(source.valueProjection[1]).containsExactly(1, 1);
 
         // Verify output projection maps each nested field to its correct position
         // This is the key assertion - before the fix, this would be [1] instead of [0, 1]
@@ -638,7 +638,7 @@ public class PscProjectionPushdownTest {
         ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedType);
 
         // All fields are value fields in our test schema
-        assertThat(source.valueNestedProjection.length).isEqualTo(3);
+        assertThat(source.valueProjection.length).isEqualTo(3);
         assertThat(source.valueOutputProjection).containsExactly(0, 1, 2);
     }
 
