@@ -38,7 +38,7 @@ import java.util.concurrent.TimeoutException;
 public class PscMemqMetadataClient extends PscBackendMetadataClient {
 
     private static final PscLogger logger = PscLogger.getLogger(PscMemqMetadataClient.class);
-    private MemqConsumer<byte[], byte[]> memqConsumer;
+    protected MemqConsumer<byte[], byte[]> memqConsumer;
 
     @Override
     public void initialize(
