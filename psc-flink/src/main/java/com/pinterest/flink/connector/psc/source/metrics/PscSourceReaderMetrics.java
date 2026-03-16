@@ -25,6 +25,7 @@ import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
+import java.util.Iterator;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.MetricGroup;
@@ -180,6 +181,17 @@ public class PscSourceReaderMetrics {
      * @param consumer Kafka consumer
      */
     public void registerNumBytesIn(PscConsumer<?, ?> consumer) throws ClientException {
+        // Skip for Memq
+        String backendType = getBackendFromTags(consumer.metrics());
+        if (!PscUtils.BACKEND_TYPE_KAFKA.equals(backendType)) {
+            LOG.warn(
+                String.format(
+                    "Unsupported backend type: \"%s\". "
+                        + "Metric \"%s\" may not be reported correctly.",
+                    backendType, MetricNames.PENDING_RECORDS));
+            return;
+        }
+
         Predicate<Map.Entry<MetricName, ? extends Metric>> filter =
                 KafkaSourceReaderMetricsUtil.createBytesConsumedFilter();
         this.bytesConsumedTotalMetric = MetricUtil.getPscMetric(consumer.metrics(), filter);
@@ -301,7 +313,11 @@ public class PscSourceReaderMetrics {
 
     private static String getBackendFromTags(Map<MetricName, ? extends Metric> metrics) {
         // sample the first entry to get the backend type
-        return metrics.keySet().iterator().next().tags().get("backend");
+        Iterator<MetricName> it = metrics.keySet().iterator();
+        if (!it.hasNext()) {
+            return "unknown";
+        }
+        return it.next().tags().get("backend");
     }
 
     private static class Offset {
