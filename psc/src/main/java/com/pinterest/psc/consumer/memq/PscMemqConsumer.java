@@ -32,7 +32,6 @@ import com.pinterest.psc.logging.PscLogger;
 import com.pinterest.psc.common.PscUtils;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
-import com.pinterest.psc.metrics.MetricValueProvider;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
 
@@ -57,6 +56,7 @@ import java.util.stream.Collectors;
 public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     public static final String END_OF_BATCH_EVENT = "end_of_batch";
+    private static final String MEMQ_CONSUMER_METRIC_GROUP = "memq-consumer-metrics";
 
     private static final PscLogger logger = PscLogger.getLogger(PscMemqConsumer.class);
     @VisibleForTesting
@@ -68,7 +68,6 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
     private TopicUri topicUri;
 
     private final Map<Integer, MemqOffset> initialSeekOffsets = new ConcurrentHashMap<>();
-    private final MetricValueProvider metricValueProvider = new MetricValueProvider();
 
     public PscMemqConsumer() {
     }
@@ -726,7 +725,7 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
             return Collections.emptyMap();
         }
 
-        metricValueProvider.reset();
+        Map<MetricName, Metric> result = new HashMap<>();
         for (Map.Entry<String, com.codahale.metrics.Metric> entry : registry.getMetrics().entrySet()) {
             String name = entry.getKey();
             com.codahale.metrics.Metric dropwizardMetric = entry.getValue();
@@ -734,25 +733,40 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
             Map<String, String> tags = new HashMap<>();
             tags.put("backend", PscUtils.BACKEND_TYPE_MEMQ);
 
-            MetricName metricName = new MetricName(name, "memq-consumer-metrics", "", tags);
-            metricValueProvider.updateMetric(metricName, getDropwizardMetricValue(dropwizardMetric));
+            MetricName metricName = new MetricName(name, MEMQ_CONSUMER_METRIC_GROUP, "", tags);
+            result.put(metricName, new LiveDropwizardMetric(metricName, dropwizardMetric));
         }
 
-        return metricValueProvider.getMetrics();
+        return result;
     }
 
-    private static Object getDropwizardMetricValue(com.codahale.metrics.Metric metric) {
-        if (metric instanceof Counter)
-            return ((Counter) metric).getCount();
-        if (metric instanceof Gauge)
-            return ((Gauge<?>) metric).getValue();
-        if (metric instanceof Meter)
-            return ((Meter) metric).getCount();
-        if (metric instanceof Histogram)
-            return ((Histogram) metric).getSnapshot().getMax();
-        if (metric instanceof Timer)
-            return ((Timer) metric).getSnapshot().getMax();
-        return -1L;
+    /**
+     * A PSC Metric backed by a live Dropwizard metric reference.
+     * Each call to {@link #metricValue()} reads the current value from the
+     * underlying Dropwizard metric rather than returning a stale snapshot.
+     */
+    private static class LiveDropwizardMetric extends Metric {
+        private final com.codahale.metrics.Metric dropwizardMetric;
+
+        LiveDropwizardMetric(MetricName metricName, com.codahale.metrics.Metric dropwizardMetric) {
+            super(metricName, null);
+            this.dropwizardMetric = dropwizardMetric;
+        }
+
+        @Override
+        public Object metricValue() {
+            if (dropwizardMetric instanceof Counter)
+                return ((Counter) dropwizardMetric).getCount();
+            if (dropwizardMetric instanceof Gauge)
+                return ((Gauge<?>) dropwizardMetric).getValue();
+            if (dropwizardMetric instanceof Meter)
+                return ((Meter) dropwizardMetric).getCount();
+            if (dropwizardMetric instanceof Histogram)
+                return ((Histogram) dropwizardMetric).getSnapshot().getMax();
+            if (dropwizardMetric instanceof Timer)
+                return ((Timer) dropwizardMetric).getSnapshot().getMax();
+            return -1L;
+        }
     }
 
     /**
