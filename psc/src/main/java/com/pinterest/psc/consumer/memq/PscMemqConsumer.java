@@ -29,8 +29,10 @@ import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.consumer.WakeupException;
 import com.pinterest.psc.logging.PscLogger;
+import com.pinterest.psc.common.PscUtils;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
+import com.pinterest.psc.metrics.MetricValueProvider;
 import com.pinterest.psc.metrics.PscMetricRegistryManager;
 import com.pinterest.psc.metrics.PscMetrics;
 
@@ -66,6 +68,7 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
     private TopicUri topicUri;
 
     private final Map<Integer, MemqOffset> initialSeekOffsets = new ConcurrentHashMap<>();
+    private final MetricValueProvider metricValueProvider = new MetricValueProvider();
 
     public PscMemqConsumer() {
     }
@@ -714,7 +717,42 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     @Override
     public Map<MetricName, ? extends Metric> metrics() throws ConsumerException {
-        return Collections.emptyMap();
+        if (memqConsumer == null) {
+            return Collections.emptyMap();
+        }
+
+        MetricRegistry registry = memqConsumer.getMetricRegistry();
+        if (registry == null) {
+            return Collections.emptyMap();
+        }
+
+        metricValueProvider.reset();
+        for (Map.Entry<String, com.codahale.metrics.Metric> entry : registry.getMetrics().entrySet()) {
+            String name = entry.getKey();
+            com.codahale.metrics.Metric dropwizardMetric = entry.getValue();
+
+            Map<String, String> tags = new HashMap<>();
+            tags.put("backend", PscUtils.BACKEND_TYPE_MEMQ);
+
+            MetricName metricName = new MetricName(name, "memq-consumer-metrics", "", tags);
+            metricValueProvider.updateMetric(metricName, getDropwizardMetricValue(dropwizardMetric));
+        }
+
+        return metricValueProvider.getMetrics();
+    }
+
+    private static Object getDropwizardMetricValue(com.codahale.metrics.Metric metric) {
+        if (metric instanceof Counter)
+            return ((Counter) metric).getCount();
+        if (metric instanceof Gauge)
+            return ((Gauge<?>) metric).getValue();
+        if (metric instanceof Meter)
+            return ((Meter) metric).getCount();
+        if (metric instanceof Histogram)
+            return ((Histogram) metric).getSnapshot().getMax();
+        if (metric instanceof Timer)
+            return ((Timer) metric).getSnapshot().getMax();
+        return -1L;
     }
 
     /**

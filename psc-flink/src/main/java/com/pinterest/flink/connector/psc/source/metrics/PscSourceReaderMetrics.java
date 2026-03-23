@@ -181,19 +181,21 @@ public class PscSourceReaderMetrics {
      * @param consumer Kafka consumer
      */
     public void registerNumBytesIn(PscConsumer<?, ?> consumer) throws ClientException {
-        // Skip for Memq
         String backendType = getBackendFromTags(consumer.metrics());
-        if (!PscUtils.BACKEND_TYPE_KAFKA.equals(backendType)) {
-            LOG.warn(
-                String.format(
-                    "Unsupported backend type: \"%s\". "
-                        + "Metric \"%s\" may not be reported correctly.",
-                    backendType, MetricNames.PENDING_RECORDS));
-            return;
+        Predicate<Map.Entry<MetricName, ? extends Metric>> filter;
+        switch (backendType) {
+            case PscUtils.BACKEND_TYPE_KAFKA:
+                filter = KafkaSourceReaderMetricsUtil.createBytesConsumedFilter();
+                break;
+            case PscUtils.BACKEND_TYPE_MEMQ:
+                filter = MemqSourceReaderMetricsUtil.createBytesConsumedFilter();
+                break;
+            default:
+                LOG.warn(
+                    "Unsupported backend type: \"{}\". Metric \"{}\" may not be reported correctly.",
+                    backendType, MetricNames.IO_NUM_BYTES_IN);
+                return;
         }
-
-        Predicate<Map.Entry<MetricName, ? extends Metric>> filter =
-                KafkaSourceReaderMetricsUtil.createBytesConsumedFilter();
         this.bytesConsumedTotalMetric = MetricUtil.getPscMetric(consumer.metrics(), filter);
     }
 
@@ -300,15 +302,21 @@ public class PscSourceReaderMetrics {
             case PscUtils.BACKEND_TYPE_KAFKA:
                 filter = KafkaSourceReaderMetricsUtil.createRecordLagFilter(tp);
                 break;
+            case PscUtils.BACKEND_TYPE_MEMQ:
+                filter = MemqSourceReaderMetricsUtil.createRecordsLagFilter(tp);
+                break;
             default:
                 LOG.warn(
-                        String.format(
-                                "Unsupported backend type \"%s\". "
-                                        + "Metric \"%s\" may not be reported correctly. ",
-                                backendType, MetricNames.PENDING_RECORDS));
+                        "Unsupported backend type \"{}\". Metric \"{}\" may not be reported correctly.",
+                        backendType, MetricNames.PENDING_RECORDS);
                 return null;
         }
-        return MetricUtil.getPscMetric(metrics, filter);
+        try {
+            return MetricUtil.getPscMetric(metrics, filter);
+        } catch (IllegalStateException e) {
+            LOG.debug("Metric not yet available for backend \"{}\", will retry on next poll cycle.", backendType);
+            return null;
+        }
     }
 
     private static String getBackendFromTags(Map<MetricName, ? extends Metric> metrics) {
