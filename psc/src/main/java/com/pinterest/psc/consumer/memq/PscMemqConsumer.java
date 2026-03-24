@@ -642,7 +642,8 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         Map<Integer, Long> startOffsets = memqConsumer
                 .getEarliestOffsets(partitionToTopicUriPartition.keySet());
         return startOffsets.entrySet().stream().collect(Collectors
-                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()), Map.Entry::getValue));
+                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()),
+                       entry -> kafkaOffsetToComposite(entry.getValue())));
     }
 
     @Override
@@ -656,7 +657,8 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         Map<Integer, Long> endOffsets = memqConsumer
                 .getLatestOffsets(partitionToTopicUriPartition.keySet());
         return endOffsets.entrySet().stream().collect(Collectors
-                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()), Map.Entry::getValue));
+                .toMap(entry -> partitionToTopicUriPartition.get(entry.getKey()),
+                       entry -> kafkaOffsetToComposite(entry.getValue())));
     }
 
     @Override
@@ -796,6 +798,16 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
 
     private boolean isCurrentTopicPartition(TopicUriPartition topicUriPartition) {
         return this.currentSubscription.contains(topicUriPartition.getTopicUri()) || this.currentAssignment.contains(topicUriPartition);
+    }
+
+    /**
+     * Converts a raw Kafka notification offset to a composite MemqOffset (with message offset 0).
+     * All offsets exposed by PscMemqConsumer must be in composite format so that
+     * {@link #seekToOffset} can correctly decode them back via
+     * {@link MemqOffset#convertPscOffsetToMemqOffset}.
+     */
+    private static long kafkaOffsetToComposite(long kafkaOffset) {
+        return new MemqOffset(kafkaOffset, 0).toLong();
     }
 
     private MemqConsumer<byte[], byte[]> getMetadataConsumer(TopicUri topicUri) throws ConsumerException {

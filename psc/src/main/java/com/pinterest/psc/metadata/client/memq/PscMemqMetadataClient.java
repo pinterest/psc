@@ -9,6 +9,7 @@ import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.config.PscConfigurationInternal;
 import com.pinterest.psc.config.PscMetadataClientToMemqConsumerConfigConverter;
+import com.pinterest.psc.consumer.memq.MemqOffset;
 import com.pinterest.psc.consumer.memq.MemqTopicUri;
 import com.pinterest.psc.environment.Environment;
 import com.pinterest.psc.exception.startup.ConfigurationException;
@@ -130,7 +131,7 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
                 Map<Integer, Long> offsets = memqConsumer.getEarliestOffsets(earliestPartitions);
                 for (Map.Entry<Integer, Long> e : offsets.entrySet()) {
                     TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
-                    result.put(createMemqTopicUriPartition(topicRn, e.getKey()), e.getValue());
+                    result.put(createMemqTopicUriPartition(topicRn, e.getKey()), kafkaOffsetToComposite(e.getValue()));
                 }
             }
 
@@ -139,7 +140,7 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
                 Map<Integer, Long> offsets = memqConsumer.getLatestOffsets(latestPartitions);
                 for (Map.Entry<Integer, Long> e : offsets.entrySet()) {
                     TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
-                    result.put(createMemqTopicUriPartition(topicRn, e.getKey()), e.getValue());
+                    result.put(createMemqTopicUriPartition(topicRn, e.getKey()), kafkaOffsetToComposite(e.getValue()));
                 }
             }
         }
@@ -169,7 +170,7 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
                 TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
                 result.put(
                         createMemqTopicUriPartition(topicRn, offsetEntry.getKey()),
-                        offsetEntry.getValue()
+                        kafkaOffsetToComposite(offsetEntry.getValue())
                 );
             }
         }
@@ -202,7 +203,7 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
                     continue;
                 }
                 TopicRn topicRn = MetadataUtils.createTopicRn(topicUri, topic);
-                result.put(createMemqTopicUriPartition(topicRn, partition), committedOffset);
+                result.put(createMemqTopicUriPartition(topicRn, partition), kafkaOffsetToComposite(committedOffset));
             }
         }
         return result;
@@ -230,5 +231,9 @@ public class PscMemqMetadataClient extends PscBackendMetadataClient {
 
     private TopicUriPartition createMemqTopicUriPartition(TopicUri topicUri, int partition) {
         return new TopicUriPartition(new MemqTopicUri(topicUri), partition);
+    }
+
+    private static long kafkaOffsetToComposite(long kafkaOffset) {
+        return new MemqOffset(kafkaOffset, 0).toLong();
     }
 }
