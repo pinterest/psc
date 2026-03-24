@@ -7,10 +7,10 @@ import org.reflections.Reflections;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * Manages the different {@link PscBackendMetadataClientCreator} implementations and provides a registry of them.
@@ -28,7 +28,7 @@ public class PscMetadataClientCreatorManager {
 
     private static Map<String, List<PscBackendMetadataClientCreator>> findAndRegisterMetadataClientCreators(String packageName) {
         synchronized (PscUtils.lock) {
-            Map<String, List<PscBackendMetadataClientCreator>> backendCreatorRegistry = new HashMap<>();
+            Map<String, List<PscBackendMetadataClientCreator>> backendCreatorRegistry = new TreeMap<>();
             Reflections reflections = new Reflections(packageName.trim());
             Set<Class<?>> annotatedClasses = reflections.getTypesAnnotatedWith(PscMetadataClientCreatorPlugin.class);
             for (Class<?> annotatedClass : annotatedClasses) {
