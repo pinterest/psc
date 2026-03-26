@@ -142,7 +142,6 @@ public class PscDynamicSource
     // - *Format* projections are indices into physicalDataType (control what gets deserialized).
     // - *Output* projections are indices into the projected physical row (control where fields land).
     // TODO: Key projection pushdown needs further E2E validation with complex key types (e.g., Thrift-serialized keys).
-    //       Current implementation is tested with simple key types (e.g., raw string keys).
     protected int[] keyFormatProjection;
     protected int[] valueFormatProjection;
     protected int[] keyOutputProjection;
