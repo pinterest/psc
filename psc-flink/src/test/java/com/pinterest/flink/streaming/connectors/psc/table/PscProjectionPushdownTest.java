@@ -185,8 +185,8 @@ public class PscProjectionPushdownTest {
 
     /**
      * Test: SELECT nested.field FROM table (nested projection)
-     * Expected: The projected nested field is passed to decoder with flattened name.
-     * The format (e.g., Thrift) receives the pruned schema with nested structure.
+     * Expected: The projected nested field is passed to decoder with DOT-SEPARATED name.
+     * The format (e.g., Thrift) receives the pruned schema with dot notation for nested fields.
      *
      * Schema: a INT, b ROW<x STRING, y INT>, c BIGINT, d BOOLEAN
      * Query: SELECT b.x → projects to nested field x within b
@@ -203,17 +203,17 @@ public class PscProjectionPushdownTest {
                                 DataTypes.FIELD("x", DataTypes.STRING()))
                         .notNull();
 
-        List<String> decodedColumns = applyProjectionAndGetDecodedColumnsWithNestedSchema(
+        List<String> decodedColumns = applyProjectionAndGetActualFieldNames(
                 projectedFields, projectedType);
 
-        // DataTypeUtils.flattenToNames flattens nested ROW to b_x format
+        // After fix: nested fields use dot notation (e.g., "b.x") for Thrift compatibility
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Collections.singletonList("b_x"));
+                .containsExactlyInAnyOrderElementsOf(Collections.singletonList("b.x"));
     }
 
     /**
      * Test: SELECT a, b.y FROM table (mixed top-level and nested projection)
-     * Expected: Top-level column a and nested field b.y (flattened) are passed to decoder.
+     * Expected: Top-level column a and nested field b.y (with dot notation) are passed to decoder.
      */
     @Test
     public void testMixedTopLevelAndNestedProjection() {
@@ -228,12 +228,12 @@ public class PscProjectionPushdownTest {
                                 DataTypes.FIELD("y", DataTypes.INT()))
                         .notNull();
 
-        List<String> decodedColumns = applyProjectionAndGetDecodedColumnsWithNestedSchema(
+        List<String> decodedColumns = applyProjectionAndGetActualFieldNames(
                 projectedFields, projectedType);
 
-        // DataTypeUtils.flattenToNames returns "a" and "b_y" (flattened)
+        // After fix: top-level fields keep original name, nested fields use dot notation
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b_y"));
+                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b.y"));
     }
 
     /**
@@ -364,6 +364,69 @@ public class PscProjectionPushdownTest {
         assertThat(capturedDecoderProduced).isNotNull();
 
         return DataTypeUtils.flattenToNames(capturedDecoderProduced);
+    }
+
+    /**
+     * Helper method for nested projection tests that returns ACTUAL field names
+     * (not flattened). This is used to verify that the fix correctly converts
+     * underscore-separated names to dot notation for Thrift compatibility.
+     */
+    private List<String> applyProjectionAndGetActualFieldNames(
+            int[][] projectedFields, DataType projectedType) {
+
+        final String topicUri =
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX
+                        + "projection-test-topic";
+
+        final Properties sourceProperties = new Properties();
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.PscFlinkConfiguration.CLUSTER_URI_CONFIG,
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX);
+        sourceProperties.setProperty(
+                com.pinterest.psc.config.PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        sourceProperties.setProperty("client.id.prefix", "test");
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.source.PscSourceOptions
+                        .PARTITION_DISCOVERY_INTERVAL_MS
+                        .key(),
+                "1000");
+
+        final DecodingFormatMock valueFormat = new DecodingFormatMock(",", true);
+        final PscDynamicSource source =
+                new PscDynamicSource(
+                        NESTED_PHYSICAL_TYPE,
+                        null,
+                        valueFormat,
+                        new int[0],
+                        new int[] {0, 1, 2, 3},
+                        null,
+                        Collections.singletonList(topicUri),
+                        (Pattern) null,
+                        sourceProperties,
+                        com.pinterest.flink.streaming.connectors.psc.config.StartupMode.EARLIEST,
+                        new HashMap<>(),
+                        0L,
+                        com.pinterest.flink.streaming.connectors.psc.config.BoundedMode.UNBOUNDED,
+                        new HashMap<>(),
+                        0L,
+                        false,
+                        "test-table");
+
+        // Apply the projection
+        ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedType);
+
+        // Trigger creation of runtime decoders
+        source.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+
+        // Get the captured data type from the mock format
+        final DataType capturedDecoderProduced = valueFormat.producedDataType;
+        assertThat(capturedDecoderProduced).isNotNull();
+
+        // Return actual field names from the RowType (not flattened)
+        return org.apache.flink.table.types.logical.utils.LogicalTypeChecks
+                .getFieldNames(capturedDecoderProduced.getLogicalType());
     }
 
     /**
@@ -563,12 +626,12 @@ public class PscProjectionPushdownTest {
                                 DataTypes.FIELD("y", DataTypes.INT()))
                         .notNull();
 
-        List<String> decodedColumns = applyProjectionAndGetDecodedColumnsWithNestedSchema(
+        List<String> decodedColumns = applyProjectionAndGetActualFieldNames(
                 projectedFields, projectedType);
 
-        // DataTypeUtils.flattenToNames returns "b_x" and "b_y" (flattened)
+        // After fix: nested fields use dot notation (e.g., "b.x", "b.y") for Thrift compatibility
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Arrays.asList("b_x", "b_y"));
+                .containsExactlyInAnyOrderElementsOf(Arrays.asList("b.x", "b.y"));
     }
 
     /**
@@ -766,5 +829,296 @@ public class PscProjectionPushdownTest {
             }
         }
         return dataType;
+    }
+
+    // ==================== Nested KEY Field Projection Tests ====================
+
+    /**
+     * Schema with nested KEY field for key projection tests.
+     * nested_key ROW<id BIGINT, name STRING> (KEY), value_data STRING (VALUE)
+     */
+    private static final DataType NESTED_KEY_PHYSICAL_TYPE =
+            DataTypes.ROW(
+                            DataTypes.FIELD(
+                                    "nested_key",
+                                    DataTypes.ROW(
+                                            DataTypes.FIELD("id", DataTypes.BIGINT()),
+                                            DataTypes.FIELD("name", DataTypes.STRING()))),
+                            DataTypes.FIELD("value_data", DataTypes.STRING()))
+                    .notNull();
+
+    /**
+     * Test: Nested projection on a KEY field.
+     * Schema: nested_key ROW<id BIGINT, name STRING> (KEY), value_data STRING (VALUE)
+     * Query: SELECT nested_key.id FROM table
+     *
+     * This test verifies that when a KEY field has nested structure and the query
+     * only selects a sub-field, the key deserializer receives a pruned schema with
+     * only the needed field names. The Thrift partial deserializer uses these field
+     * names to map to Thrift field IDs internally.
+     *
+     * Per nickpan47's comment: "if all we need to pass down to PartialThriftDeserializer
+     * is a RowType with all the embedded field names needed, we won't need this indices
+     * matching algorithm here."
+     */
+    @Test
+    public void testNestedProjectionOnKeyField() {
+        final String topicUri =
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX
+                        + "nested-key-projection-test-topic";
+
+        final Properties sourceProperties = new Properties();
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.PscFlinkConfiguration.CLUSTER_URI_CONFIG,
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX);
+        sourceProperties.setProperty(
+                com.pinterest.psc.config.PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        sourceProperties.setProperty("client.id.prefix", "test");
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.source.PscSourceOptions
+                        .PARTITION_DISCOVERY_INTERVAL_MS
+                        .key(),
+                "1000");
+
+        final DecodingFormatMock keyFormat = new DecodingFormatMock(",", true);
+        final DecodingFormatMock valueFormat = new DecodingFormatMock(",", true);
+
+        // nested_key is at index 0 (KEY field), value_data is at index 1 (VALUE field)
+        // This simulates: key.fields = 'nested_key'
+        final PscDynamicSource source =
+                new PscDynamicSource(
+                        NESTED_KEY_PHYSICAL_TYPE,
+                        keyFormat,   // key format
+                        valueFormat, // value format
+                        new int[] {0},  // keyProjection: field 0 (nested_key) - equivalent to key.fields='nested_key'
+                        new int[] {1},  // valueProjection: field 1 (value_data)
+                        null,
+                        Collections.singletonList(topicUri),
+                        (Pattern) null,
+                        sourceProperties,
+                        com.pinterest.flink.streaming.connectors.psc.config.StartupMode.EARLIEST,
+                        new HashMap<>(),
+                        0L,
+                        com.pinterest.flink.streaming.connectors.psc.config.BoundedMode.UNBOUNDED,
+                        new HashMap<>(),
+                        0L,
+                        false,
+                        "test-table");
+
+        // Query: SELECT nested_key.id FROM table
+        // This is a NESTED projection on a KEY field: path [0, 0] means field 0 (nested_key), sub-field 0 (id)
+        final int[][] projectedFields = new int[][] {new int[] {0, 0}};
+        final DataType projectedProducedType =
+                DataTypes.ROW(DataTypes.FIELD("id", DataTypes.BIGINT())).notNull();
+
+        // Nested projection on key fields should be supported
+        ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedProducedType);
+
+        source.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+
+        // Key format should receive a DataType with only the projected nested field.
+        // After fix: nested fields use dot notation (e.g., "nested_key.id") for Thrift compatibility.
+        final DataType capturedKeyDecoderProduced = keyFormat.producedDataType;
+        assertThat(capturedKeyDecoderProduced).isNotNull();
+        assertThat(org.apache.flink.table.types.logical.utils.LogicalTypeChecks
+                .getFieldNames(capturedKeyDecoderProduced.getLogicalType()))
+                .containsExactly("nested_key.id");
+
+        // Verify the keyProjection contains the nested path
+        assertThat(source.keyProjection.length).isEqualTo(1);
+        assertThat(source.keyProjection[0]).containsExactly(0, 0);
+
+        // Verify keyOutputProjection maps to the correct output position
+        assertThat(source.keyOutputProjection).containsExactly(0);
+    }
+
+    /**
+     * Test: Top-level projection on a KEY field (no nesting).
+     * Schema: nested_key ROW<id BIGINT, name STRING> (KEY), value_data STRING (VALUE)
+     * Query: SELECT nested_key, value_data FROM table
+     *
+     * Verifies that selecting the entire key field works correctly.
+     */
+    @Test
+    public void testTopLevelProjectionOnKeyField() {
+        final String topicUri =
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX
+                        + "key-projection-test-topic";
+
+        final Properties sourceProperties = new Properties();
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.PscFlinkConfiguration.CLUSTER_URI_CONFIG,
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX);
+        sourceProperties.setProperty(
+                com.pinterest.psc.config.PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        sourceProperties.setProperty("client.id.prefix", "test");
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.source.PscSourceOptions
+                        .PARTITION_DISCOVERY_INTERVAL_MS
+                        .key(),
+                "1000");
+
+        final DecodingFormatMock keyFormat = new DecodingFormatMock(",", true);
+        final DecodingFormatMock valueFormat = new DecodingFormatMock(",", true);
+
+        final PscDynamicSource source =
+                new PscDynamicSource(
+                        NESTED_KEY_PHYSICAL_TYPE,
+                        keyFormat,
+                        valueFormat,
+                        new int[] {0},  // keyProjection: field 0 (nested_key)
+                        new int[] {1},  // valueProjection: field 1 (value_data)
+                        null,
+                        Collections.singletonList(topicUri),
+                        (Pattern) null,
+                        sourceProperties,
+                        com.pinterest.flink.streaming.connectors.psc.config.StartupMode.EARLIEST,
+                        new HashMap<>(),
+                        0L,
+                        com.pinterest.flink.streaming.connectors.psc.config.BoundedMode.UNBOUNDED,
+                        new HashMap<>(),
+                        0L,
+                        false,
+                        "test-table");
+
+        // Query: SELECT nested_key, value_data FROM table (both key and value)
+        final int[][] projectedFields = new int[][] {
+            new int[] {0},  // nested_key (entire key field)
+            new int[] {1}   // value_data
+        };
+        final DataType projectedProducedType =
+                DataTypes.ROW(
+                                DataTypes.FIELD(
+                                        "nested_key",
+                                        DataTypes.ROW(
+                                                DataTypes.FIELD("id", DataTypes.BIGINT()),
+                                                DataTypes.FIELD("name", DataTypes.STRING()))),
+                                DataTypes.FIELD("value_data", DataTypes.STRING()))
+                        .notNull();
+
+        ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedProducedType);
+
+        source.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+
+        // Key format should see the full nested_key structure
+        // Note: flattenToNames returns top-level field name for non-nested projection
+        final DataType capturedKeyDecoderProduced = keyFormat.producedDataType;
+        assertThat(capturedKeyDecoderProduced).isNotNull();
+        assertThat(DataTypeUtils.flattenToNames(capturedKeyDecoderProduced))
+                .containsExactly("nested_key");
+
+        // Value format should see value_data
+        final DataType capturedValueDecoderProduced = valueFormat.producedDataType;
+        assertThat(capturedValueDecoderProduced).isNotNull();
+        assertThat(DataTypeUtils.flattenToNames(capturedValueDecoderProduced))
+                .containsExactly("value_data");
+    }
+
+    /**
+     * Test: Mixed nested projection on both KEY and VALUE fields.
+     * Schema: nested_key ROW<id BIGINT, name STRING> (KEY), nested_value ROW<x INT, y STRING> (VALUE)
+     * Query: SELECT nested_key.id, nested_value.x FROM table
+     */
+    @Test
+    public void testNestedProjectionOnBothKeyAndValueFields() {
+        // Schema with nested types for both key and value
+        final DataType mixedNestedType =
+                DataTypes.ROW(
+                                DataTypes.FIELD(
+                                        "nested_key",
+                                        DataTypes.ROW(
+                                                DataTypes.FIELD("id", DataTypes.BIGINT()),
+                                                DataTypes.FIELD("name", DataTypes.STRING()))),
+                                DataTypes.FIELD(
+                                        "nested_value",
+                                        DataTypes.ROW(
+                                                DataTypes.FIELD("x", DataTypes.INT()),
+                                                DataTypes.FIELD("y", DataTypes.STRING()))))
+                        .notNull();
+
+        final String topicUri =
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX
+                        + "mixed-nested-projection-test-topic";
+
+        final Properties sourceProperties = new Properties();
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.PscFlinkConfiguration.CLUSTER_URI_CONFIG,
+                com.pinterest.flink.streaming.connectors.psc.PscTestEnvironmentWithKafkaAsPubSub
+                        .PSC_TEST_CLUSTER0_URI_PREFIX);
+        sourceProperties.setProperty(
+                com.pinterest.psc.config.PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        sourceProperties.setProperty("client.id.prefix", "test");
+        sourceProperties.setProperty(
+                com.pinterest.flink.connector.psc.source.PscSourceOptions
+                        .PARTITION_DISCOVERY_INTERVAL_MS
+                        .key(),
+                "1000");
+
+        final DecodingFormatMock keyFormat = new DecodingFormatMock(",", true);
+        final DecodingFormatMock valueFormat = new DecodingFormatMock(",", true);
+
+        final PscDynamicSource source =
+                new PscDynamicSource(
+                        mixedNestedType,
+                        keyFormat,
+                        valueFormat,
+                        new int[] {0},  // keyProjection: field 0 (nested_key)
+                        new int[] {1},  // valueProjection: field 1 (nested_value)
+                        null,
+                        Collections.singletonList(topicUri),
+                        (Pattern) null,
+                        sourceProperties,
+                        com.pinterest.flink.streaming.connectors.psc.config.StartupMode.EARLIEST,
+                        new HashMap<>(),
+                        0L,
+                        com.pinterest.flink.streaming.connectors.psc.config.BoundedMode.UNBOUNDED,
+                        new HashMap<>(),
+                        0L,
+                        false,
+                        "test-table");
+
+        // Query: SELECT nested_key.id, nested_value.x FROM table
+        final int[][] projectedFields = new int[][] {
+            new int[] {0, 0},  // nested_key.id
+            new int[] {1, 0}   // nested_value.x
+        };
+        final DataType projectedProducedType =
+                DataTypes.ROW(
+                                DataTypes.FIELD("id", DataTypes.BIGINT()),
+                                DataTypes.FIELD("x", DataTypes.INT()))
+                        .notNull();
+
+        ((SupportsProjectionPushDown) source).applyProjection(projectedFields, projectedProducedType);
+
+        source.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+
+        // Key format should see only nested_key.id (with dot notation for Thrift compatibility)
+        final DataType capturedKeyDecoderProduced = keyFormat.producedDataType;
+        assertThat(capturedKeyDecoderProduced).isNotNull();
+        assertThat(org.apache.flink.table.types.logical.utils.LogicalTypeChecks
+                .getFieldNames(capturedKeyDecoderProduced.getLogicalType()))
+                .containsExactly("nested_key.id");
+
+        // Value format should see only nested_value.x (with dot notation for Thrift compatibility)
+        final DataType capturedValueDecoderProduced = valueFormat.producedDataType;
+        assertThat(capturedValueDecoderProduced).isNotNull();
+        assertThat(org.apache.flink.table.types.logical.utils.LogicalTypeChecks
+                .getFieldNames(capturedValueDecoderProduced.getLogicalType()))
+                .containsExactly("nested_value.x");
+
+        // Verify projections are correctly separated
+        assertThat(source.keyProjection.length).isEqualTo(1);
+        assertThat(source.keyProjection[0]).containsExactly(0, 0);
+        assertThat(source.valueProjection.length).isEqualTo(1);
+        assertThat(source.valueProjection[0]).containsExactly(1, 0);
+
+        // Verify output projections
+        assertThat(source.keyOutputProjection).containsExactly(0);
+        assertThat(source.valueOutputProjection).containsExactly(1);
     }
 }

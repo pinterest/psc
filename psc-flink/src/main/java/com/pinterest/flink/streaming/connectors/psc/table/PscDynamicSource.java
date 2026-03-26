@@ -679,6 +679,110 @@ public class PscDynamicSource
                 .toArray();
     }
 
+    /**
+     * Converts flattened field names (underscore-separated) back to dot-separated notation.
+     *
+     * <p>Flink's {@code Projection.of().project()} flattens nested field names using underscores:
+     * e.g., "viewingUser.active" becomes "viewingUser_active".
+     *
+     * <p>The Thrift partial deserializer expects dot-separated names to build the nested field tree
+     * via {@code ThriftField.fromNames()}. This method reconstructs the dot-separated names from
+     * the original projection paths and schema.
+     *
+     * <p>For top-level projections (path length == 1), field names are unchanged.
+     * For nested projections (path length > 1), field names are converted to dot notation.
+     *
+     * @param projectedDataType The DataType with flattened field names from Projection.of().project()
+     * @param nestedProjection The nested projection paths (e.g., [[0], [1, 0], [1, 1]])
+     * @param originalDataType The original physical DataType with proper nested structure
+     * @return A new DataType with dot-separated field names for nested projections
+     */
+    private static DataType convertToNestedFieldNames(
+            DataType projectedDataType,
+            int[][] nestedProjection,
+            DataType originalDataType) {
+        
+        if (nestedProjection == null || nestedProjection.length == 0) {
+            return projectedDataType;
+        }
+
+        // Check if any projection is nested (path length > 1)
+        boolean hasNestedProjection = Arrays.stream(nestedProjection)
+                .anyMatch(path -> path.length > 1);
+        
+        if (!hasNestedProjection) {
+            // All projections are top-level, no conversion needed
+            return projectedDataType;
+        }
+
+        // Get the projected field types (in order)
+        List<DataType> projectedFieldTypes = DataType.getFieldDataTypes(projectedDataType);
+        
+        if (projectedFieldTypes.size() != nestedProjection.length) {
+            // Mismatch - return original to avoid errors
+            LOG.warn("Projected field count ({}) doesn't match projection path count ({}). " +
+                    "Skipping nested field name conversion.",
+                    projectedFieldTypes.size(), nestedProjection.length);
+            return projectedDataType;
+        }
+
+        // Build new field names using dot notation
+        List<String> newFieldNames = new ArrayList<>();
+        LogicalType originalLogicalType = originalDataType.getLogicalType();
+        
+        for (int[] path : nestedProjection) {
+            String fieldName = buildDotSeparatedFieldName(path, originalLogicalType);
+            newFieldNames.add(fieldName);
+        }
+
+        // Create new DataType with corrected field names
+        DataTypes.Field[] fields = new DataTypes.Field[newFieldNames.size()];
+        for (int i = 0; i < newFieldNames.size(); i++) {
+            fields[i] = DataTypes.FIELD(newFieldNames.get(i), projectedFieldTypes.get(i));
+        }
+
+        return DataTypes.ROW(fields).notNull();
+    }
+
+    /**
+     * Builds a dot-separated field name from a nested projection path.
+     *
+     * @param path The projection path (e.g., [1, 0] for "viewingUser.active")
+     * @param logicalType The logical type to traverse
+     * @return The dot-separated field name (e.g., "viewingUser.active")
+     */
+    private static String buildDotSeparatedFieldName(int[] path, LogicalType logicalType) {
+        StringBuilder fieldName = new StringBuilder();
+        LogicalType currentType = logicalType;
+
+        for (int i = 0; i < path.length; i++) {
+            int fieldIndex = path[i];
+            
+            if (!currentType.is(LogicalTypeRoot.ROW)) {
+                // Can't traverse further - return what we have
+                break;
+            }
+
+            List<String> fieldNames = LogicalTypeChecks.getFieldNames(currentType);
+            if (fieldIndex < 0 || fieldIndex >= fieldNames.size()) {
+                LOG.warn("Field index {} out of bounds for type with {} fields",
+                        fieldIndex, fieldNames.size());
+                break;
+            }
+
+            if (fieldName.length() > 0) {
+                fieldName.append(".");
+            }
+            fieldName.append(fieldNames.get(fieldIndex));
+
+            // Move to the nested type for the next iteration
+            List<LogicalType> fieldTypes = LogicalTypeChecks.getFieldTypes(currentType);
+            currentType = fieldTypes.get(fieldIndex);
+        }
+
+        return fieldName.toString();
+    }
+
     @Override
     public DynamicTableSource copy() {
         final PscDynamicSource copy =
@@ -942,6 +1046,13 @@ public class PscDynamicSource
         // Use nested projection for proper nested field pruning
         DataType physicalFormatDataType =
                 Projection.of(nestedProjection).project(this.physicalDataType);
+        
+        // Convert flattened field names (underscore-separated) back to dot notation.
+        // This is required for formats like Thrift that use field names to determine
+        // which nested fields to deserialize (via ThriftField.fromNames()).
+        physicalFormatDataType = convertToNestedFieldNames(
+                physicalFormatDataType, nestedProjection, this.physicalDataType);
+        
         if (prefix != null) {
             physicalFormatDataType = DataTypeUtils.stripRowPrefix(physicalFormatDataType, prefix);
         }
