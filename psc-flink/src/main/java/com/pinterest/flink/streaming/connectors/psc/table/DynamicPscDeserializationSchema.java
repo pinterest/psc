@@ -55,16 +55,21 @@ class DynamicPscDeserializationSchema implements PscDeserializationSchema<RowDat
 
     private final boolean upsertMode;
 
+    private final boolean projectionActive;
+
     DynamicPscDeserializationSchema(
             int physicalArity,
             @Nullable DeserializationSchema<RowData> keyDeserialization,
             int[] keyProjection,
+            int[] keySourceProjection,
             DeserializationSchema<RowData> valueDeserialization,
             int[] valueProjection,
+            int[] valueSourceProjection,
             boolean hasMetadata,
             MetadataConverter[] metadataConverters,
             TypeInformation<RowData> producedTypeInfo,
-            boolean upsertMode) {
+            boolean upsertMode,
+            boolean projectionActive) {
         if (upsertMode) {
             Preconditions.checkArgument(
                     keyDeserialization != null && keyProjection.length > 0,
@@ -78,11 +83,14 @@ class DynamicPscDeserializationSchema implements PscDeserializationSchema<RowDat
                 new OutputProjectionCollector(
                         physicalArity,
                         keyProjection,
+                        keySourceProjection,
                         valueProjection,
+                        valueSourceProjection,
                         metadataConverters,
                         upsertMode);
         this.producedTypeInfo = producedTypeInfo;
         this.upsertMode = upsertMode;
+        this.projectionActive = projectionActive;
     }
 
     @Override
@@ -108,7 +116,7 @@ class DynamicPscDeserializationSchema implements PscDeserializationSchema<RowDat
             throws Exception {
         // shortcut in case no output projection is required,
         // also not for a cartesian product with the keys
-        if (keyDeserialization == null && !hasMetadata) {
+        if (keyDeserialization == null && !hasMetadata && !projectionActive) {
             valueDeserialization.deserialize(message.getValue(), collector);
             return;
         }
@@ -185,7 +193,11 @@ class DynamicPscDeserializationSchema implements PscDeserializationSchema<RowDat
 
         private final int[] keyProjection;
 
+        private final int[] keySourceProjection;
+
         private final int[] valueProjection;
+
+        private final int[] valueSourceProjection;
 
         private final MetadataConverter[] metadataConverters;
 
@@ -200,12 +212,16 @@ class DynamicPscDeserializationSchema implements PscDeserializationSchema<RowDat
         OutputProjectionCollector(
                 int physicalArity,
                 int[] keyProjection,
+                int[] keySourceProjection,
                 int[] valueProjection,
+                int[] valueSourceProjection,
                 MetadataConverter[] metadataConverters,
                 boolean upsertMode) {
             this.physicalArity = physicalArity;
             this.keyProjection = keyProjection;
+            this.keySourceProjection = keySourceProjection;
             this.valueProjection = valueProjection;
+            this.valueSourceProjection = valueSourceProjection;
             this.metadataConverters = metadataConverters;
             this.upsertMode = upsertMode;
         }
@@ -248,15 +264,15 @@ class DynamicPscDeserializationSchema implements PscDeserializationSchema<RowDat
             final GenericRowData producedRow =
                     new GenericRowData(rowKind, physicalArity + metadataArity);
 
-            for (int keyPos = 0; keyPos < keyProjection.length; keyPos++) {
+            for (int i = 0; i < keyProjection.length; i++) {
                 assert physicalKeyRow != null;
-                producedRow.setField(keyProjection[keyPos], physicalKeyRow.getField(keyPos));
+                producedRow.setField(keyProjection[i], physicalKeyRow.getField(keySourceProjection[i]));
             }
 
             if (physicalValueRow != null) {
-                for (int valuePos = 0; valuePos < valueProjection.length; valuePos++) {
+                for (int i = 0; i < valueProjection.length; i++) {
                     producedRow.setField(
-                            valueProjection[valuePos], physicalValueRow.getField(valuePos));
+                            valueProjection[i], physicalValueRow.getField(valueSourceProjection[i]));
                 }
             }
 
