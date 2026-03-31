@@ -83,7 +83,9 @@ public class PscProjectionPushdownTest {
 
     /**
      * Test: SELECT a, b, c FROM table
-     * Expected: Only columns [a, b, c] are passed to decoder (excludes d)
+     * Expected: For top-level-only projections, the full schema is passed to the decoder
+     * so that standard formats (CSV, Avro, JSON) can decode the complete wire format.
+     * The OutputProjectionCollector handles field selection afterward.
      */
     @Test
     public void testSelectSubsetOfColumns() {
@@ -101,15 +103,12 @@ public class PscProjectionPushdownTest {
         List<String> decodedColumns = applyProjectionAndGetDecodedColumns(projectedFields, projectedType);
 
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b", "c"));
+                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b", "c", "d"));
     }
 
     /**
      * Test: SELECT a FROM table WHERE b = 'value'
-     * Expected: Columns [a, b] are passed to decoder (a for projection, b for filter)
-     *
-     * Note: In Flink's optimization, when a filter references a column, that column
-     * must be included in the projection even if not in the SELECT list.
+     * Expected: For top-level-only projections, the full schema is passed to the decoder.
      */
     @Test
     public void testSelectWithFilterRequiresBothColumns() {
@@ -127,12 +126,12 @@ public class PscProjectionPushdownTest {
         List<String> decodedColumns = applyProjectionAndGetDecodedColumns(projectedFields, projectedType);
 
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b"));
+                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b", "c", "d"));
     }
 
     /**
      * Test: SELECT c, a FROM table (reordered columns)
-     * Expected: Only columns [a, c] are passed to decoder
+     * Expected: For top-level-only projections, the full schema is passed to the decoder.
      */
     @Test
     public void testSelectReorderedColumns() {
@@ -149,12 +148,12 @@ public class PscProjectionPushdownTest {
         List<String> decodedColumns = applyProjectionAndGetDecodedColumns(projectedFields, projectedType);
 
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "c"));
+                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b", "c", "d"));
     }
 
     /**
      * Test: SELECT d FROM table
-     * Expected: Only column [d] is passed to decoder
+     * Expected: For top-level-only projections, the full schema is passed to the decoder.
      */
     @Test
     public void testSelectSingleColumn() {
@@ -170,7 +169,7 @@ public class PscProjectionPushdownTest {
         List<String> decodedColumns = applyProjectionAndGetDecodedColumns(projectedFields, projectedType);
 
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Collections.singletonList("d"));
+                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b", "c", "d"));
     }
 
     /**
@@ -708,6 +707,7 @@ public class PscProjectionPushdownTest {
     /**
      * Test: Verify backwards compatibility - existing code that doesn't use
      * nested projection still works correctly.
+     * For top-level-only projections, the format always gets the full schema.
      */
     @Test
     public void testBackwardsCompatibilityWithoutNestedProjection() {
@@ -724,9 +724,8 @@ public class PscProjectionPushdownTest {
 
         List<String> decodedColumns = applyProjectionAndGetDecodedColumns(projectedFields, projectedType);
 
-        // Should work exactly as before
         assertThat(decodedColumns)
-                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b"));
+                .containsExactlyInAnyOrderElementsOf(Arrays.asList("a", "b", "c", "d"));
     }
 
     /**
