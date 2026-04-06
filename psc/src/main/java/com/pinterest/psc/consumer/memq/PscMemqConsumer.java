@@ -601,6 +601,7 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
     public void close() throws ConsumerException {
         if (memqConsumer == null)
             throw new ConsumerException("[Memq] Consumer is not initialized prior to call to close().");
+        scheduler.shutdown();
         currentSubscription.clear();
         try {
             memqConsumer.close();
