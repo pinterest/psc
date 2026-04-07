@@ -155,6 +155,19 @@ public class PscSourceReaderMetrics {
     }
 
     /**
+     * Returns the {@link Offset} tracker for the given partition, allowing callers to
+     * cache it and update offsets directly without repeated HashMap lookups.
+     *
+     * @param tp the topic partition to get the tracker for
+     * @return the Offset tracker
+     * @throws IllegalArgumentException if the partition is not tracked
+     */
+    public Offset getOffsetTracker(TopicUriPartition tp) {
+        checkTopicPartitionTracked(tp);
+        return offsets.get(tp);
+    }
+
+    /**
      * Update the latest committed offset of the given {@link TopicUriPartition}.
      *
      * @param tp Updating topic partition
@@ -328,9 +341,9 @@ public class PscSourceReaderMetrics {
         return it.next().tags().get("backend");
     }
 
-    private static class Offset {
-        long currentOffset;
-        long committedOffset;
+    public static class Offset {
+        public long currentOffset;
+        public long committedOffset;
 
         Offset(long currentOffset, long committedOffset) {
             this.currentOffset = currentOffset;
