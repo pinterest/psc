@@ -333,12 +333,12 @@ public class PscSourceReaderMetrics {
     }
 
     private static String getBackendFromTags(Map<MetricName, ? extends Metric> metrics) {
-        // sample the first entry to get the backend type
         Iterator<MetricName> it = metrics.keySet().iterator();
         if (!it.hasNext()) {
             return "unknown";
         }
-        return it.next().tags().get("backend");
+        String backend = it.next().tags().get("backend");
+        return backend != null ? backend : "unknown";
     }
 
     public static class Offset {
