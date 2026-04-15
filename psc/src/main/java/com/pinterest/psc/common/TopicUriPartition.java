@@ -12,6 +12,7 @@ public class TopicUriPartition implements Comparable<TopicUriPartition>, Seriali
     private final String topicUriStr;
     private final int partition;
     private TopicUri backendTopicUri;
+    private transient int cachedHashCode;
 
     /**
      * Builds a TopicUriPartition instance with the default partition value (-1). This is meant to be used in
@@ -53,6 +54,7 @@ public class TopicUriPartition implements Comparable<TopicUriPartition>, Seriali
 
     protected void setTopicUri(TopicUri backendTopicUri) {
         this.backendTopicUri = backendTopicUri;
+        this.cachedHashCode = 0;
     }
 
     /**
@@ -106,10 +108,14 @@ public class TopicUriPartition implements Comparable<TopicUriPartition>, Seriali
 
     @Override
     public int hashCode() {
-        int result = topicUriStr.hashCode();
-        result = 31 * result + (backendTopicUri == null ? 0 : backendTopicUri.hashCode());
-        result = 31 * result + partition;
-        return result;
+        int h = cachedHashCode;
+        if (h == 0) {
+            h = topicUriStr.hashCode();
+            h = 31 * h + (backendTopicUri == null ? 0 : backendTopicUri.hashCode());
+            h = 31 * h + partition;
+            cachedHashCode = h;
+        }
+        return h;
     }
 
     @Override

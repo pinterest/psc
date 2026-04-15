@@ -14,7 +14,7 @@
 
     <properties>
         <kafka.version>3.4.0</kafka.version>
-        <memq.version>0.2.21</memq.version>
+        <memq.version>1.0.2</memq.version>
     </properties>
 
     <dependencies>

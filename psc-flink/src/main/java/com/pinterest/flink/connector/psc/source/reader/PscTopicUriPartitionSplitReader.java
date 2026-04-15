@@ -567,6 +567,7 @@ public class PscTopicUriPartitionSplitReader
         private Iterator<PscConsumerMessage<byte[], byte[]>> recordIterator;
         private TopicUriPartition currentTopicPartition;
         private Long currentSplitStoppingOffset;
+        private PscSourceReaderMetrics.Offset currentOffsetTracker;
 
         private PscPartitionSplitRecords(
                 PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable, PscSourceReaderMetrics metrics) {
@@ -592,11 +593,13 @@ public class PscTopicUriPartitionSplitReader
                 recordIterator = consumerMessagesIterable.getMessagesForTopicUriPartition(currentTopicPartition).iterator();
                 currentSplitStoppingOffset =
                         stoppingOffsets.getOrDefault(currentTopicPartition, Long.MAX_VALUE);
+                currentOffsetTracker = metrics.getOffsetTracker(currentTopicPartition);
                 return currentTopicPartition.toString();
             } else {
                 currentTopicPartition = null;
                 recordIterator = null;
                 currentSplitStoppingOffset = null;
+                currentOffsetTracker = null;
                 return null;
             }
         }
@@ -612,7 +615,7 @@ public class PscTopicUriPartitionSplitReader
                 final PscConsumerMessage<byte[], byte[]> message = recordIterator.next();
                 // Only emit records before stopping offset
                 if (message.getMessageId().getOffset() < currentSplitStoppingOffset) {
-                    metrics.recordCurrentOffset(currentTopicPartition, message.getMessageId().getOffset());
+                    currentOffsetTracker.currentOffset = message.getMessageId().getOffset();
                     return message;
                 }
             }
