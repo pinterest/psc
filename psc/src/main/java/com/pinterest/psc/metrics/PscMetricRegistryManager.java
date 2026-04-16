@@ -6,7 +6,7 @@ import com.codahale.metrics.Metric;
 import com.codahale.metrics.MetricFilter;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.ScheduledReporter;
-import com.codahale.metrics.SlidingTimeWindowArrayReservoir;
+import com.codahale.metrics.ExponentiallyDecayingReservoir;
 import com.codahale.metrics.Snapshot;
 import com.codahale.metrics.jvm.CachedThreadStatesGaugeSet;
 import com.codahale.metrics.jvm.GarbageCollectorMetricSet;
@@ -224,7 +224,7 @@ public class PscMetricRegistryManager {
             if (metricRegistry != null) {
                 metricRegistry.histogram(metricKey,
                         () -> new Histogram(
-                                new SlidingTimeWindowArrayReservoir(1, TimeUnit.MINUTES)
+                                new ExponentiallyDecayingReservoir()
                         )
                 ).update(metricValue);
             }
