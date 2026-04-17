@@ -8,6 +8,7 @@
         <version>4.2.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
+    <name>psc-flink</name>
     <artifactId>psc-flink</artifactId>
     <properties>
         <flink.version>1.18.1</flink.version>
