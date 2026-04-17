@@ -10,6 +10,7 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
+    <name>psc-flink-logging</name>
     <artifactId>psc-flink-logging</artifactId>
     <version>4.2.0</version>
 

@@ -10,6 +10,7 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
+    <name>psc-integration-test</name>
     <artifactId>psc-integration-test</artifactId>
 
     <properties>
