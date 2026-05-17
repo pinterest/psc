@@ -2,6 +2,9 @@ name: ITCase Tests
 
 on: [pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   build:
 
