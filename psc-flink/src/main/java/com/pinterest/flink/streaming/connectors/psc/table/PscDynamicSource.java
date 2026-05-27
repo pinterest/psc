@@ -226,17 +226,6 @@ public class PscDynamicSource
     }
 
     /**
-     * Determines the intended downstream parallelism.
-     * Uses scan.parallelism if configured, otherwise falls back to global default.
-     * 
-     * @param execEnv the stream execution environment
-     * @return the intended parallelism for downstream operators
-     */
-    private int getIntendedParallelism(StreamExecutionEnvironment execEnv) {
-        return scanParallelism != null ? scanParallelism : execEnv.getParallelism();
-    }
-
-    /**
      * Backwards-compatible constructor that accepts int[] projections.
      * Converts them to int[][] format internally.
      */
@@ -449,41 +438,42 @@ public class PscDynamicSource
                 DataStreamSource<RowData> sourceStream =
                         execEnv.fromSource(
                                 pscSource, watermarkStrategy, "PscSource-" + tableIdentifier);
-                
-                // Source parallelism is determined by partition count (Flink's default for Kafka-like sources)
-                // We do NOT set it explicitly even if scan.parallelism is configured, because:
-                // - A Kafka source can only have as many active subtasks as there are partitions
-                // - Setting higher parallelism would create idle subtasks
-                // - Instead, we use rescale() to redistribute data to the intended downstream parallelism
-                
+
                 DataStream<RowData> resultStream = sourceStream;
-                
-                // Determine the intended downstream parallelism for rate limiting
-                // This is scan.parallelism if set, otherwise global default parallelism
-                int intendedParallelism = getIntendedParallelism(execEnv);
-                
-                // Apply rescale FIRST if enabled
-                // This redistributes data from source parallelism (= partition count) to intended parallelism
-                // Ensures all downstream subtasks (including rate limiters) receive traffic
+                LOG.info("Rescale logic " + scanParallelism + "::" + enableRescale + "::" + execEnv.getParallelism());
                 if (enableRescale) {
-                    resultStream = resultStream.rescale();
+                  if(scanParallelism != null && scanParallelism > 0 ) {
+                    int sourceParallelism = Math.min(scanParallelism, execEnv.getParallelism());
+                    sourceStream.setParallelism(sourceParallelism);
+                    LOG.info("Rescale enabled: set source parallelism to {} "
+                            + "(partition count / effective parallelism): {}, "
+                            + "job parallelism: {}",
+                        sourceParallelism, scanParallelism, execEnv.getParallelism());
+                  } else {
+                    LOG.info("Rescale enabled but could not determine partition count or "
+                            + "from effective parallelism, "
+                            + "source will use job default parallelism: {}",
+                        execEnv.getParallelism());
+                  }
                 }
-                
-                // Apply rate limiting AFTER rescale if configured
-                // Rate limiter parallelism must match the actual parallelism of incoming data:
-                // - If rescale enabled: use intendedParallelism (all subtasks are active after rescale)
-                // - If rescale disabled: use source parallelism (rate limiter stays with source)
+                else
+                {
+                  LOG.info("Rescale disabled: source will use job default "
+                      + "parallelism = {}", execEnv.getParallelism());
+                }
+
                 if (isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
-                    int rateLimiterParallelism = enableRescale ? intendedParallelism : sourceStream.getParallelism();
-                    
                     String rateLimiterOperatorName = "PscRateLimit-" + tableIdentifier;
                     resultStream = resultStream
                             .map(new PscRateLimitMap<>(rateLimitRecordsPerSecond))
-                            .setParallelism(rateLimiterParallelism)
+                            .setParallelism(sourceStream.getParallelism())
                             .name(rateLimiterOperatorName)
                             .uid(rateLimiterOperatorName);
                 }
-                
+                if (enableRescale) {
+                  resultStream = resultStream.rescale();
+                }
+
                 // Prefer explicit user-provided UID prefix if present; otherwise rely on provider context.
                 if (sourceUidPrefix != null) {
                     final String trimmedPrefix = sourceUidPrefix.trim();
@@ -961,7 +951,7 @@ public class PscDynamicSource
                 offsetResetConfig = getResetStrategy(offsetResetConfig);
                 pscSourceBuilder.setStartingOffsets(
                         OffsetsInitializer.committedOffsets(offsetResetConfig));
-                LOG.info("Setting starting offsets to committed offsets with reset strategy: {}", offsetResetConfig);
+                LOG.info("####>>>Setting starting offsets to committed offsets with reset strategy: {}", offsetResetConfig);
                 break;
             case SPECIFIC_OFFSETS:
                 Map<TopicUriPartition, Long> offsets = new HashMap<>();

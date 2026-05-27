@@ -24,6 +24,7 @@ import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.metadata.TopicUriMetadata;
 import com.pinterest.psc.metadata.client.PscMetadataClient;
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.configuration.CoreOptions;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.table.api.config.ExecutionConfigOptions;
 import org.slf4j.Logger;
@@ -91,77 +92,60 @@ public class PscTableCommonUtils {
     }
 
     /**
-     * Determines whether rescale() should be applied based on:
-     * 1. scan.enable-rescale flag must be true
-     * 2. Effective parallelism (scan.parallelism or global default) > partition count
-     * 
-     * <p>When scan.parallelism is set, it takes precedence over global default for
-     * rescale decision logic. This ensures rescale is only applied when the user's
-     * intended source parallelism exceeds partition count.
+     * Determines the effective parallelism for the source by walking the following
+     * fallback chain and returning the first source that yields a positive value:
+     * <ol>
+     *   <li>{@code scan.parallelism} (table-level override) &mdash; used if non-null and not -1</li>
+     *   <li>{@code table.exec.resource.default-parallelism} &mdash; used if set and not -1</li>
+     *   <li>Kafka partition count for the source topics (queried via PSC metadata client)</li>
+     * </ol>
      *
-     * @param tableOptions User's table configuration options
-     * @param globalConfig Global Flink configuration
-     * @param topicUris List of topic URIs to query for partition counts
-     * @param pscProperties PSC properties for metadata client connection
+     * <p>If none of the above produces a positive value (e.g. the partition-count query
+     * fails), this method returns {@code -1} to signal "unknown".
+     *
+     * @param globalConfig    Global Flink configuration (read for table.exec.resource.default-parallelism)
+     * @param topicUris       List of topic URIs used to query partition count
+     * @param pscProperties   PSC properties for metadata client connection
      * @param scanParallelism Optional explicit scan.parallelism configuration
-     * @return true if rescale should be applied, false otherwise
+     * @return Effective parallelism, or -1 if it cannot be determined
      */
-    public static boolean shouldApplyRescale(
-            ReadableConfig tableOptions,
+    public static int getEffectiveSourceParallelism(
             ReadableConfig globalConfig,
             List<String> topicUris,
             Properties pscProperties,
             @Nullable Integer scanParallelism) {
-        
-        // First check if rescale is enabled by user
-        if (!tableOptions.get(SCAN_ENABLE_RESCALE)) {
-            return false;
-        }
 
-        // Determine effective parallelism: scan.parallelism takes precedence over global default
-        Integer effectiveParallelism;
-        String parallelismSource;
-        
+        // 1) scan.parallelism
         if (scanParallelism != null && scanParallelism > 0) {
-            effectiveParallelism = scanParallelism;
-            parallelismSource = PscConnectorOptions.SCAN_PARALLELISM.key();
-        } else {
-            effectiveParallelism = globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
-            parallelismSource = ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM.key();
-        }
-        
-        // If parallelism is not set or invalid, cannot determine
-        if (effectiveParallelism == null || effectiveParallelism <= 0) {
-            LOG.info("scan.enable-rescale is true, but effective parallelism from {} is {} (not set or invalid). " +
-                    "Rescale will not be applied.", 
-                    parallelismSource, effectiveParallelism);
-            return false;
+            LOG.info("Effective source parallelism = {} (source: {})",
+                    scanParallelism, PscConnectorOptions.SCAN_PARALLELISM.key());
+            return scanParallelism;
         }
 
-        // Query partition count using the configured provider (mockable for testing)
+        // 2) table.exec.resource.default-parallelism
+        Integer tableExecParallelism =
+                globalConfig.get(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM);
+        if (tableExecParallelism != null && tableExecParallelism > 0) {
+            LOG.info("Effective source parallelism = {} (source: {})",
+                    tableExecParallelism,
+                    ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM.key());
+            return tableExecParallelism;
+        }
+
+        // 3) Kafka partition count
         int partitionCount = partitionCountProvider.getPartitionCount(topicUris, pscProperties);
-        
-        // If partition count couldn't be determined, don't apply rescale (fail-safe)
-        if (partitionCount <= 0) {
-            LOG.warn("scan.enable-rescale is true, but partition count could not be determined. " +
-                    "Rescale will not be applied.");
-            return false;
+        if (partitionCount > 0) {
+            LOG.info("Effective source parallelism = {} (source: kafka partition count)",
+                    partitionCount);
+            return partitionCount;
         }
 
-        // Apply rescale only if effective parallelism exceeds partition count
-        boolean shouldRescale = effectiveParallelism > partitionCount;
-        
-        if (shouldRescale) {
-            LOG.info("Applying rescale(): {} ({}) > partition count ({}). " +
-                    "Data will be redistributed to fully utilize downstream operators.",
-                    parallelismSource, effectiveParallelism, partitionCount);
-        } else {
-            LOG.info("Skipping rescale(): {} ({}) <= partition count ({}). " +
-                    "No shuffle needed as source parallelism matches or is less than partition count.",
-                    parallelismSource, effectiveParallelism, partitionCount);
-        }
-        
-        return shouldRescale;
+        // 4) Unknown
+        LOG.warn("Could not determine effective source parallelism: {} is unset/-1, {} is unset/-1, " +
+                "and partition count could not be retrieved. Returning -1.",
+                PscConnectorOptions.SCAN_PARALLELISM.key(),
+                ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM.key());
+        return -1;
     }
 
     /**

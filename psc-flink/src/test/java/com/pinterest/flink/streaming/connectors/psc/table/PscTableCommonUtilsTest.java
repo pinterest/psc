@@ -66,299 +66,105 @@ public class PscTableCommonUtilsTest {
     }
 
     // ============================================
-    // Tests for rescale enabled flag checks
+    // Tests for getEffectiveSourceParallelism()
+    // Precedence: scan.parallelism > table.exec.resource.default-parallelism > kafka partition count
     // ============================================
 
     @Test
-    public void testShouldNotRescaleWhenDisabled() {
-        // Given: rescale is disabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, false);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
-        
-        // When: shouldApplyRescale is called
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        
-        // Then: rescale is not applied
-        assertThat(result).isFalse();
-    }
+    public void testEffectiveParallelismFromScanParallelism() {
+        // Given: scan.parallelism = 12, others would also resolve but should be ignored
+        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 4);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 7);
 
-    // ============================================
-    // Tests for scan.parallelism with mocked partition counts
-    // ============================================
+        // When
+        int parallelism = PscTableCommonUtils.getEffectiveSourceParallelism(
+            globalConfig, topicUris, pscProperties, 12);
 
-    @Test
-    public void testShouldRescaleWhenScanParallelismExceedsPartitionCount() {
-        // Given: scan.parallelism = 10, partition count = 5, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 2); // Should be ignored
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 5);
-        
-        // When: shouldApplyRescale is called with scan.parallelism = 10
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, 10);
-        
-        // Then: rescale is applied (10 > 5)
-        assertThat(result).isTrue();
+        // Then: scan.parallelism wins
+        assertThat(parallelism).isEqualTo(12);
     }
 
     @Test
-    public void testShouldNotRescaleWhenScanParallelismLessThanPartitionCount() {
-        // Given: scan.parallelism = 5, partition count = 20, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 100); // Should be ignored
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 20);
-        
-        // When: shouldApplyRescale is called with scan.parallelism = 5
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, 5);
-        
-        // Then: rescale is not applied (5 < 20)
-        assertThat(result).isFalse();
+    public void testEffectiveParallelismFallsThroughWhenScanParallelismIsNull() {
+        // Given: scan.parallelism not set; table.exec set to 4; partition count = 7
+        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 4);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 7);
+
+        // When
+        int parallelism = PscTableCommonUtils.getEffectiveSourceParallelism(
+            globalConfig, topicUris, pscProperties, null);
+
+        // Then: table.exec wins (4)
+        assertThat(parallelism).isEqualTo(4);
     }
 
     @Test
-    public void testShouldNotRescaleWhenScanParallelismEqualsPartitionCount() {
-        // Given: scan.parallelism = 10, partition count = 10, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
-        
-        // When: shouldApplyRescale is called with scan.parallelism = 10
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, 10);
-        
-        // Then: rescale is not applied (10 == 10)
-        assertThat(result).isFalse();
-    }
+    public void testEffectiveParallelismFallsThroughWhenScanParallelismIsMinusOne() {
+        // Given: scan.parallelism = -1 (unset sentinel)
+        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 4);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 7);
 
-    // ============================================
-    // Tests for global default parallelism with mocked partition counts
-    // ============================================
+        // When
+        int parallelism = PscTableCommonUtils.getEffectiveSourceParallelism(
+             globalConfig, topicUris, pscProperties, -1);
 
-    @Test
-    public void testShouldRescaleWhenGlobalParallelismExceedsPartitionCount() {
-        // Given: global parallelism = 50, partition count = 10, no scan.parallelism, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 50);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
-        
-        // When: shouldApplyRescale is called with no scan.parallelism
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        
-        // Then: rescale is applied (50 > 10)
-        assertThat(result).isTrue();
+        // Then: -1 is treated as unset; table.exec wins (4)
+        assertThat(parallelism).isEqualTo(4);
     }
 
     @Test
-    public void testShouldNotRescaleWhenGlobalParallelismLessThanPartitionCount() {
-        // Given: global parallelism = 5, partition count = 20, no scan.parallelism, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 5);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 20);
-        
-        // When: shouldApplyRescale is called with no scan.parallelism
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        
-        // Then: rescale is not applied (5 < 20)
-        assertThat(result).isFalse();
-    }
+    public void testEffectiveParallelismFallsThroughToPartitionCount() {
+        // Given: scan.parallelism unset; table.exec = -1; partition count = 7
+        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, -1);
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 7);
 
-    // ============================================
-    // Tests for invalid parallelism configurations
-    // ============================================
+        // When
+        int parallelism = PscTableCommonUtils.getEffectiveSourceParallelism(
+             globalConfig, topicUris, pscProperties, null);
 
-    @Test
-    public void testShouldNotRescaleWhenScanParallelismIsZero() {
-        // Given: scan.parallelism = 0 (invalid), rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 5);
-        
-        // When: shouldApplyRescale is called with scan.parallelism = 0
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, 0);
-        
-        // Then: falls back to global parallelism, rescale is applied (10 > 5)
-        assertThat(result).isTrue();
+        // Then: kafka partition count is used
+        assertThat(parallelism).isEqualTo(7);
     }
 
     @Test
-    public void testShouldNotRescaleWhenScanParallelismIsNegative() {
-        // Given: scan.parallelism = -1 (invalid), rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 5);
-        
-        // When: shouldApplyRescale is called with scan.parallelism = -1
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, -1);
-        
-        // Then: falls back to global parallelism, rescale is applied (10 > 5)
-        assertThat(result).isTrue();
+    public void testEffectiveParallelismFallsThroughToPartitionCountWhenTableExecIsUnset() {
+        // Given: scan.parallelism unset; table.exec not configured at all (returns null/default)
+        // Note: globalConfig has no value for TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM
+        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 9);
+
+        // When
+        int parallelism = PscTableCommonUtils.getEffectiveSourceParallelism(
+             globalConfig, topicUris, pscProperties, null);
+
+        // Then: kafka partition count is used
+        assertThat(parallelism).isEqualTo(9);
     }
 
     @Test
-    public void testShouldNotRescaleWhenNoParallelismConfigured() {
-        // Given: no scan.parallelism, no global parallelism, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        // globalConfig has no default parallelism set (returns null)
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
-        
-        // When: shouldApplyRescale is called
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        
-        // Then: rescale is not applied (no valid parallelism to compare)
-        assertThat(result).isFalse();
-    }
-
-    // ============================================
-    // Tests for partition count edge cases
-    // ============================================
-
-    @Test
-    public void testShouldNotRescaleWhenPartitionCountCannotBeDetermined() {
-        // Given: partition count = -1 (cannot be determined), rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
-        
+    public void testEffectiveParallelismReturnsMinusOneWhenAllSourcesFail() {
+        // Given: scan.parallelism unset; table.exec = -1; partition count provider returns -1
+        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, -1);
         PscTableCommonUtils.setProviderForTest((topicUris, props) -> -1);
-        
-        // When: shouldApplyRescale is called
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        
-        // Then: rescale is not applied (fail-safe behavior)
-        assertThat(result).isFalse();
+
+        // When
+        int parallelism = PscTableCommonUtils.getEffectiveSourceParallelism(
+             globalConfig, topicUris, pscProperties, null);
+
+        // Then: -1 (unknown)
+        assertThat(parallelism).isEqualTo(-1);
     }
 
     @Test
-    public void testShouldNotRescaleWhenPartitionCountIsZero() {
-        // Given: partition count = 0 (invalid), rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 10);
-        
+    public void testEffectiveParallelismReturnsMinusOneWhenPartitionCountIsZero() {
+        // Given: scan.parallelism null; table.exec unset; partition count provider returns 0
         PscTableCommonUtils.setProviderForTest((topicUris, props) -> 0);
-        
-        // When: shouldApplyRescale is called
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        
-        // Then: rescale is not applied (fail-safe behavior)
-        assertThat(result).isFalse();
-    }
 
-    // ============================================
-    // Tests for scan.parallelism precedence
-    // ============================================
+        // When
+        int parallelism = PscTableCommonUtils.getEffectiveSourceParallelism(
+             globalConfig, topicUris, pscProperties, null);
 
-    @Test
-    public void testScanParallelismTakesPrecedenceOverGlobalParallelism() {
-        // Given: scan.parallelism = 100, global parallelism = 5, partition count = 10, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 5);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
-        
-        // When: shouldApplyRescale is called with scan.parallelism = 100
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, 100);
-        
-        // Then: rescale is applied based on scan.parallelism (100 > 10), not global (5 < 10)
-        assertThat(result).isTrue();
-    }
-
-    // ============================================
-    // Tests for multi-topic scenarios
-    // ============================================
-
-    @Test
-    public void testShouldRescaleWithMultipleTopics() {
-        // Given: multiple topics, min partition count = 8, scan.parallelism = 20, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        List<String> multipleTopics = Arrays.asList(
-            "plaintext:kafka:local:test-cluster:/topic1",
-            "plaintext:kafka:local:test-cluster:/topic2"
-        );
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 8);
-        
-        // When: shouldApplyRescale is called
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, multipleTopics, pscProperties, 20);
-        
-        // Then: rescale is applied (20 > 8)
-        assertThat(result).isTrue();
-    }
-
-    // ============================================
-    // Tests for high parallelism scenarios
-    // ============================================
-
-    @Test
-    public void testShouldRescaleWithHighParallelismAndLowPartitionCount() {
-        // Given: scan.parallelism = 2000, partition count = 10, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
-        
-        // When: shouldApplyRescale is called with high parallelism
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, 2000);
-        
-        // Then: rescale is applied (2000 > 10)
-        assertThat(result).isTrue();
-    }
-
-    @Test
-    public void testShouldNotRescaleWithHighPartitionCountAndLowParallelism() {
-        // Given: scan.parallelism = 2, partition count = 1000, rescale enabled
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 1000);
-        
-        // When: shouldApplyRescale is called
-        boolean result = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, 2);
-        
-        // Then: rescale is not applied (2 < 1000)
-        assertThat(result).isFalse();
-    }
-
-    // ============================================
-    // Tests for provider reset mechanism
-    // ============================================
-
-    @Test
-    public void testProviderResetRestoresDefaultBehavior() {
-        // Given: custom provider is set
-        PscTableCommonUtils.setProviderForTest((topicUris, props) -> 42);
-        
-        tableOptions.set(SCAN_ENABLE_RESCALE, true);
-        globalConfig.set(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 100);
-        
-        // Verify custom provider works
-        boolean resultWithMock = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        assertThat(resultWithMock).isTrue(); // 100 > 42
-        
-        // When: provider is reset
-        PscTableCommonUtils.resetProvider();
-        
-        // Then: default behavior is restored (returns -1 in unit test environment)
-        boolean resultAfterReset = PscTableCommonUtils.shouldApplyRescale(
-            tableOptions, globalConfig, topicUris, pscProperties, null);
-        assertThat(resultAfterReset).isFalse(); // partition count = -1, fail-safe
+        // Then: 0 is invalid → -1 (unknown)
+        assertThat(parallelism).isEqualTo(-1);
     }
 
     // ============================================
