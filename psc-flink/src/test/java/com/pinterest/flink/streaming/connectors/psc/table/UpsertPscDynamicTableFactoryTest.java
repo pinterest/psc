@@ -43,6 +43,7 @@ import org.apache.flink.formats.avro.registry.confluent.ConfluentRegistryAvroSer
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.StreamOperatorFactory;
+import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
 import org.apache.flink.streaming.runtime.operators.sink.SinkWriterOperatorFactory;
 import org.apache.flink.table.api.DataTypes;
@@ -71,6 +72,7 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.util.TestLogger;
+import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -157,6 +159,16 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                     ",", true, ChangelogMode.insertOnly(), Collections.emptyMap());
 
     @Rule public ExpectedException thrown = ExpectedException.none();
+
+    /**
+     * Reset partition count provider after each test to prevent test pollution.
+     * Tests that mock the provider via {@link PscTableCommonUtils#setProviderForTest}
+     * must not affect other tests.
+     */
+    @After
+    public void tearDown() {
+        PscTableCommonUtils.resetProvider();
+    }
 
     @Test
     public void testTableSource() {
@@ -701,6 +713,194 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     }
 
     // --------------------------------------------------------------------------------------------
+    // Rescale / parallelism tests for the upsert source
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testUpsertSourceWithRescaleEnabledProducesPartitionTransformation() {
+        // With scan.enable-rescale=true on the upsert source, the produced stream must end
+        // in a PartitionTransformation (rescale()), and the upstream operator must be the
+        // bare Kafka source (no rate limiter set).
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, true);
+                    addScanParallelismConfig(opts, 50);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isTrue();
+        // scan.parallelism (tier 1) wins in getEffectiveSourceParallelism and is stored on
+        // the source by UpsertPscDynamicTableFactory.
+        assertThat(pscSource.scanParallelism).isEqualTo(50);
+
+        final int envParallelism = 20;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+        assertThat(sourceOp.getParallelism())
+                .isEqualTo(Math.min(pscSource.scanParallelism, envParallelism));
+    }
+
+    @Test
+    public void testUpsertSourceWithRescaleAndRateLimitOrder() {
+        // Pins the operator ordering for the upsert source path:
+        //   Source  ->  PscRateLimit  ->  rescale (terminal PartitionTransformation)
+        // This must match the non-upsert factory's behavior.
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, true);
+                    addScanParallelismConfig(opts, 20);
+                    addRateLimitConfig(opts, 1000.0);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isTrue();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+        assertThat(pscSource.scanParallelism).isEqualTo(20);
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // 1) Outermost / terminal op is the rescale.
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getName()).doesNotContain("PscRateLimit");
+
+        // 2) Immediately below rescale is the rate limiter (NOT the bare source).
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+
+        // 3) Below the rate limiter is the Kafka source.
+        assertThat(rateLimitOp.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Source and rate-limit are both pinned to min(scanParallelism, env).
+        final int expectedSourceParallelism =
+                Math.min(pscSource.scanParallelism, envParallelism);
+        assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+    }
+
+    @Test
+    public void testUpsertSourceParallelismCappedByEnv() {
+        // When scan.parallelism (80) exceeds env.getParallelism() (10), the source
+        // operator parallelism must be capped at env parallelism (10) by
+        // PscDynamicSource.produceDataStream(), even though pscSource.scanParallelism
+        // continues to report the configured value (80).
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, true);
+                    addScanParallelismConfig(opts, 80);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        // Configured scan.parallelism is preserved on the source instance.
+        assertThat(pscSource.scanParallelism).isEqualTo(80);
+        assertThat(pscSource.enableRescale).isTrue();
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Cap kicks in: source parallelism = env (10), NOT scan.parallelism (80).
+        assertThat(sourceOp.getParallelism()).isEqualTo(envParallelism);
+        assertThat(sourceOp.getParallelism()).isLessThan(pscSource.scanParallelism);
+    }
+
+    @Test
+    public void testUpsertSourceWithRescaleDisabled() {
+        // With scan.enable-rescale=false the upsert factory must skip
+        // getEffectiveSourceParallelism() entirely and store -1 on the source.
+        // No rescale() should be applied, and (in the absence of a rate limiter) the
+        // terminal transformation should be the bare SourceTransformation.
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, false);
+                    // scan.parallelism is set but should NOT be consulted because rescale=false.
+                    addScanParallelismConfig(opts, 20);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isFalse();
+        // When rescale is disabled the factory short-circuits to -1 regardless of scan.parallelism.
+        assertThat(pscSource.scanParallelism).isEqualTo(-1);
+
+        final int envParallelism = 5;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // No rescale, no rate limiter => terminal is the bare Kafka source.
+        assertThat(terminal).isInstanceOf(SourceTransformation.class);
+        assertThat(terminal).isNotInstanceOf(PartitionTransformation.class);
+        // Source inherits env parallelism (no explicit setParallelism call).
+        assertThat(terminal.getParallelism()).isEqualTo(envParallelism);
+    }
+
+    /**
+     * Helper method to create a transformation from a {@link PscDynamicSource}.
+     * Reduces repetitive code in operator chaining tests.
+     *
+     * @param pscSource         the PSC dynamic source
+     * @param globalParallelism global parallelism for the execution environment
+     * @return the final transformation in the operator chain
+     */
+    private Transformation<RowData> produceTransformationFromSource(
+            PscDynamicSource pscSource, int globalParallelism) {
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider =
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(runtimeProvider).isInstanceOf(DataStreamScanProvider.class);
+
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(globalParallelism);
+
+        return dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+    }
+
+    /** Helper method to add rescale configuration to options map. */
+    private static void addRescaleConfig(Map<String, String> options, boolean enableRescale) {
+        options.put(PscConnectorOptions.SCAN_ENABLE_RESCALE.key(), String.valueOf(enableRescale));
+    }
+
+    /** Helper method to add rate limit configuration to options map. */
+    private static void addRateLimitConfig(Map<String, String> options, double rateLimit) {
+        options.put(PscConnectorOptions.SCAN_RATE_LIMIT.key(), String.valueOf(rateLimit));
+    }
+
+    /** Helper method to add scan.parallelism configuration to options map. */
+    private static void addScanParallelismConfig(Map<String, String> options, int parallelism) {
+        options.put(PscConnectorOptions.SCAN_PARALLELISM.key(), String.valueOf(parallelism));
+    }
+
+    // --------------------------------------------------------------------------------------------
     // Utilities
     // --------------------------------------------------------------------------------------------
 
@@ -837,6 +1037,12 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             String keyPrefix,
             String topicUri,
             Properties properties) {
+        // NOTE: UpsertPscDynamicTableFactory now ALWAYS passes a non-null effectiveParallelism
+        // to PscDynamicSource (it computes `shouldRescale ? getEffectiveSourceParallelism(...) : -1`).
+        // The backward-compatible 16-arg PscDynamicSource ctor delegates with scanParallelism=null,
+        // which would no longer match the factory output. We therefore use the full ctor here and
+        // mirror the factory's defaults explicitly: sourceUidPrefix=null, enableRescale=false,
+        // rateLimitRecordsPerSecond=null, scanParallelism=-1.
         return new PscDynamicSource(
                 producedDataType,
                 keyDecodingFormat,
@@ -854,7 +1060,11 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 Collections.emptyMap(),
                 0,
                 true,
-                FactoryMocks.IDENTIFIER.asSummaryString());
+                FactoryMocks.IDENTIFIER.asSummaryString(),
+                null,
+                false,
+                null,
+                -1);
     }
 
     private static PscDynamicSink createExpectedSink(

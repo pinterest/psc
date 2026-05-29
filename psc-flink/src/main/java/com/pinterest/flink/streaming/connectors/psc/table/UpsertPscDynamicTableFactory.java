@@ -85,7 +85,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateScanBoundedMode;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateConsumerClientOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateProducerClientOptions;
-import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.shouldApplyRescale;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.getEffectiveSourceParallelism;
 
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
@@ -161,22 +161,24 @@ public class UpsertPscDynamicTableFactory
 
         final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
 
+        final boolean shouldRescale =tableOptions.get(SCAN_ENABLE_RESCALE);
         // Read scan.parallelism configuration
         final Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
 
-        // Log scan parallelism configuration if set
-        if (scanParallelism != null) {
-            LOG.info("scan.parallelism configured: {} (will override partition-based parallelism)", 
-                     scanParallelism);
-        }
-
-        // Determine if rescale should be applied based on scan.parallelism (if set) or global default
-        final boolean shouldRescale = shouldApplyRescale(
-                tableOptions,
+        final Integer effectiveParallelism = shouldRescale ?
+            getEffectiveSourceParallelism(
                 context.getConfiguration(),
                 getSourceTopicUris(tableOptions),
                 properties,
-                scanParallelism);
+                scanParallelism)
+            : -1;
+
+
+        // Log scan parallelism configuration if set
+        if (shouldRescale && effectiveParallelism > 0 ) {
+          LOG.info("Psc will use parallelism={} for source operator",
+              effectiveParallelism);
+        }
 
         // Get rate limit configuration
         final Double rateLimitRecordsPerSecond = tableOptions.getOptional(SCAN_RATE_LIMIT).orElse(null);
@@ -208,7 +210,7 @@ public class UpsertPscDynamicTableFactory
                 tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
                 shouldRescale,
                 rateLimitRecordsPerSecond,
-                scanParallelism);
+                effectiveParallelism);
     }
 
     @Override
