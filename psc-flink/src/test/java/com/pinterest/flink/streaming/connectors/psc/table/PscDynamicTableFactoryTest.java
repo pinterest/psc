@@ -1493,16 +1493,16 @@ public class PscDynamicTableFactoryTest {
         // Get transformation using helper method (reuses same source)
         final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
         
-        // The transformation should be a OneInputTransformation (the rate limiter map)
-        // Since rescale is disabled, there should be no intermediate rescale transformation
+        // Rate limiting is fetch-side inside the source; no downstream PscRateLimit map.
         assertThat(transformation).isNotNull();
-        assertThat(transformation.getName()).contains("PscRateLimit");
+        assertThat(transformation).isInstanceOf(SourceTransformation.class);
+        assertThat(transformation.getName()).doesNotContain("PscRateLimit");
     }
 
     @Test
     public void testOperatorChainingWithRescaleAndRateLimit() {
         // Verifies the new operator chain when both rescale and rate limiting are enabled:
-        //   Source -> PscRateLimit -> rescale (terminal PartitionTransformation)
+        //   Source -> rescale (terminal PartitionTransformation); rate limit is fetch-side
         // scan.parallelism (tier 1) determines the source/rate-limit parallelism, capped
         // by the env parallelism in produceTransformationFromSource.
         final Map<String, String> modifiedOptions =
@@ -1526,25 +1526,18 @@ public class PscDynamicTableFactoryTest {
         final Transformation<RowData> terminal =
                 produceTransformationFromSource(pscSource, envParallelism);
 
-        // Terminal is the rescale PartitionTransformation.
+        // Terminal is the rescale PartitionTransformation; rate limit is fetch-side (no map).
         assertThat(terminal).isNotNull();
         assertThat(terminal).isInstanceOf(PartitionTransformation.class);
 
-        // Terminal's input is the rate-limit operator.
         assertThat(terminal.getInputs()).isNotEmpty();
-        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
-        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
-
-        // The rate-limit operator wraps the Kafka source.
-        assertThat(rateLimitOp.getInputs()).isNotEmpty();
-        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
         assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+        assertThat(sourceOp.getName()).doesNotContain("PscRateLimit");
 
-        // Source and rate-limit are both pinned to min(scanParallelism, env).
         final int expectedSourceParallelism =
                 Math.min(pscSource.scanParallelism, envParallelism);
         assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
-        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
     }
 
     @Test
@@ -1581,9 +1574,8 @@ public class PscDynamicTableFactoryTest {
     @Test
     public void testRateLimiterParallelismConfiguration() {
         // Verifies that scan.parallelism and rate-limit options are wired into the
-        // PscDynamicSource and that the rate-limit operator is inserted between the
-        // source and the rescale, with its parallelism matching the (capped) source
-        // parallelism.
+        // PscDynamicSource. Rate limiting is fetch-side; graph is Source -> rescale
+        // with source parallelism capped by env parallelism.
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
                         getBasicSourceOptions(),
@@ -1609,14 +1601,14 @@ public class PscDynamicTableFactoryTest {
         assertThat(terminal).isInstanceOf(PartitionTransformation.class);
         assertThat(terminal.getInputs()).isNotEmpty();
 
-        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
-        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+        // Rate limiting is fetch-side; rescale sits directly on the source.
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+        assertThat(sourceOp.getName()).doesNotContain("PscRateLimit");
 
-        // Rate-limit parallelism follows the upstream source parallelism, which is
-        // capped at min(scanParallelism, env).
         final int expectedSourceParallelism =
                 Math.min(pscSource.scanParallelism, envParallelism);
-        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+        assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
     }
 
     @Test
@@ -1660,13 +1652,9 @@ public class PscDynamicTableFactoryTest {
 
     @Test
     public void testRescaleAndRateLimitChain() {
-        // Verifies the operator chain: Source -> RateLimit -> Rescale.
-        // Rescale is now applied AFTER the rate limiter, so the terminal transformation
-        // is a PartitionTransformation (the rescale), whose input is the rate-limit
-        // OneInputTransformation, whose input is the SourceTransformation.
-        // Also verifies that source/rate-limit parallelism is capped at env parallelism:
+        // Verifies the operator chain: Source -> Rescale (rate limit is fetch-side).
+        // Also verifies that source parallelism is capped at env parallelism:
         //   sourceParallelism = min(scanParallelism, env.getParallelism()) = min(100, 10) = 10
-        //   rateLimiterParallelism = sourceStream.getParallelism() = 10
 
         try {
             // Mock partition count = 20 (irrelevant to the gate now; rescale is gated only
@@ -1705,23 +1693,14 @@ public class PscDynamicTableFactoryTest {
             assertThat(terminal).isNotNull();
             assertThat(terminal).isInstanceOf(PartitionTransformation.class);
 
-            // 2) Terminal's input is the rate-limit map.
+            // 2) Terminal's input is the source (rate limit is fetch-side).
             assertThat(terminal.getInputs()).isNotEmpty();
-            final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
-            assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+            final Transformation<?> sourceOp = terminal.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+            assertThat(sourceOp.getName()).doesNotContain("PscRateLimit");
 
-            // Rate-limit parallelism should match the (capped) source parallelism:
-            // min(scanParallelism=100, env=10) = 10.
             final int expectedSourceParallelism =
                     Math.min(pscSource.scanParallelism, envParallelism);
-            assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
-
-            // 3) The rate-limit map's input is the Kafka source.
-            assertThat(rateLimitOp.getInputs()).isNotEmpty();
-            final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
-            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
-
-            // Source operator parallelism should be capped at env parallelism.
             assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
         } finally {
             PscTableCommonUtils.resetProvider();
@@ -1783,11 +1762,10 @@ public class PscDynamicTableFactoryTest {
 
     @Test
     public void testRescaleAndRateLimitWithDifferentParallelism() {
-        // Verifies that when scan.parallelism is larger than env parallelism, both the
-        // source and the rate-limit operator are capped at env parallelism. The chain is:
+        // Verifies that when scan.parallelism is larger than env parallelism, the source
+        // is capped at env parallelism. Rate limit is fetch-side. The chain is:
         //   Source(parallelism=min(scanParallelism, env))
-        //     -> PscRateLimit(parallelism=sourceStream.getParallelism())
-        //         -> rescale (terminal PartitionTransformation)
+        //     -> rescale (terminal PartitionTransformation)
 
         try {
             // Mock partition count = 15. In the new logic this is not consulted because
@@ -1821,20 +1799,14 @@ public class PscDynamicTableFactoryTest {
             assertThat(terminal).isNotNull();
             assertThat(terminal).isInstanceOf(PartitionTransformation.class);
 
-            // 2) Terminal's input is the rate-limit map.
+            // 2) Terminal's input is the source (rate limit is fetch-side).
             assertThat(terminal.getInputs()).isNotEmpty();
-            final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
-            assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+            final Transformation<?> sourceOp = terminal.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+            assertThat(sourceOp.getName()).doesNotContain("PscRateLimit");
 
-            // Rate-limit and source are both capped at env parallelism (NOT 80).
             final int expectedSourceParallelism =
                     Math.min(pscSource.scanParallelism, envParallelism);
-            assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
-
-            // 3) The rate-limit map's input is the Kafka source, also at the capped parallelism.
-            assertThat(rateLimitOp.getInputs()).isNotEmpty();
-            final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
-            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
             assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
         } finally {
             PscTableCommonUtils.resetProvider();
@@ -2058,9 +2030,8 @@ public class PscDynamicTableFactoryTest {
     @Test
     public void testRescaleAfterRateLimitOrder() {
         // Pins the operator ordering established in PscDynamicSource.produceDataStream():
-        //   Source  ->  PscRateLimit (rate limiter)  ->  rescale (terminal)
-        // i.e. rescale is the OUTERMOST operator, applied AFTER the rate limiter,
-        // not before it. This guards against accidental reordering.
+        //   Source  ->  rescale (terminal); rate limit is applied fetch-side inside the source
+        // i.e. rescale is the OUTERMOST operator when enabled.
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
                         getBasicSourceOptions(),
@@ -2084,26 +2055,17 @@ public class PscDynamicTableFactoryTest {
         assertThat(terminal).isInstanceOf(PartitionTransformation.class);
         assertThat(terminal.getName()).doesNotContain("PscRateLimit");
 
-        // 2) Immediately below rescale is the rate limiter (NOT the bare source).
+        // 2) Immediately below rescale is the source (rate limit is fetch-side).
         assertThat(terminal.getInputs()).isNotEmpty();
-        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
-        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
-        assertThat(rateLimitOp).isNotInstanceOf(PartitionTransformation.class);
-        assertThat(rateLimitOp).isNotInstanceOf(SourceTransformation.class);
-
-        // 3) Below the rate limiter is the Kafka source. This rules out the swapped
-        //    ordering (Source -> rescale -> rate limiter), in which case the rate
-        //    limiter's input would be a PartitionTransformation.
-        assertThat(rateLimitOp.getInputs()).isNotEmpty();
-        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
         assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+        assertThat(sourceOp.getName()).doesNotContain("PscRateLimit");
     }
 
     @Test
     public void testRateLimiterParallelismMatchesSourceParallelism() {
-        // The rate limiter is chained via DataStream.map(...) on the source stream, so its
-        // parallelism must equal the source stream's parallelism (the capped value),
-        // never scan.parallelism directly when scan.parallelism > env parallelism.
+        // Rate limiting is fetch-side inside the source. With rescale enabled, the graph is
+        // Source -> rescale, and source parallelism is capped at env parallelism.
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
                         getBasicSourceOptions(),
@@ -2124,20 +2086,12 @@ public class PscDynamicTableFactoryTest {
 
         assertThat(terminal).isInstanceOf(PartitionTransformation.class);
         assertThat(terminal.getInputs()).isNotEmpty();
-        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
-        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
-
-        assertThat(rateLimitOp.getInputs()).isNotEmpty();
-        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
         assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+        assertThat(sourceOp.getName()).doesNotContain("PscRateLimit");
 
-        // Both must equal min(scanParallelism, env). The rate limiter parallelism is
-        // explicitly read from sourceStream.getParallelism() in PscDynamicSource, so it
-        // is locked to the source operator's parallelism.
         final int expectedParallelism = Math.min(pscSource.scanParallelism, envParallelism);
         assertThat(sourceOp.getParallelism()).isEqualTo(expectedParallelism);
-        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedParallelism);
-        assertThat(rateLimitOp.getParallelism()).isEqualTo(sourceOp.getParallelism());
     }
 
     @Test

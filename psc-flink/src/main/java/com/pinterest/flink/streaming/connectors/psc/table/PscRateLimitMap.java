@@ -35,6 +35,10 @@ import org.apache.flink.util.Preconditions;
  * <p>When the rate limit is exceeded, the function blocks until permits become available,
  * emitting metrics to track throttling behavior.
  *
+ * <p><b>Note:</b> {@link com.pinterest.flink.streaming.connectors.psc.table.PscDynamicSource}
+ * now applies rate limiting fetch-side inside {@code PscTopicUriPartitionSplitReader} (before
+ * {@code consumer.poll()}) instead of inserting this map into the operator graph. This class
+ * remains for unit tests and any callers that still want post-source emission throttling.
  *
  *
  * @param <T> The type of records flowing through this map function

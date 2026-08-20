@@ -20,6 +20,7 @@ package com.pinterest.flink.streaming.connectors.psc.table;
 
 import com.pinterest.flink.connector.psc.source.PscSource;
 import com.pinterest.flink.connector.psc.source.PscSourceBuilder;
+import com.pinterest.flink.connector.psc.source.PscSourceOptions;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.NoStoppingOffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.enumerator.initializer.OffsetsInitializer;
 import com.pinterest.flink.connector.psc.source.reader.deserializer.PscRecordDeserializationSchema;
@@ -462,14 +463,9 @@ public class PscDynamicSource
                       + "parallelism = {}", execEnv.getParallelism());
                 }
 
-                if (isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
-                    String rateLimiterOperatorName = "PscRateLimit-" + tableIdentifier;
-                    resultStream = resultStream
-                            .map(new PscRateLimitMap<>(rateLimitRecordsPerSecond))
-                            .setParallelism(sourceStream.getParallelism())
-                            .name(rateLimiterOperatorName)
-                            .uid(rateLimiterOperatorName);
-                }
+                // Rate limiting is applied fetch-side inside PscTopicUriPartitionSplitReader
+                // (before consumer.poll). Do not add a downstream PscRateLimitMap — that would
+                // throttle only after MemQ/Kafka downloads already hit the heap.
                 if (enableRescale) {
                   resultStream = resultStream.rescale();
                 }
@@ -994,8 +990,21 @@ public class PscDynamicSource
                 break;
         }
 
+        Properties sourceProperties = properties;
+        if (isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
+            // Copy so we don't mutate shared table properties; SplitReader reads this key.
+            sourceProperties = new Properties();
+            sourceProperties.putAll(properties);
+            sourceProperties.setProperty(
+                    PscSourceOptions.SCAN_RATE_LIMIT_RECORDS_PER_SECOND.key(),
+                    Double.toString(rateLimitRecordsPerSecond));
+            LOG.info(
+                    "Configured fetch-side rate limit: {} records/second (total across all subtasks)",
+                    rateLimitRecordsPerSecond);
+        }
+
         pscSourceBuilder
-                .setProperties(properties)
+                .setProperties(sourceProperties)
                 .setDeserializer(PscRecordDeserializationSchema.of(pscDeserializer));
 
         return pscSourceBuilder.build();
