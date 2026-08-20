@@ -28,7 +28,7 @@ import com.pinterest.psc.config.PscConfigurationUtils;
 import com.pinterest.psc.consumer.OffsetCommitCallback;
 import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.consumer.PscConsumerMessage;
-import com.pinterest.psc.consumer.PscConsumerMessagesIterable;
+import com.pinterest.psc.consumer.PscConsumerPollMessageIterator;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.consumer.WakeupException;
@@ -40,6 +40,7 @@ import org.apache.flink.connector.base.source.reader.RecordsWithSplitIds;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitReader;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsAddition;
 import org.apache.flink.connector.base.source.reader.splitreader.SplitsChange;
+import org.apache.flink.shaded.guava31.com.google.common.util.concurrent.RateLimiter;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.Preconditions;
 import org.slf4j.Logger;
@@ -52,12 +53,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -67,6 +68,8 @@ public class PscTopicUriPartitionSplitReader
         implements SplitReader<PscConsumerMessage<byte[], byte[]>, PscTopicUriPartitionSplit> {
     private static final Logger LOG = LoggerFactory.getLogger(PscTopicUriPartitionSplitReader.class);
     private static final long POLL_TIMEOUT = 10000L;
+    private static final double MIN_SUBTASK_RATE_LIMIT_QPS = 0.1;
+    private static final int DEFAULT_POLL_MESSAGES_MAX = 500;
 
     private final PscConsumer<byte[], byte[]> consumer;
     private final Map<TopicUriPartition, Long> stoppingOffsets;
@@ -78,6 +81,18 @@ public class PscTopicUriPartitionSplitReader
     // Tracking empty splits that has not been added to finished splits in fetch()
     private final Set<String> emptySplits = new HashSet<>();
     private final Properties props;
+
+    /** Optional fetch-side rate limiter; null when scan.rate-limit is unset. */
+    @Nullable private final RateLimiter fetchRateLimiter;
+
+    /**
+     * Permits to acquire before the next {@link #fetch()}. Starts at poll.messages.max so the first
+     * parallel startup fetches are staggered; then tracks the previous poll's emitted count.
+     */
+    private int nextFetchRatePermits;
+
+    /** Partitions finished while streaming the previous poll; unassigned at the start of fetch(). */
+    private final List<TopicUriPartition> pendingUnassignPartitions = new ArrayList<>();
 
     public PscTopicUriPartitionSplitReader(
             Properties props,
@@ -101,24 +116,106 @@ public class PscTopicUriPartitionSplitReader
         this.consumer = new PscConsumer<>(PscConfigurationUtils.propertiesToPscConfiguration(consumerProps));
         this.stoppingOffsets = new HashMap<>();
         this.groupId = consumerProps.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        int pollMessagesMax =
+                parsePositiveInt(
+                        props.getProperty(PscConfiguration.PSC_CONSUMER_POLL_MESSAGES_MAX),
+                        DEFAULT_POLL_MESSAGES_MAX);
+        this.nextFetchRatePermits = pollMessagesMax;
+        this.fetchRateLimiter = createFetchRateLimiter(props, context.currentParallelism(), pollMessagesMax);
+    }
+
+    @Nullable
+    private static RateLimiter createFetchRateLimiter(
+            Properties props, int parallelism, int pollMessagesMax) {
+        String rateLimitStr =
+                props.getProperty(PscSourceOptions.SCAN_RATE_LIMIT_RECORDS_PER_SECOND.key());
+        if (rateLimitStr == null || rateLimitStr.isEmpty()) {
+            return null;
+        }
+        double totalRate = Double.parseDouble(rateLimitStr);
+        if (totalRate <= 0) {
+            return null;
+        }
+        int parallel = Math.max(1, parallelism);
+        double subtaskRate = totalRate / parallel;
+        Preconditions.checkArgument(
+                subtaskRate > MIN_SUBTASK_RATE_LIMIT_QPS,
+                "Subtask rate limit should be greater than %s QPS. "
+                        + "Current rate: %s records/second divided by %s subtasks = %s records/second per subtask. "
+                        + "Consider increasing the rate limit or decreasing parallelism.",
+                MIN_SUBTASK_RATE_LIMIT_QPS,
+                totalRate,
+                parallel,
+                subtaskRate);
+        LOG.info(
+                "Fetch-side rate limit enabled: {} records/second total, {}/s per subtask "
+                        + "(parallelism={}, initial batch permits={})",
+                totalRate,
+                subtaskRate,
+                parallel,
+                pollMessagesMax);
+        return RateLimiter.create(subtaskRate);
+    }
+
+    private static int parsePositiveInt(@Nullable String value, int defaultValue) {
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed > 0 ? parsed : defaultValue;
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    private void acquireFetchRatePermitsBeforePoll() {
+        if (fetchRateLimiter == null) {
+            return;
+        }
+        int permits = Math.max(1, nextFetchRatePermits);
+        fetchRateLimiter.acquire(permits);
+    }
+
+    private void unassignPendingFinishedPartitions() throws ConsumerException, ConfigurationException {
+        if (pendingUnassignPartitions.isEmpty()) {
+            return;
+        }
+        pendingUnassignPartitions.forEach(pscSourceReaderMetrics::removeRecordsLagMetric);
+        unassignPartitions(pendingUnassignPartitions);
+        pendingUnassignPartitions.clear();
     }
 
     @Override
     public RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> fetch() throws IOException {
-        PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable;
         try {
-            consumerMessagesIterable = new PscConsumerMessagesIterable<>(consumer.poll(Duration.ofMillis(POLL_TIMEOUT)));
+            unassignPendingFinishedPartitions();
+        } catch (ConsumerException | ConfigurationException e) {
+            throw new RuntimeException("Failed to unassign finished partitions", e);
+        }
+
+        // Pace MemQ/Kafka downloads: acquire before poll so fetchObjectToInputStream cannot run
+        // ahead of the configured record budget.
+        acquireFetchRatePermitsBeforePoll();
+
+        PscConsumerPollMessageIterator<byte[], byte[]> pollIterator;
+        try {
+            pollIterator = consumer.poll(Duration.ofMillis(POLL_TIMEOUT));
         } catch (ConsumerException e) {
             // IllegalStateException will be thrown if the consumer is not assigned any partitions.
             // This happens if all assigned partitions are invalid or empty (starting offset >=
             // stopping offset). We just mark empty partitions as finished and return an empty
             // record container, and this consumer will be closed by SplitFetcherManager.
-            if (e.getCause() != null &&
-                    (e.getCause().getClass().equals(IllegalStateException.class) || e.getCause().getClass().equals(WakeupException.class))) {
-                LOG.warn("Caught IllegalStateException or WakeupException in poll(), marking partitions as finished", e);
+            if (e.getCause() != null
+                    && (e.getCause().getClass().equals(IllegalStateException.class)
+                            || e.getCause().getClass().equals(WakeupException.class))) {
+                LOG.warn(
+                        "Caught IllegalStateException or WakeupException in poll(), marking partitions as finished",
+                        e);
+                nextFetchRatePermits = 1;
                 PscPartitionSplitRecords recordsBySplits =
-                        new PscPartitionSplitRecords(
-                                PscConsumerMessagesIterable.emptyIterable(), pscSourceReaderMetrics);
+                        PscPartitionSplitRecords.empty(pscSourceReaderMetrics);
                 markEmptySplitsAsFinished(recordsBySplits);
                 return recordsBySplits;
             } else {
@@ -129,48 +226,20 @@ public class PscTopicUriPartitionSplitReader
             LOG.error("Unrecoverable Exception caught in poll()", e);
             throw new RuntimeException(e);
         }
+
+        // Stream records from the poll iterator — do not call asList() / PscConsumerMessagesIterable,
+        // which materializes every raw payload onto the heap before Flink can emit or backpressure.
         PscPartitionSplitRecords recordsBySplits =
-                new PscPartitionSplitRecords(consumerMessagesIterable, pscSourceReaderMetrics);
-        List<TopicUriPartition> finishedPartitions = new ArrayList<>();
-        for (TopicUriPartition tp : consumerMessagesIterable.getTopicUriPartitions()) {
-            long stoppingOffset = getStoppingOffset(tp);
-            final List<PscConsumerMessage<byte[], byte[]>> recordsFromPartition =
-                    consumerMessagesIterable.getMessagesForTopicUriPartition(tp);
-
-            if (recordsFromPartition.size() > 0) {
-                final PscConsumerMessage<byte[], byte[]> lastRecord =
-                        recordsFromPartition.get(recordsFromPartition.size() - 1);
-
-                // After processing a record with offset of "stoppingOffset - 1", the split reader
-                // should not continue fetching because the record with stoppingOffset may not
-                // exist. Keep polling will just block forever.
-                if (lastRecord.getMessageId().getOffset() >= stoppingOffset - 1) {
-                    recordsBySplits.setPartitionStoppingOffset(tp, stoppingOffset);
-                    finishSplitAtRecord(
-                            tp,
-                            stoppingOffset,
-                            lastRecord.getMessageId().getOffset(),
-                            finishedPartitions,
-                            recordsBySplits);
-                }
-            }
-            // Track this partition's record lag if it never appears before
-            pscSourceReaderMetrics.maybeAddRecordsLagMetric(consumer, tp);
-        }
+                new PscPartitionSplitRecords(
+                        pollIterator,
+                        stoppingOffsets,
+                        pscSourceReaderMetrics,
+                        pendingUnassignPartitions,
+                        emittedCount -> nextFetchRatePermits = Math.max(1, emittedCount));
 
         markEmptySplitsAsFinished(recordsBySplits);
 
-        // Unassign the partitions that has finished.
-        if (!finishedPartitions.isEmpty()) {
-            finishedPartitions.forEach(pscSourceReaderMetrics::removeRecordsLagMetric);
-            try {
-                unassignPartitions(finishedPartitions);
-            } catch (ConsumerException | ConfigurationException e) {
-                throw new RuntimeException("Failed to unassign partitions", e);
-            }
-        }
-
-        // Update numBytesIn
+        // Update numBytesIn (best-effort; streaming path updates as records are read)
         pscSourceReaderMetrics.updateNumBytesInCounter();
 
         return recordsBySplits;
@@ -198,9 +267,9 @@ public class PscTopicUriPartitionSplitReader
         // Assignment.
         List<TopicUriPartition> newPartitionAssignments = new ArrayList<>();
         // Starting offsets.
-        Map<TopicUriPartition, Long> partitionsStartingFromSpecifiedOffsets = new HashMap<>();
         List<TopicUriPartition> partitionsStartingFromEarliest = new ArrayList<>();
         List<TopicUriPartition> partitionsStartingFromLatest = new ArrayList<>();
+        Map<TopicUriPartition, Long> partitionsStartingFromSpecifiedOffsets = new HashMap<>();
         // Stopping offsets.
         List<TopicUriPartition> partitionsStoppingAtLatest = new ArrayList<>();
         Set<TopicUriPartition> partitionsStoppingAtCommitted = new HashSet<>();
@@ -299,6 +368,17 @@ public class PscTopicUriPartitionSplitReader
     @VisibleForTesting
     PscConsumer<byte[], byte[]> consumer() {
         return consumer;
+    }
+
+    @VisibleForTesting
+    @Nullable
+    RateLimiter fetchRateLimiter() {
+        return fetchRateLimiter;
+    }
+
+    @VisibleForTesting
+    int nextFetchRatePermits() {
+        return nextFetchRatePermits;
     }
 
     // --------------- private helper method ----------------------
@@ -491,21 +571,6 @@ public class PscTopicUriPartitionSplitReader
         return prefix + "-" + subtaskId;
     }
 
-    private void finishSplitAtRecord(
-            TopicUriPartition tp,
-            long stoppingOffset,
-            long currentOffset,
-            List<TopicUriPartition> finishedPartitions,
-            PscPartitionSplitRecords recordsBySplits) {
-        LOG.debug(
-                "{} has reached stopping offset {}, current offset is {}",
-                tp,
-                stoppingOffset,
-                currentOffset);
-        finishedPartitions.add(tp);
-        recordsBySplits.addFinishedSplit(PscTopicUriPartitionSplit.toSplitId(tp));
-    }
-
     private long getStoppingOffset(TopicUriPartition tp) {
         return stoppingOffsets.getOrDefault(tp, Long.MAX_VALUE);
     }
@@ -556,52 +621,120 @@ public class PscTopicUriPartitionSplitReader
 
     // ---------------- private helper class ------------------------
 
+    /**
+     * Streams {@link PscConsumerPollMessageIterator} records into Flink without materializing the
+     * full poll into a {@code List} via {@code asList()}.
+     *
+     * <p>Records are grouped into splits on the fly: {@link #nextSplit()} starts a partition from
+     * the peeked message; {@link #nextRecordFromSplit()} emits consecutive messages for that
+     * partition until the partition changes or the iterator is exhausted.
+     */
     private static class PscPartitionSplitRecords
             implements RecordsWithSplitIds<PscConsumerMessage<byte[], byte[]>> {
 
         private final Set<String> finishedSplits = new HashSet<>();
-        private final Map<TopicUriPartition, Long> stoppingOffsets = new HashMap<>();
-        private final PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable;
+        private final Map<TopicUriPartition, Long> stoppingOffsets;
         private final PscSourceReaderMetrics metrics;
-        private final Iterator<TopicUriPartition> splitIterator;
-        private Iterator<PscConsumerMessage<byte[], byte[]>> recordIterator;
+        private final List<TopicUriPartition> finishedPartitionsForUnassign;
+        private final IntConsumer onFinishedEmitting;
+
+        @Nullable private final PscConsumerPollMessageIterator<byte[], byte[]> pollIterator;
+        @Nullable private PscConsumerMessage<byte[], byte[]> peekedMessage;
+        private boolean iteratorExhausted;
+
         private TopicUriPartition currentTopicPartition;
         private Long currentSplitStoppingOffset;
         private PscSourceReaderMetrics.Offset currentOffsetTracker;
+        private int emittedCount;
+
+        private boolean reportedEmitCount;
 
         private PscPartitionSplitRecords(
-                PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable, PscSourceReaderMetrics metrics) {
-            this.consumerMessagesIterable = consumerMessagesIterable;
-            this.splitIterator = consumerMessagesIterable.getTopicUriPartitions().iterator();
+                @Nullable PscConsumerPollMessageIterator<byte[], byte[]> pollIterator,
+                Map<TopicUriPartition, Long> stoppingOffsets,
+                PscSourceReaderMetrics metrics,
+                List<TopicUriPartition> finishedPartitionsForUnassign,
+                IntConsumer onFinishedEmitting) {
+            this.pollIterator = pollIterator;
+            this.stoppingOffsets = stoppingOffsets;
             this.metrics = metrics;
+            this.finishedPartitionsForUnassign = finishedPartitionsForUnassign;
+            this.onFinishedEmitting = onFinishedEmitting;
+            this.iteratorExhausted = pollIterator == null;
         }
 
-        private void setPartitionStoppingOffset(
-                TopicUriPartition topicUriPartition, long stoppingOffset) {
-            stoppingOffsets.put(topicUriPartition, stoppingOffset);
+        private static PscPartitionSplitRecords empty(PscSourceReaderMetrics metrics) {
+            return new PscPartitionSplitRecords(
+                    null, new HashMap<>(), metrics, new ArrayList<>(), count -> {});
         }
 
-        private void addFinishedSplit(String splitId) {
-            finishedSplits.add(splitId);
+        private void reportEmittedCountOnce() {
+            if (!reportedEmitCount) {
+                reportedEmitCount = true;
+                onFinishedEmitting.accept(emittedCount);
+            }
+        }
+
+        private void ensurePeek() {
+            if (peekedMessage != null || iteratorExhausted) {
+                return;
+            }
+            while (pollIterator != null && pollIterator.hasNext()) {
+                PscConsumerMessage<byte[], byte[]> next = pollIterator.next();
+                TopicUriPartition tp = next.getMessageId().getTopicUriPartition();
+                // Drop messages for splits already finished in this poll (stopping offset reached).
+                if (finishedSplits.contains(PscTopicUriPartitionSplit.toSplitId(tp))) {
+                    continue;
+                }
+                peekedMessage = next;
+                return;
+            }
+            iteratorExhausted = true;
+            closeIteratorQuietly();
+            reportEmittedCountOnce();
+        }
+
+        private void closeIteratorQuietly() {
+            if (pollIterator == null) {
+                return;
+            }
+            try {
+                pollIterator.close();
+            } catch (IOException e) {
+                LOG.warn("Failed to close poll message iterator", e);
+            }
+        }
+
+        private void maybeFinishSplitAtOffset(long offset) {
+            if (offset < currentSplitStoppingOffset - 1) {
+                return;
+            }
+            String splitId = PscTopicUriPartitionSplit.toSplitId(currentTopicPartition);
+            if (finishedSplits.add(splitId)) {
+                finishedPartitionsForUnassign.add(currentTopicPartition);
+                LOG.debug(
+                        "{} has reached stopping offset {}, current offset is {}",
+                        currentTopicPartition,
+                        currentSplitStoppingOffset,
+                        offset);
+            }
         }
 
         @Nullable
         @Override
         public String nextSplit() {
-            if (splitIterator.hasNext()) {
-                currentTopicPartition = splitIterator.next();
-                recordIterator = consumerMessagesIterable.getMessagesForTopicUriPartition(currentTopicPartition).iterator();
-                currentSplitStoppingOffset =
-                        stoppingOffsets.getOrDefault(currentTopicPartition, Long.MAX_VALUE);
-                currentOffsetTracker = metrics.getOffsetTracker(currentTopicPartition);
-                return currentTopicPartition.toString();
-            } else {
+            ensurePeek();
+            if (peekedMessage == null) {
                 currentTopicPartition = null;
-                recordIterator = null;
                 currentSplitStoppingOffset = null;
                 currentOffsetTracker = null;
                 return null;
             }
+            currentTopicPartition = peekedMessage.getMessageId().getTopicUriPartition();
+            currentSplitStoppingOffset =
+                    stoppingOffsets.getOrDefault(currentTopicPartition, Long.MAX_VALUE);
+            currentOffsetTracker = metrics.getOffsetTracker(currentTopicPartition);
+            return currentTopicPartition.toString();
         }
 
         @Nullable
@@ -611,20 +744,45 @@ public class PscTopicUriPartitionSplitReader
                     currentTopicPartition,
                     "Make sure nextSplit() did not return null before "
                             + "iterate over the records split.");
-            if (recordIterator.hasNext()) {
-                final PscConsumerMessage<byte[], byte[]> message = recordIterator.next();
-                // Only emit records before stopping offset
-                if (message.getMessageId().getOffset() < currentSplitStoppingOffset) {
-                    currentOffsetTracker.currentOffset = message.getMessageId().getOffset();
-                    return message;
-                }
+            ensurePeek();
+            if (peekedMessage == null) {
+                return null;
             }
-            return null;
+            TopicUriPartition messageTp = peekedMessage.getMessageId().getTopicUriPartition();
+            if (!messageTp.equals(currentTopicPartition)) {
+                return null;
+            }
+
+            final PscConsumerMessage<byte[], byte[]> message = peekedMessage;
+            peekedMessage = null;
+            final long offset = message.getMessageId().getOffset();
+
+            // Only emit records before the stopping offset (same contract as before).
+            if (offset >= currentSplitStoppingOffset) {
+                maybeFinishSplitAtOffset(offset);
+                return null;
+            }
+
+            currentOffsetTracker.currentOffset = offset;
+            emittedCount++;
+            maybeFinishSplitAtOffset(offset);
+            return message;
         }
 
         @Override
         public Set<String> finishedSplits() {
             return finishedSplits;
+        }
+
+        @Override
+        public void recycle() {
+            // Prefer closing any remaining iterator state once Flink is done with this batch.
+            if (!iteratorExhausted) {
+                iteratorExhausted = true;
+                peekedMessage = null;
+                closeIteratorQuietly();
+            }
+            reportEmittedCountOnce();
         }
     }
 }

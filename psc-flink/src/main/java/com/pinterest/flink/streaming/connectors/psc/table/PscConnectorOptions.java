@@ -127,7 +127,9 @@ public class PscConnectorOptions {
                     .noDefaultValue()
                     .withDescription(
                             "Optional rate limit for the source in records per second. " +
-                            "When specified, the source will throttle consumption to not exceed this rate. " +
+                            "When specified, the PSC SplitReader throttles before consumer.poll() " +
+                            "(fetch-side), so backend downloads such as MemQ object fetches are paced " +
+                            "by the limiter — not only record emission after the source. " +
                             "The rate is distributed evenly across all parallel source subtasks. " +
                             "For example, with a rate limit of 1000 and parallelism of 4, each subtask will " +
                             "process approximately 250 records/second. " +

@@ -753,7 +753,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     @Test
     public void testUpsertSourceWithRescaleAndRateLimitOrder() {
         // Pins the operator ordering for the upsert source path:
-        //   Source  ->  PscRateLimit  ->  rescale (terminal PartitionTransformation)
+        //   Source  ->  rescale (terminal PartitionTransformation); rate limit is fetch-side
         // This must match the non-upsert factory's behavior.
         final Map<String, String> options = getModifiedOptions(
                 getFullSourceOptions(),
@@ -779,21 +779,15 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         assertThat(terminal).isInstanceOf(PartitionTransformation.class);
         assertThat(terminal.getName()).doesNotContain("PscRateLimit");
 
-        // 2) Immediately below rescale is the rate limiter (NOT the bare source).
+        // 2) Immediately below rescale is the source (rate limit is fetch-side).
         assertThat(terminal.getInputs()).isNotEmpty();
-        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
-        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
-
-        // 3) Below the rate limiter is the Kafka source.
-        assertThat(rateLimitOp.getInputs()).isNotEmpty();
-        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
         assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+        assertThat(sourceOp.getName()).doesNotContain("PscRateLimit");
 
-        // Source and rate-limit are both pinned to min(scanParallelism, env).
         final int expectedSourceParallelism =
                 Math.min(pscSource.scanParallelism, envParallelism);
         assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
-        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
     }
 
     @Test
