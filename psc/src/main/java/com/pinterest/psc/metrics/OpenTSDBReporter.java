@@ -27,7 +27,6 @@ public class OpenTSDBReporter extends MetricsReporter {
     private final String localityTag;
     private final String instanceTypeTag;
     private final String processIdTag;
-    private final String threadIdTag;
     private final String uriTag;
     private final String projectTag;
     private final String versionTag;
@@ -59,7 +58,6 @@ public class OpenTSDBReporter extends MetricsReporter {
         this.localityTag = "locality=" + sanitize(pscMetricTag.getLocality());
         this.instanceTypeTag = "instance_type=" + sanitize(pscMetricTag.getInstanceType());
         this.processIdTag = "process=" + sanitize(pscMetricTag.getProcessId());
-        this.threadIdTag = "thread=" + pscMetricTag.getThreadId();
         this.projectTag = "project=" + sanitize(pscMetricTag.getProject());
         this.versionTag = "version=" + sanitize(pscMetricTag.getVersion());
 
@@ -107,13 +105,13 @@ public class OpenTSDBReporter extends MetricsReporter {
             OpenTSDBClient.MetricsBuffer buffer = new OpenTSDBClient.MetricsBuffer("" + baseName);
             for (Entry<String, Counter> entry : counters.entrySet()) {
                 buffer.addMetric(entry.getKey(), epochSecs, entry.getValue().getCount(), uriTag,
-                        hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                        hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                         versionTag, otherTags);
             }
 
             for (Entry<String, Meter> entry : meters.entrySet()) {
                 buffer.addMetric(entry.getKey(), epochSecs, entry.getValue().getCount(), uriTag,
-                        hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                        hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                         versionTag, otherTags);
             }
 
@@ -129,17 +127,17 @@ public class OpenTSDBReporter extends MetricsReporter {
                     Entry<String, Gauge> entry : gauges.entrySet()) {
                 if (entry.getValue().getValue() instanceof Long) {
                     buffer.addMetric(entry.getKey(), epochSecs, (Long) entry.getValue().getValue(), uriTag,
-                            hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                            hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                             versionTag, otherTags);
                 } else if (entry.getValue().getValue() instanceof Double) {
                     buffer.addMetric(entry.getKey(), epochSecs, (Double) entry.getValue().getValue(), uriTag,
-                            hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                            hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                             versionTag, otherTags);
                 } else {
                     String val = entry.getValue().getValue().toString();
                     if (!val.contains("[")) {
                         buffer.addMetric(entry.getKey(), epochSecs, Double.parseDouble(val), uriTag,
-                                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                                 versionTag, otherTags);
                     }
                 }
@@ -153,37 +151,37 @@ public class OpenTSDBReporter extends MetricsReporter {
 
     private void generateMetrics(OpenTSDBClient.MetricsBuffer buffer, int epochSecs, String key, Snapshot snapshot) {
         buffer.addMetric(key + ".avg", epochSecs, snapshot.getMean(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".min", epochSecs, snapshot.getMin(), uriTag, hostnameTag,
-                hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag, versionTag,
+                hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag, versionTag,
                 otherTags);
         buffer.addMetric(key + ".median", epochSecs, snapshot.getMedian(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".p50", epochSecs, snapshot.getMedian(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".p75", epochSecs, snapshot.get75thPercentile(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".p95", epochSecs, snapshot.get95thPercentile(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".p98", epochSecs, snapshot.get98thPercentile(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".p99", epochSecs, snapshot.get99thPercentile(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".p999", epochSecs, snapshot.get999thPercentile(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
         buffer.addMetric(key + ".max", epochSecs, snapshot.getMax(), uriTag, hostnameTag,
-                hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag, versionTag,
+                hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag, versionTag,
                 otherTags);
         buffer.addMetric(key + ".stddev", epochSecs, snapshot.getStdDev(), uriTag,
-                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, threadIdTag, projectTag,
+                hostnameTag, hostIpTag, localityTag, instanceTypeTag, processIdTag, projectTag,
                 versionTag, otherTags);
     }
 }
