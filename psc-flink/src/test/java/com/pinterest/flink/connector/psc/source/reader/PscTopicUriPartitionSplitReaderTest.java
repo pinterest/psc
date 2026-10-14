@@ -401,6 +401,27 @@ public class PscTopicUriPartitionSplitReaderTest {
         assertThat(properties.get(PscConfiguration.PSC_CONSUMER_CLIENT_RACK)).isEqualTo(rackId);
     }
 
+    @Test
+    public void testFetchSideRateLimiterCreatedFromProps() throws ConfigurationException, ClientException {
+        Properties properties = new Properties();
+        properties.setProperty(
+                com.pinterest.flink.connector.psc.source.PscSourceOptions.SCAN_RATE_LIMIT_RECORDS_PER_SECOND
+                        .key(),
+                "10000");
+        properties.setProperty(PscConfiguration.PSC_CONSUMER_POLL_MESSAGES_MAX, "250");
+        PscTopicUriPartitionSplitReader reader =
+                createReader(
+                        properties, UnregisteredMetricsGroup.createSourceReaderMetricGroup());
+        assertThat(reader.fetchRateLimiter()).isNotNull();
+        assertThat(reader.nextFetchRatePermits()).isEqualTo(250);
+    }
+
+    @Test
+    public void testFetchSideRateLimiterAbsentWithoutProps() throws ConfigurationException, ClientException {
+        PscTopicUriPartitionSplitReader reader = createReader();
+        assertThat(reader.fetchRateLimiter()).isNull();
+    }
+
     @ParameterizedTest
     @NullAndEmptySource
     public void testSetConsumerClientRackIgnoresNullAndEmpty(String rackId) throws ConfigurationException, ClientException {
@@ -455,6 +476,7 @@ public class PscTopicUriPartitionSplitReaderTest {
                                         : recordCount + splitFetch.size());
                 splitId = recordsBySplitIds.nextSplit();
             }
+            recordsBySplitIds.recycle();
         }
 
         // Verify the number of records consumed from each split.

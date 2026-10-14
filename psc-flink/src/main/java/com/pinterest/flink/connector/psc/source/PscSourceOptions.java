@@ -58,6 +58,22 @@ public class PscSourceOptions {
                     .defaultValue(true)
                     .withDescription("Whether to commit consuming offset on checkpoint.");
 
+    /**
+     * Total records-per-second budget across all source subtasks. Applied in {@code
+     * PscTopicUriPartitionSplitReader.fetch} <i>before</i> {@code consumer.poll()}, so MemQ/Kafka
+     * downloads are paced by the limiter (unlike a downstream map operator).
+     */
+    public static final ConfigOption<Double> SCAN_RATE_LIMIT_RECORDS_PER_SECOND =
+            ConfigOptions.key("scan.rate-limit.records-per-second")
+                    .doubleType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Optional rate limit for the source in records per second. "
+                                    + "When set, each SplitReader acquires permits for the next poll "
+                                    + "batch before calling consumer.poll(), dividing the total rate "
+                                    + "evenly across source parallelism. If unset, no fetch-side rate "
+                                    + "limiting is applied.");
+
     @SuppressWarnings("unchecked")
     public static <T> T getOption(
             Properties props, ConfigOption<?> configOption, Function<String, T> parser) {
