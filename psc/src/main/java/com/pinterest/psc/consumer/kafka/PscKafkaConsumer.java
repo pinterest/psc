@@ -2,7 +2,6 @@ package com.pinterest.psc.consumer.kafka;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.PscUtils;
@@ -196,14 +195,8 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
                             Set<TopicUriPartition> topicUriPartitions = new HashSet<>();
                             partitions.forEach((topicPartition -> {
-                                TopicUri
-                                    topicUri =
-                                    backendTopicToTopicUri.get(topicPartition.topic());
-                                TopicUriPartition topicUriPartition = new TopicUriPartition(
-                                    topicUri.getTopicUriAsString(), topicPartition.partition()
-                                );
-                                BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
-                                topicUriPartitions.add(topicUriPartition);
+                                TopicUri topicUri = backendTopicToTopicUri.get(topicPartition.topic());
+                                topicUriPartitions.add(new TopicUriPartition(topicUri, topicPartition.partition()));
                             }));
                             consumerRebalanceListener.onPartitionsRevoked(topicUriPartitions);
                         }
@@ -212,14 +205,8 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
                             Set<TopicUriPartition> topicUriPartitions = new HashSet<>();
                             partitions.forEach((topicPartition -> {
-                                TopicUri
-                                    topicUri =
-                                    backendTopicToTopicUri.get(topicPartition.topic());
-                                TopicUriPartition topicUriPartition = new TopicUriPartition(
-                                    topicUri.getTopicUriAsString(), topicPartition.partition()
-                                );
-                                BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
-                                topicUriPartitions.add(topicUriPartition);
+                                TopicUri topicUri = backendTopicToTopicUri.get(topicPartition.topic());
+                                topicUriPartitions.add(new TopicUriPartition(topicUri, topicPartition.partition()));
                             }));
                             consumerRebalanceListener.onPartitionsAssigned(topicUriPartitions);
                         }
@@ -311,13 +298,12 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
             Set<TopicPartition> kafkaConsumerAssignment = executeBackendCallWithRetriesAndReturn(
                     () -> kafkaConsumer.assignment()
             );
-            return kafkaConsumerAssignment.stream().map(topicPartition -> {
-                TopicUri topicUri = backendTopicToTopicUri.get(topicPartition.topic());
-                TopicUriPartition topicUriPartition =
-                        new TopicUriPartition(topicUri.getTopicUriAsString(), topicPartition.partition());
-                BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
-                return topicUriPartition;
-            }).collect(Collectors.toSet());
+            return kafkaConsumerAssignment.stream()
+                    .map(topicPartition -> new TopicUriPartition(
+                            backendTopicToTopicUri.get(topicPartition.topic()),
+                            topicPartition.partition()
+                    ))
+                    .collect(Collectors.toSet());
         }
 
         return currentAssignment;
@@ -414,11 +400,10 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                         public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception e) {
                             Map<TopicUriPartition, MessageId> pscOffsets = new HashMap<>(offsets.size());
                             offsets.forEach(((topicPartition, offsetAndMetadata) -> {
-                                TopicUri topicUri = backendTopicToTopicUri.get(topicPartition.topic());
                                 TopicUriPartition topicUriPartition = new TopicUriPartition(
-                                        topicUri.getTopicUriAsString(), topicPartition.partition()
+                                        backendTopicToTopicUri.get(topicPartition.topic()),
+                                        topicPartition.partition()
                                 );
-                                BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
                                 pscOffsets.put(topicUriPartition, new KafkaMessageId(topicUriPartition, offsetAndMetadata.offset()));
                             }));
 
@@ -450,11 +435,10 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                         public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception e) {
                             Map<TopicUriPartition, MessageId> pscOffsets = new HashMap<>(offsets.size());
                             offsets.forEach(((topicPartition, offsetAndMetadata) -> {
-                                TopicUri topicUri = backendTopicToTopicUri.get(topicPartition.topic());
                                 TopicUriPartition topicUriPartition = new TopicUriPartition(
-                                        topicUri.getTopicUriAsString(), topicPartition.partition()
+                                        backendTopicToTopicUri.get(topicPartition.topic()),
+                                        topicPartition.partition()
                                 );
-                                BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
                                 pscOffsets.put(topicUriPartition, new KafkaMessageId(topicUriPartition, offsetAndMetadata.offset()));
                             }));
 
@@ -504,11 +488,10 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
 
                     Map<TopicUriPartition, MessageId> pscOffsets = new HashMap<>(offsets.size());
                     offsets.forEach(((topicPartition, offsetAndMetadata) -> {
-                        TopicUri topicUri = backendTopicToTopicUri.get(topicPartition.topic());
                         TopicUriPartition topicUriPartition = new TopicUriPartition(
-                                topicUri.getTopicUriAsString(), topicPartition.partition()
+                                backendTopicToTopicUri.get(topicPartition.topic()),
+                                topicPartition.partition()
                         );
-                        BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
                         pscOffsets.put(topicUriPartition, new KafkaMessageId(topicUriPartition, offsetAndMetadata.offset()));
                     }));
 
@@ -663,7 +646,7 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                     logger.warn("Could not find a registered topic URI for backend topic {}", topicPartition.topic());
                 else
                     kafkaMessageIds.add(new KafkaMessageId(
-                            new TopicUriPartition(topicUri.getTopicUriAsString(), topicPartition.partition()),
+                            new TopicUriPartition(topicUri, topicPartition.partition()),
                             offsetAndMetadata.offset()
                     ));
             }));
@@ -902,12 +885,9 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                 () -> kafkaConsumer.partitionsFor(kafkaTopicUri.getTopic()),
                 activeTopicUrisOrPartitions.put(topicUri)
         );
-        return partitions == null ? null : partitions.stream().map(partitionInfo -> {
-            TopicUriPartition topicUriPartition =
-                    new TopicUriPartition(kafkaTopicUri.getTopicUriAsString(), partitionInfo.partition());
-            BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, kafkaTopicUri);
-            return topicUriPartition;
-        }).collect(Collectors.toSet());
+        return partitions == null ? null : partitions.stream()
+                .map(partitionInfo -> new TopicUriPartition(kafkaTopicUri, partitionInfo.partition()))
+                .collect(Collectors.toSet());
     }
 
     public Set<String> getTopicNames() throws ConsumerException {
@@ -977,21 +957,26 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
         if (kafkaConsumer == null)
             handleUninitializedKafkaConsumer("committed()");
 
-        Set<TopicPartition> topicPartitions = topicUriPartitions.stream().map(tup -> {
-            KafkaTopicUri kafkaTopicUri = (KafkaTopicUri) tup.getTopicUri();
-            return new TopicPartition(kafkaTopicUri.getTopic(), tup.getPartition());
-        }).collect(Collectors.toSet());
+        Map<TopicPartition, TopicUriPartition> topicPartitionToTopicUriPartition = new HashMap<>();
+        for (TopicUriPartition topicUriPartition : topicUriPartitions) {
+            KafkaTopicUri kafkaTopicUri = (KafkaTopicUri) topicUriPartition.getTopicUri();
+            topicPartitionToTopicUriPartition.put(
+                    new TopicPartition(kafkaTopicUri.getTopic(), topicUriPartition.getPartition()),
+                    topicUriPartition
+            );
+        }
 
         Map<TopicPartition, OffsetAndMetadata> topicPartitionsToOffsetAndMetadata =
                 executeBackendCallWithRetriesAndReturn(() ->
-                        kafkaConsumer.committed(topicPartitions), activeTopicUrisOrPartitions.put(topicUriPartitions)
+                        kafkaConsumer.committed(topicPartitionToTopicUriPartition.keySet()),
+                        activeTopicUrisOrPartitions.put(topicUriPartitions)
                 );
-        return topicPartitionsToOffsetAndMetadata.entrySet().stream().map(entry -> {
-            TopicUriPartition topicUriPartition = new TopicUriPartition(
-                    entry.getKey().topic(), entry.getKey().partition()
-            );
-            return new KafkaMessageId(topicUriPartition, entry.getValue() == null ? -1 : entry.getValue().offset());
-        }).collect(Collectors.toList());
+        return topicPartitionsToOffsetAndMetadata.entrySet().stream()
+                .map(entry -> new KafkaMessageId(
+                        topicPartitionToTopicUriPartition.get(entry.getKey()),
+                        entry.getValue() == null ? -1 : entry.getValue().offset()
+                ))
+                .collect(Collectors.toList());
     }
 
     @Override

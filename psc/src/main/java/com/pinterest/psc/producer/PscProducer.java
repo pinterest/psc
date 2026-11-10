@@ -927,11 +927,9 @@ public class PscProducer<K, V> implements Closeable {
 
     private void validateProducerMessage(PscProducerMessage<K, V> pscProducerMessage) throws ProducerException {
         TopicUri topicUri = validateTopicUri(pscProducerMessage.getTopicUriAsString());
-        TopicUriPartition topicUriPartition = new TopicUriPartition(
-                pscProducerMessage.getTopicUriAsString(), pscProducerMessage.getPartition()
-        );
-        BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
-        pscProducerMessage.setTopicUriPartition(topicUriPartition);
+        pscProducerMessage.setTopicUriPartition(new TopicUriPartition(
+                pscProducerMessage.getTopicUriAsString(), pscProducerMessage.getPartition(), topicUri
+        ));
     }
 
     protected PscBackendProducer<K, V> getBackendProducerForTopicUri(TopicUri topicUri) throws ProducerException, ConfigurationException {
