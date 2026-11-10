@@ -13,7 +13,6 @@ import com.pinterest.memq.client.commons.serde.ByteArrayDeserializer;
 import com.pinterest.memq.client.consumer.MemqConsumer;
 import com.pinterest.memq.client.consumer.NoTopicsSubscribedException;
 import com.pinterest.memq.commons.MemqLogMessage;
-import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.CloseableIterator;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.ServiceDiscoveryConfig;
@@ -260,11 +259,9 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
             throw new ConsumerException(
                     "[Memq] Consumer is not initialized prior to call to assignment().");
         Set<Integer> assignment = memqConsumer.assignment();
-        return assignment.stream().map(a -> {
-            TopicUriPartition tup = new TopicUriPartition(topicUri.getTopicUriAsString(), a);
-            BaseTopicUri.finalizeTopicUriPartition(tup, topicUri);
-            return tup;
-        }).collect(Collectors.toSet());
+        return assignment.stream()
+                .map(a -> new TopicUriPartition(topicUri, a))
+                .collect(Collectors.toSet());
     }
 
     @Override
@@ -477,9 +474,7 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
                     }
                     Map<TopicUriPartition, MessageId> pscOffsets = new HashMap<>(offsets.size());
                     offsets.forEach(((partition, offset) -> {
-                        TopicUriPartition topicUriPartition = new TopicUriPartition(
-                            topicUri.getTopicUriAsString(), partition);
-                        BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
+                        TopicUriPartition topicUriPartition = new TopicUriPartition(topicUri, partition);
                         pscOffsets.put(topicUriPartition, new MemqMessageId(topicUriPartition, offset, true));
                     }));
                     offsetCommitCallback.onCompletion(pscOffsets, exception);
@@ -576,12 +571,9 @@ public class PscMemqConsumer<K, V> extends PscBackendConsumer<K, V> {
         try (MemqConsumer<byte[], byte[]> consumer = getMetadataConsumer(topicUri)) {
             MemqTopicUri memqTopicUri = (MemqTopicUri) topicUri;
 
-            return consumer.getPartition().stream().map(partition -> {
-                TopicUriPartition topicUriPartition = new TopicUriPartition(
-                    memqTopicUri.getTopicUriAsString(), partition);
-                BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, memqTopicUri);
-                return topicUriPartition;
-            }).collect(Collectors.toSet());
+            return consumer.getPartition().stream()
+                    .map(partition -> new TopicUriPartition(memqTopicUri, partition))
+                    .collect(Collectors.toSet());
         } catch (IOException ioe) {
             throw new ConsumerException("[Memq] Failed to close metadata consumer for " + topicUri, ioe);
         }

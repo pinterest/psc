@@ -2,7 +2,6 @@ package com.pinterest.psc.consumer.memq;
 
 import com.google.common.collect.Iterators;
 import com.pinterest.memq.commons.MemqLogMessage;
-import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.CloseableIterator;
 import com.pinterest.psc.common.PscEventHeaders;
 import com.pinterest.psc.common.PscMessage;
@@ -89,9 +88,8 @@ public class MemqToPscMessageIteratorConverter<K, V> extends ToPscMessageIterato
         TopicUri topicUri = memqTopicToTopicUri.get(topicName);
 
         TopicUriPartition topicUriPartition = new TopicUriPartition(
-            topicUri.getTopicUriAsString(),
+            topicUri,
             memqConsumerRecord.getNotificationPartitionId());
-        BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
 
         MemqOffset memqOffset = new MemqOffset(memqConsumerRecord.getNotificationPartitionOffset(), memqConsumerRecord.getMessageOffsetInBatch());
 

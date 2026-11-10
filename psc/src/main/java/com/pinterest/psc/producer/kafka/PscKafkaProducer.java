@@ -232,12 +232,9 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
                 () -> kafkaProducer.partitionsFor(kafkaTopicUri.getTopic()),
                 activeTopicUrisOrPartitions.put(topicUri)
         );
-        return partitions == null ? null : partitions.stream().map(partitionInfo -> {
-            TopicUriPartition topicUriPartition =
-                    new TopicUriPartition(kafkaTopicUri.getTopicUriAsString(), partitionInfo.partition());
-            BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, kafkaTopicUri);
-            return topicUriPartition;
-        }).collect(Collectors.toSet());
+        return partitions == null ? null : partitions.stream()
+                .map(partitionInfo -> new TopicUriPartition(kafkaTopicUri, partitionInfo.partition()))
+                .collect(Collectors.toSet());
     }
 
     @Override
@@ -351,12 +348,11 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
             }
 
             private MessageId getKafkaMessageId(PscProducerMessage<K, V> inputPscProducerMessage, RecordMetadata outputKafkaRecordMetadata) {
+                TopicUriPartition sourcePartition = inputPscProducerMessage.getTopicUriPartition();
                 TopicUriPartition topicUriPartition = new TopicUriPartition(
-                        inputPscProducerMessage.getTopicUriPartition().getTopicUriAsString(),
-                        outputKafkaRecordMetadata.partition()
-                );
-                BaseTopicUri.finalizeTopicUriPartition(
-                        topicUriPartition, inputPscProducerMessage.getTopicUriPartition().getTopicUri()
+                        sourcePartition.getTopicUriAsString(),
+                        outputKafkaRecordMetadata.partition(),
+                        sourcePartition.getTopicUri()
                 );
                 return new KafkaMessageId(
                         topicUriPartition,
@@ -505,9 +501,10 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
                             } else {
                                 try {
                                     processCallbackInternally(kafkaTopicUri, produceTimestamp, recordMetadata);
-                                    TopicUriPartition topicUriPartition = new TopicUriPartition(kafkaTopicUri.getTopicUriAsString(), recordMetadata.partition());
-                                    KafkaMessageId kafkaMessageId = getKafkaMessageId(topicUriPartition, kafkaTopicUri, recordMetadata);
-                                    callback.onCompletion(kafkaMessageId, e == null ? null : new ProducerException(e));
+                                    callback.onCompletion(
+                                            getKafkaMessageId(kafkaTopicUri, recordMetadata),
+                                            e == null ? null : new ProducerException(e)
+                                    );
                                 } catch (Exception exception) {
                                     try {
                                         handleException(exception, kafkaTopicUri, true);
@@ -527,8 +524,7 @@ public class PscKafkaProducer<K, V> extends PscBackendProducer<K, V> {
         if (recordMetadata == null)
             return null;
 
-        TopicUriPartition topicUriPartition = new TopicUriPartition(kafkaTopicUri.getTopicUriAsString(), recordMetadata.partition());
-        return getKafkaMessageId(topicUriPartition, kafkaTopicUri, recordMetadata);
+        return getKafkaMessageId(new TopicUriPartition(kafkaTopicUri, recordMetadata.partition()), kafkaTopicUri, recordMetadata);
     }
 
     private KafkaMessageId getKafkaMessageId(TopicUriPartition kafkaTopicUriPartition, TopicUri topicUri, RecordMetadata recordMetadata) {
