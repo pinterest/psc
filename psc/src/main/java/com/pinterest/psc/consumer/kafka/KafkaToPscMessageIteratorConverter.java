@@ -1,6 +1,5 @@
 package com.pinterest.psc.consumer.kafka;
 
-import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.PscCommon;
 import com.pinterest.psc.common.PscMessage;
 import com.pinterest.psc.common.TopicUri;
@@ -39,14 +38,12 @@ public class KafkaToPscMessageIteratorConverter<K, V> extends ToPscMessageIterat
         this.kafkaConsumerRecordIterator = kafkaConsumerRecordIterator;
         this.perTopicPartitionKafkaConsumerRecordIterator = perTopicPartitionKafkaConsumerRecordIterator;
         this.kafkaTopicToTopicUri = kafkaTopicToTopicUri;
-        this.topicUriPartitions = topicPartitions.stream().map(topicPartition -> {
-            TopicUriPartition topicUriPartition = new TopicUriPartition(
-                    kafkaTopicToTopicUri.get(topicPartition.topic()).getTopicUriAsString(),
-                    topicPartition.partition()
-            );
-            BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, kafkaTopicToTopicUri.get(topicPartition.topic()));
-            return topicUriPartition;
-        }).collect(Collectors.toSet());
+        this.topicUriPartitions = topicPartitions.stream()
+                .map(topicPartition -> new TopicUriPartition(
+                        kafkaTopicToTopicUri.get(topicPartition.topic()),
+                        topicPartition.partition()
+                ))
+                .collect(Collectors.toSet());
     }
 
     @Override
@@ -88,11 +85,7 @@ public class KafkaToPscMessageIteratorConverter<K, V> extends ToPscMessageIterat
             ConsumerRecord<byte[], byte[]> kafkaConsumerRecord
     ) {
         TopicUri topicUri = kafkaTopicToTopicUri.get(kafkaConsumerRecord.topic());
-        TopicUriPartition topicUriPartition = new TopicUriPartition(
-                topicUri.getTopicUriAsString(),
-                kafkaConsumerRecord.partition()
-        );
-        BaseTopicUri.finalizeTopicUriPartition(topicUriPartition, topicUri);
+        TopicUriPartition topicUriPartition = new TopicUriPartition(topicUri, kafkaConsumerRecord.partition());
         KafkaMessageId messageId = new KafkaMessageId(
                 topicUriPartition,
                 kafkaConsumerRecord.offset(),
