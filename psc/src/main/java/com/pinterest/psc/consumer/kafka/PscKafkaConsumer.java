@@ -971,6 +971,8 @@ public class PscKafkaConsumer<K, V> extends PscBackendConsumer<K, V> {
                         kafkaConsumer.committed(topicPartitionToTopicUriPartition.keySet()),
                         activeTopicUrisOrPartitions.put(topicUriPartitions)
                 );
+        // TopicPartition.topic() is the Kafka topic name, not a PSC URI. Parsing it leaves the topic URI unset, so
+        // return the caller's partition rather than a new one built from that name.
         return topicPartitionsToOffsetAndMetadata.entrySet().stream()
                 .map(entry -> new KafkaMessageId(
                         topicPartitionToTopicUriPartition.get(entry.getKey()),

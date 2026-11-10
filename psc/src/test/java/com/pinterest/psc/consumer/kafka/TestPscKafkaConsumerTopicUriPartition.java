@@ -7,11 +7,12 @@ import com.pinterest.psc.common.TopicUri;
 import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.common.kafka.KafkaMessageId;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
-import com.pinterest.psc.consumer.ConsumerRebalanceListener;
 import com.pinterest.psc.exception.consumer.ConsumerException;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
@@ -98,14 +99,14 @@ class TestPscKafkaConsumerTopicUriPartition {
         List<TopicUriPartition> revoked = new ArrayList<>();
         List<TopicUriPartition> assigned = new ArrayList<>();
         doAnswer(invocation -> {
-            org.apache.kafka.clients.consumer.ConsumerRebalanceListener listener = invocation.getArgument(1);
+            ConsumerRebalanceListener listener = invocation.getArgument(1);
             listener.onPartitionsRevoked(Collections.singleton(new TopicPartition(TOPIC, 7)));
             listener.onPartitionsAssigned(Collections.singleton(new TopicPartition(TOPIC, 8)));
             return null;
-        }).when(kafkaConsumer).subscribe(anyCollection(), any(org.apache.kafka.clients.consumer.ConsumerRebalanceListener.class));
+        }).when(kafkaConsumer).subscribe(anyCollection(), any(ConsumerRebalanceListener.class));
 
         PscKafkaConsumer<byte[], byte[]> consumer = consumer(kafkaConsumer, false);
-        consumer.subscribe(Collections.singleton(topicUri), new ConsumerRebalanceListener() {
+        consumer.subscribe(Collections.singleton(topicUri), new com.pinterest.psc.consumer.ConsumerRebalanceListener() {
             @Override
             public void onPartitionsRevoked(Collection<TopicUriPartition> partitions) {
                 revoked.addAll(partitions);
@@ -155,15 +156,15 @@ class TestPscKafkaConsumerTopicUriPartition {
             Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
             offsets.put(new TopicPartition(TOPIC, 1), new OffsetAndMetadata(42L));
             doAnswer(invocation -> {
-                org.apache.kafka.clients.consumer.OffsetCommitCallback callback = invocation.getArgument(0);
+                OffsetCommitCallback callback = invocation.getArgument(0);
                 callback.onComplete(offsets, null);
                 return null;
-            }).when(kafkaConsumer).commitAsync(any(org.apache.kafka.clients.consumer.OffsetCommitCallback.class));
+            }).when(kafkaConsumer).commitAsync(any(OffsetCommitCallback.class));
             doAnswer(invocation -> {
-                org.apache.kafka.clients.consumer.OffsetCommitCallback callback = invocation.getArgument(1);
+                OffsetCommitCallback callback = invocation.getArgument(1);
                 callback.onComplete(offsets, null);
                 return null;
-            }).when(kafkaConsumer).commitAsync(anyMap(), any(org.apache.kafka.clients.consumer.OffsetCommitCallback.class));
+            }).when(kafkaConsumer).commitAsync(anyMap(), any(OffsetCommitCallback.class));
 
             PscKafkaConsumer<byte[], byte[]> consumer = consumer(kafkaConsumer, autoResolutionEnabled);
             consumer.subscribe(Collections.singleton(topicUri));

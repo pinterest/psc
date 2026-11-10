@@ -8,6 +8,7 @@ import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.consumer.PscConsumerMessage;
 import com.pinterest.psc.exception.startup.TopicUriSyntaxException;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
 import org.junit.jupiter.api.Test;
@@ -99,10 +100,9 @@ class TestKafkaToPscMessageIteratorConverter {
     private static KafkaToPscMessageIteratorConverter<byte[], byte[]> converter(
             List<ConsumerRecord<byte[], byte[]>> records, KafkaTopicUri topicUri
     ) {
-        Map<org.apache.kafka.common.TopicPartition, Iterator<ConsumerRecord<byte[], byte[]>>> byPartition = new HashMap<>();
+        Map<TopicPartition, Iterator<ConsumerRecord<byte[], byte[]>>> byPartition = new HashMap<>();
         for (ConsumerRecord<byte[], byte[]> record : records) {
-            org.apache.kafka.common.TopicPartition topicPartition =
-                    new org.apache.kafka.common.TopicPartition(record.topic(), record.partition());
+            TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
             byPartition.put(topicPartition, Collections.singletonList(record).iterator());
         }
         Map<String, TopicUri> topicUris = new HashMap<>();

@@ -50,20 +50,24 @@ public class TopicUriPartition implements Comparable<TopicUriPartition>, Seriali
         this.backendTopicUri = topicUri;
         this.topicUriStr = topicUri.getTopicUriAsString();
         this.partition = partition;
+        this.cachedHashCode = 0;
     }
 
     /**
-     * Builds a partition from an already validated topic URI. The given string is kept as-is, and the URI is not
-     * parsed again.
+     * Builds a partition without parsing {@code topicUriStr}. The string is stored verbatim and is not checked against
+     * {@code topicUri}. The caller must supply the {@link TopicUri} that corresponds to that string. A mismatch is
+     * kept as given and is visible through equality, hash code, and {@link #getTopicUri()}. This is for hot paths that
+     * already validated the URI and still need the caller's original string.
      *
-     * @param topicUriStr the topic URI in string format
+     * @param topicUriStr the topic URI string to retain
      * @param partition   the partition
-     * @param topicUri    the validated topic URI corresponding to {@code topicUriStr}
+     * @param topicUri    the validated topic URI to attach; it is not derived from {@code topicUriStr}
      */
     public TopicUriPartition(String topicUriStr, int partition, TopicUri topicUri) {
         this.topicUriStr = topicUriStr;
         this.partition = partition;
         this.backendTopicUri = topicUri;
+        this.cachedHashCode = 0;
     }
 
     protected void setTopicUri(TopicUri backendTopicUri) {

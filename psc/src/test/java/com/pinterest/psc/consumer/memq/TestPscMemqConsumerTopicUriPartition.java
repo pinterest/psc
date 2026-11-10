@@ -1,6 +1,7 @@
 package com.pinterest.psc.consumer.memq;
 
 import com.pinterest.memq.client.consumer.MemqConsumer;
+import com.pinterest.memq.client.consumer.OffsetCommitCallback;
 import com.pinterest.psc.common.BaseTopicUri;
 import com.pinterest.psc.common.MessageId;
 import com.pinterest.psc.common.TopicUri;
@@ -51,12 +52,12 @@ class TestPscMemqConsumerTopicUriPartition {
         MemqTopicUri topicUri = memqTopicUri();
         MemqConsumer<byte[], byte[]> memqConsumer = mock(MemqConsumer.class);
         doAnswer(invocation -> {
-            com.pinterest.memq.client.consumer.OffsetCommitCallback callback = invocation.getArgument(1);
+            OffsetCommitCallback callback = invocation.getArgument(1);
             Map<Integer, Long> offsets = new HashMap<>();
             offsets.put(4, 10L);
             callback.onCompletion(offsets, null);
             return null;
-        }).when(memqConsumer).commitOffsetAsync(anyMap(), any(com.pinterest.memq.client.consumer.OffsetCommitCallback.class));
+        }).when(memqConsumer).commitOffsetAsync(anyMap(), any(OffsetCommitCallback.class));
 
         PscMemqConsumer<byte[], byte[]> consumer = consumer(memqConsumer, topicUri);
         TopicUriPartition messagePartition = new TopicUriPartition(topicUri, 4);
