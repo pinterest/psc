@@ -18,6 +18,7 @@
 
 package com.pinterest.flink.streaming.connectors.psc.table;
 
+import com.pinterest.psc.config.PscConfiguration;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
@@ -108,6 +109,43 @@ public class PscConnectorOptions {
 
     public static final ConfigOption<Integer> SINK_PARALLELISM = FactoryUtil.SINK_PARALLELISM;
 
+    public static final ConfigOption<Boolean> SCAN_ENABLE_RESCALE =
+            ConfigOptions.key("scan.enable-rescale")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Enable smart rescale() to redistribute data when needed. When enabled, the connector " +
+                            "automatically compares the configured pipeline parallelism (table.exec.resource.default-parallelism) " +
+                            "with the topic's partition count. Rescale is applied ONLY when parallelism > partition count, " +
+                            "avoiding unnecessary shuffle overhead otherwise. This allows downstream operators to fully utilize " +
+                            "higher parallelism than the source partition count. " +
+                            "Default: false (no automatic shuffling).");
+
+    public static final ConfigOption<Double> SCAN_RATE_LIMIT =
+            ConfigOptions.key("scan.rate-limit.records-per-second")
+                    .doubleType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Optional rate limit for the source in records per second. " +
+                            "When specified, the source will throttle consumption to not exceed this rate. " +
+                            "The rate is distributed evenly across all parallel source subtasks. " +
+                            "For example, with a rate limit of 1000 and parallelism of 4, each subtask will " +
+                            "process approximately 250 records/second. " +
+                            "If not set, no rate limiting is applied. " +
+                            "Default: disabled.");
+
+    public static final ConfigOption<Integer> SCAN_PARALLELISM =
+            ConfigOptions.key("scan.parallelism")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Defines the parallelism for the PSC source operator. " +
+                            "If not specified, the source parallelism defaults to the number of topic partitions. " +
+                            "This configuration affects both rescale decision logic and rate limiting distribution. " +
+                            "When set, this value is compared against partition count to determine if rescale() is needed. " +
+                            "Example: With 10 partitions and scan.parallelism=100, rescale will be applied " +
+                            "(if scan.enable-rescale=true) to redistribute data across 100+ downstream operators.");
+
     // --------------------------------------------------------------------------------------------
     // Psc specific options
     // --------------------------------------------------------------------------------------------
@@ -129,15 +167,60 @@ public class PscConnectorOptions {
                             "Optional topic pattern from which the table is read for source. Either 'topic' or 'topic-pattern' must be set.");
 
     public static final ConfigOption<String> PROPS_GROUP_ID =
-            ConfigOptions.key("properties.group.id")
+            ConfigOptions.key("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID)
                     .stringType()
                     .noDefaultValue()
                     .withDescription(
-                            "Required consumer group in PSC consumer, no need for PSC producer");
+                            Description.builder()
+                                    .text("Required consumer group in PSC consumer, no need for PSC producer. ")
+                                    .text("Set to 'AUTO_GEN_UUID' to generate a group id w/ dynamic UUID suffix automatically as an ephemeral group.")
+                                    .build());
+
+
+    public static final ConfigOption<String> PROPS_PRODUCER_CLIENT_ID =
+            ConfigOptions.key("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID)
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text("Mandatory client ID for PSC producer. ")
+                                    .text("Use 'AUTO_GEN_UUID' to automatically generate a producer id w/ dynamic UUID suffix.")
+                                    .build());
+
+    public static final ConfigOption<String> PROPS_CLIENT_ID_PREFIX =
+            ConfigOptions.key("properties.client.id.prefix")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                .text("Mandatory client ID prefix for generating client IDs. ")
+                                .text("Always required for PSC table sources to ensure unique client identification. ")
+                                .text("Used as prefix for auto-generated client IDs when consumer client.id is not provided or when using AUTO_GEN_UUID for any ID options.")
+                                .build());
+
+    public static final ConfigOption<String> PROPS_CLIENT_ID =
+            ConfigOptions.key("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID)
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text("Optional client ID for PSC consumer.")
+                                    .text("Use as alias for 'properties.client.id.prefix' for backward compatibility.")
+                                    .build());
+
 
     // --------------------------------------------------------------------------------------------
     // Scan specific options
     // --------------------------------------------------------------------------------------------
+
+    public static final ConfigOption<String> SOURCE_UID_PREFIX =
+            ConfigOptions.key("source.uid-prefix")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Optional prefix used to derive a stable UID for the PSC source operator. "
+                                    + "When set, the connector will assign a deterministic UID to the source transformation "
+                                    + "based on this prefix to ensure checkpoint state compatibility across DAG changes.");
 
     public static final ConfigOption<ScanStartupMode> SCAN_STARTUP_MODE =
             ConfigOptions.key("scan.startup.mode")

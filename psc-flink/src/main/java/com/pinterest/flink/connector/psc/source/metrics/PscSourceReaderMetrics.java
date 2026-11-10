@@ -25,6 +25,7 @@ import com.pinterest.psc.consumer.PscConsumer;
 import com.pinterest.psc.exception.ClientException;
 import com.pinterest.psc.metrics.Metric;
 import com.pinterest.psc.metrics.MetricName;
+import java.util.Iterator;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.metrics.Counter;
 import org.apache.flink.metrics.MetricGroup;
@@ -154,6 +155,19 @@ public class PscSourceReaderMetrics {
     }
 
     /**
+     * Returns the {@link Offset} tracker for the given partition, allowing callers to
+     * cache it and update offsets directly without repeated HashMap lookups.
+     *
+     * @param tp the topic partition to get the tracker for
+     * @return the Offset tracker
+     * @throws IllegalArgumentException if the partition is not tracked
+     */
+    public Offset getOffsetTracker(TopicUriPartition tp) {
+        checkTopicPartitionTracked(tp);
+        return offsets.get(tp);
+    }
+
+    /**
      * Update the latest committed offset of the given {@link TopicUriPartition}.
      *
      * @param tp Updating topic partition
@@ -180,8 +194,21 @@ public class PscSourceReaderMetrics {
      * @param consumer Kafka consumer
      */
     public void registerNumBytesIn(PscConsumer<?, ?> consumer) throws ClientException {
-        Predicate<Map.Entry<MetricName, ? extends Metric>> filter =
-                KafkaSourceReaderMetricsUtil.createBytesConsumedFilter();
+        String backendType = getBackendFromTags(consumer.metrics());
+        Predicate<Map.Entry<MetricName, ? extends Metric>> filter;
+        switch (backendType) {
+            case PscUtils.BACKEND_TYPE_KAFKA:
+                filter = KafkaSourceReaderMetricsUtil.createBytesConsumedFilter();
+                break;
+            case PscUtils.BACKEND_TYPE_MEMQ:
+                filter = MemqSourceReaderMetricsUtil.createBytesConsumedFilter();
+                break;
+            default:
+                LOG.warn(
+                    "Unsupported backend type: \"{}\". Metric \"{}\" may not be reported correctly.",
+                    backendType, MetricNames.IO_NUM_BYTES_IN);
+                return;
+        }
         this.bytesConsumedTotalMetric = MetricUtil.getPscMetric(consumer.metrics(), filter);
     }
 
@@ -288,25 +315,35 @@ public class PscSourceReaderMetrics {
             case PscUtils.BACKEND_TYPE_KAFKA:
                 filter = KafkaSourceReaderMetricsUtil.createRecordLagFilter(tp);
                 break;
+            case PscUtils.BACKEND_TYPE_MEMQ:
+                filter = MemqSourceReaderMetricsUtil.createRecordsLagFilter(tp);
+                break;
             default:
                 LOG.warn(
-                        String.format(
-                                "Unsupported backend type \"%s\". "
-                                        + "Metric \"%s\" may not be reported correctly. ",
-                                backendType, MetricNames.PENDING_RECORDS));
+                        "Unsupported backend type \"{}\". Metric \"{}\" may not be reported correctly.",
+                        backendType, MetricNames.PENDING_RECORDS);
                 return null;
         }
-        return MetricUtil.getPscMetric(metrics, filter);
+        try {
+            return MetricUtil.getPscMetric(metrics, filter);
+        } catch (IllegalStateException e) {
+            LOG.debug("Metric not yet available for backend \"{}\", will retry on next poll cycle.", backendType);
+            return null;
+        }
     }
 
     private static String getBackendFromTags(Map<MetricName, ? extends Metric> metrics) {
-        // sample the first entry to get the backend type
-        return metrics.keySet().iterator().next().tags().get("backend");
+        Iterator<MetricName> it = metrics.keySet().iterator();
+        if (!it.hasNext()) {
+            return "unknown";
+        }
+        String backend = it.next().tags().get("backend");
+        return backend != null ? backend : "unknown";
     }
 
-    private static class Offset {
-        long currentOffset;
-        long committedOffset;
+    public static class Offset {
+        public long currentOffset;
+        public long committedOffset;
 
         Offset(long currentOffset, long committedOffset) {
             this.currentOffset = currentOffset;

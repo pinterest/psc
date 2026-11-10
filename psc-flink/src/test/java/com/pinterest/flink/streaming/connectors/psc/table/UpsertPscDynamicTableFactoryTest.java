@@ -43,6 +43,7 @@ import org.apache.flink.formats.avro.registry.confluent.ConfluentRegistryAvroSer
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.StreamOperatorFactory;
+import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
 import org.apache.flink.streaming.runtime.operators.sink.SinkWriterOperatorFactory;
 import org.apache.flink.table.api.DataTypes;
@@ -71,6 +72,7 @@ import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.VarCharType;
 import org.apache.flink.util.TestLogger;
+import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -84,11 +86,13 @@ import java.util.Properties;
 import java.util.function.Consumer;
 
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.AVRO_CONFLUENT;
+import static org.apache.flink.core.testutils.FlinkAssertions.anyCauseMatches;
 import static org.apache.flink.core.testutils.FlinkMatchers.containsCause;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSink;
 import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSource;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 /** Test for {@link UpsertPscDynamicTableFactory}. */
 public class UpsertPscDynamicTableFactoryTest extends TestLogger {
@@ -133,8 +137,12 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     private static final Properties UPSERT_PSC_SINK_PROPERTIES = new Properties();
 
     static {
+        UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "upsert-test-group");
+        UPSERT_PSC_SOURCE_PROPERTIES.setProperty("client.id.prefix", "upsert-test");
         UPSERT_PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
 
+        UPSERT_PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "upsert-sink-test-producer-client");
+        UPSERT_PSC_SINK_PROPERTIES.setProperty("client.id.prefix", "upsert-sink");
         UPSERT_PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
     }
 
@@ -151,6 +159,16 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                     ",", true, ChangelogMode.insertOnly(), Collections.emptyMap());
 
     @Rule public ExpectedException thrown = ExpectedException.none();
+
+    /**
+     * Reset partition count provider after each test to prevent test pollution.
+     * Tests that mock the provider via {@link PscTableCommonUtils#setProviderForTest}
+     * must not affect other tests.
+     */
+    @After
+    public void tearDown() {
+        PscTableCommonUtils.resetProvider();
+    }
 
     @Test
     public void testTableSource() {
@@ -312,6 +330,25 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     }
 
     @Test
+    public void testTableSinkAllowsMetadataAndCustomPropertiesPrefixes() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getFullSinkOptions(),
+                        options -> {
+                            options.put("metadata.audit.tag", "enabled");
+                            options.put("properties.custom.flag", "true");
+                            options.put("sink.delivery-guarantee", "exactly-once");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
+                        });
+
+        final Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        assertThat(processedProperties.getProperty("custom.flag")).isEqualTo("true");
+
+        final DynamicTableSink sink = createTableSink(SINK_SCHEMA, modifiedOptions);
+        assertThat(sink).isInstanceOf(PscDynamicSink.class);
+    }
+
+    @Test
     public void testTableSinkAutoCompleteSchemaRegistrySubject() {
         // value.format + key.format
         verifyEncoderSubject(
@@ -378,6 +415,7 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
+        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "dummy-producer-client");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         optionModifier.accept(options);
 
@@ -675,6 +713,194 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
     }
 
     // --------------------------------------------------------------------------------------------
+    // Rescale / parallelism tests for the upsert source
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testUpsertSourceWithRescaleEnabledProducesPartitionTransformation() {
+        // With scan.enable-rescale=true on the upsert source, the produced stream must end
+        // in a PartitionTransformation (rescale()), and the upstream operator must be the
+        // bare Kafka source (no rate limiter set).
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, true);
+                    addScanParallelismConfig(opts, 50);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isTrue();
+        // scan.parallelism (tier 1) wins in getEffectiveSourceParallelism and is stored on
+        // the source by UpsertPscDynamicTableFactory.
+        assertThat(pscSource.scanParallelism).isEqualTo(50);
+
+        final int envParallelism = 20;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+        assertThat(sourceOp.getParallelism())
+                .isEqualTo(Math.min(pscSource.scanParallelism, envParallelism));
+    }
+
+    @Test
+    public void testUpsertSourceWithRescaleAndRateLimitOrder() {
+        // Pins the operator ordering for the upsert source path:
+        //   Source  ->  PscRateLimit  ->  rescale (terminal PartitionTransformation)
+        // This must match the non-upsert factory's behavior.
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, true);
+                    addScanParallelismConfig(opts, 20);
+                    addRateLimitConfig(opts, 1000.0);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isTrue();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+        assertThat(pscSource.scanParallelism).isEqualTo(20);
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // 1) Outermost / terminal op is the rescale.
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getName()).doesNotContain("PscRateLimit");
+
+        // 2) Immediately below rescale is the rate limiter (NOT the bare source).
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+
+        // 3) Below the rate limiter is the Kafka source.
+        assertThat(rateLimitOp.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Source and rate-limit are both pinned to min(scanParallelism, env).
+        final int expectedSourceParallelism =
+                Math.min(pscSource.scanParallelism, envParallelism);
+        assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+    }
+
+    @Test
+    public void testUpsertSourceParallelismCappedByEnv() {
+        // When scan.parallelism (80) exceeds env.getParallelism() (10), the source
+        // operator parallelism must be capped at env parallelism (10) by
+        // PscDynamicSource.produceDataStream(), even though pscSource.scanParallelism
+        // continues to report the configured value (80).
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, true);
+                    addScanParallelismConfig(opts, 80);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        // Configured scan.parallelism is preserved on the source instance.
+        assertThat(pscSource.scanParallelism).isEqualTo(80);
+        assertThat(pscSource.enableRescale).isTrue();
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Cap kicks in: source parallelism = env (10), NOT scan.parallelism (80).
+        assertThat(sourceOp.getParallelism()).isEqualTo(envParallelism);
+        assertThat(sourceOp.getParallelism()).isLessThan(pscSource.scanParallelism);
+    }
+
+    @Test
+    public void testUpsertSourceWithRescaleDisabled() {
+        // With scan.enable-rescale=false the upsert factory must skip
+        // getEffectiveSourceParallelism() entirely and store -1 on the source.
+        // No rescale() should be applied, and (in the absence of a rate limiter) the
+        // terminal transformation should be the bare SourceTransformation.
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    addRescaleConfig(opts, false);
+                    // scan.parallelism is set but should NOT be consulted because rescale=false.
+                    addScanParallelismConfig(opts, 20);
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isFalse();
+        // When rescale is disabled the factory short-circuits to -1 regardless of scan.parallelism.
+        assertThat(pscSource.scanParallelism).isEqualTo(-1);
+
+        final int envParallelism = 5;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // No rescale, no rate limiter => terminal is the bare Kafka source.
+        assertThat(terminal).isInstanceOf(SourceTransformation.class);
+        assertThat(terminal).isNotInstanceOf(PartitionTransformation.class);
+        // Source inherits env parallelism (no explicit setParallelism call).
+        assertThat(terminal.getParallelism()).isEqualTo(envParallelism);
+    }
+
+    /**
+     * Helper method to create a transformation from a {@link PscDynamicSource}.
+     * Reduces repetitive code in operator chaining tests.
+     *
+     * @param pscSource         the PSC dynamic source
+     * @param globalParallelism global parallelism for the execution environment
+     * @return the final transformation in the operator chain
+     */
+    private Transformation<RowData> produceTransformationFromSource(
+            PscDynamicSource pscSource, int globalParallelism) {
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider =
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(runtimeProvider).isInstanceOf(DataStreamScanProvider.class);
+
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(globalParallelism);
+
+        return dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+    }
+
+    /** Helper method to add rescale configuration to options map. */
+    private static void addRescaleConfig(Map<String, String> options, boolean enableRescale) {
+        options.put(PscConnectorOptions.SCAN_ENABLE_RESCALE.key(), String.valueOf(enableRescale));
+    }
+
+    /** Helper method to add rate limit configuration to options map. */
+    private static void addRateLimitConfig(Map<String, String> options, double rateLimit) {
+        options.put(PscConnectorOptions.SCAN_RATE_LIMIT.key(), String.valueOf(rateLimit));
+    }
+
+    /** Helper method to add scan.parallelism configuration to options map. */
+    private static void addScanParallelismConfig(Map<String, String> options, int parallelism) {
+        options.put(PscConnectorOptions.SCAN_PARALLELISM.key(), String.valueOf(parallelism));
+    }
+
+    // --------------------------------------------------------------------------------------------
     // Utilities
     // --------------------------------------------------------------------------------------------
 
@@ -694,6 +920,8 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SOURCE_TOPIC_URI);
+        options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "upsert-test-group");
+        options.put("properties.client.id.prefix", "upsert-test");  // Now mandatory
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         // key format options
         options.put("key.format", TestFormatFactory.IDENTIFIER);
@@ -736,6 +964,42 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         Map<String, String> options = new HashMap<>();
         options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
         options.put("topic-uri", SINK_TOPIC_URI);
+        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "upsert-sink-test-producer-client");
+        options.put("properties.client.id.prefix", "upsert-sink");  // Support for AUTO_GEN_UUID tests
+        options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        // key format options
+        options.put("value.format", TestFormatFactory.IDENTIFIER);
+        options.put(
+                String.format(
+                        "key.%s.%s",
+                        TestFormatFactory.IDENTIFIER, TestFormatFactory.DELIMITER.key()),
+                ",");
+        options.put(
+                String.format(
+                        "key.%s.%s",
+                        TestFormatFactory.IDENTIFIER, TestFormatFactory.CHANGELOG_MODE.key()),
+                "I");
+        // value format options
+        options.put("key.format", TestFormatFactory.IDENTIFIER);
+        options.put(
+                String.format(
+                        "value.%s.%s",
+                        TestFormatFactory.IDENTIFIER, TestFormatFactory.DELIMITER.key()),
+                ",");
+        options.put(
+                String.format(
+                        "value.%s.%s",
+                        TestFormatFactory.IDENTIFIER, TestFormatFactory.CHANGELOG_MODE.key()),
+                "I");
+        return options;
+    }
+
+    private static Map<String, String> getUpsertKeyValueSinkOptions() {
+        Map<String, String> options = new HashMap<>();
+        options.put("connector", UpsertPscDynamicTableFactory.IDENTIFIER);
+        options.put("topic-uri", SINK_TOPIC_URI);
+        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "upsert-sink-test-producer-client");
+        options.put("properties.client.id.prefix", "upsert-sink");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
         // key format options
         options.put("value.format", TestFormatFactory.IDENTIFIER);
@@ -773,6 +1037,12 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
             String keyPrefix,
             String topicUri,
             Properties properties) {
+        // NOTE: UpsertPscDynamicTableFactory now ALWAYS passes a non-null effectiveParallelism
+        // to PscDynamicSource (it computes `shouldRescale ? getEffectiveSourceParallelism(...) : -1`).
+        // The backward-compatible 16-arg PscDynamicSource ctor delegates with scanParallelism=null,
+        // which would no longer match the factory output. We therefore use the full ctor here and
+        // mirror the factory's defaults explicitly: sourceUidPrefix=null, enableRescale=false,
+        // rateLimitRecordsPerSecond=null, scanParallelism=-1.
         return new PscDynamicSource(
                 producedDataType,
                 keyDecodingFormat,
@@ -790,7 +1060,11 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
                 Collections.emptyMap(),
                 0,
                 true,
-                FactoryMocks.IDENTIFIER.asSummaryString());
+                FactoryMocks.IDENTIFIER.asSummaryString(),
+                null,
+                false,
+                null,
+                -1);
     }
 
     private static PscDynamicSink createExpectedSink(
@@ -858,5 +1132,459 @@ public class UpsertPscDynamicTableFactoryTest extends TestLogger {
         assertThat(provider).isInstanceOf(DataStreamScanProvider.class);
         final PscSource<?> kafkaSource = assertPscSource(provider);
         validator.accept(kafkaSource);
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // AUTO_GEN_UUID Core Functionality Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testUpsertSourceWithAutoGenUuidConsumerGroupId() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-consumer-group");
+                });
+
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSource) actualSource).properties;
+
+        String consumerGroupId = actualProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(consumerGroupId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-consumer-group-")
+                .matches("upsert-consumer-group-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    @Test
+    public void testUpsertSinkWithAutoGenUuidProducerClientId() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSinkOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_PRODUCER_CLIENT_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-producer-client");
+                });
+
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, options);
+        Properties actualProperties = ((PscDynamicSink) actualSink).properties;
+
+        String producerClientId = actualProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        assertThat(producerClientId)
+                .isNotNull()
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("upsert-producer-client-")
+                .matches("upsert-producer-client-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidUniquePerTableCreation() {
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
+                    opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-unique");
+                });
+
+        // Create two separate table sources with same options
+        final DynamicTableSource actualSource1 = createTableSource(SOURCE_SCHEMA, options);
+        final DynamicTableSource actualSource2 = createTableSource(SOURCE_SCHEMA, options);
+
+        Properties properties1 = ((PscDynamicSource) actualSource1).properties;
+        Properties properties2 = ((PscDynamicSource) actualSource2).properties;
+
+        // Get the generated group IDs
+        String groupId1 = properties1.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String groupId2 = properties2.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify both group IDs are generated and different
+        assertThat(groupId1).isNotNull();
+        assertThat(groupId2).isNotNull();
+        assertThat(groupId1).isNotEqualTo(groupId2);
+
+        // Verify both group IDs have the expected format (prefix + UUID)
+        assertThat(groupId1).startsWith("upsert-unique-");
+        assertThat(groupId2).startsWith("upsert-unique-");
+
+        // Verify the UUID parts are valid
+        String uuid1 = groupId1.substring("upsert-unique-".length());
+        String uuid2 = groupId2.substring("upsert-unique-".length());
+
+        try {
+            java.util.UUID.fromString(uuid1);
+            java.util.UUID.fromString(uuid2);
+            // If no exception is thrown, both UUIDs are valid
+        } catch (IllegalArgumentException e) {
+            fail("Generated group ID UUIDs should be valid: " + e.getMessage());
+        }
+
+    }
+
+    // AUTO_GEN_UUID Negative Tests
+    @Test
+    public void testUpsertAutoGenUuidWithMissingClientIdPrefix() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> {
+
+                        opts.remove("properties.client.id.prefix"); // Remove mandatory client.id.prefix
+                    });
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class,
+                "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be provided as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithEmptyPrefixInSourceTest() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> {
+
+                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "");
+                    });
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class,
+                "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidWithWhitespacePrefixInSourceTest() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> {
+                        opts.put(PscConnectorOptions.PROPS_GROUP_ID.key(), "AUTO_GEN_UUID");
+                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "   ");
+                    });
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class,
+                "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertAutoGenUuidOnDisallowedProperty() {
+        assertThatThrownBy(() -> {
+            final Map<String, String> options = getModifiedOptions(
+                    getFullSourceOptions(),
+                    opts -> {
+                        opts.put("properties.bootstrap.servers", "AUTO_GEN_UUID");
+                        opts.put(PscConnectorOptions.PROPS_CLIENT_ID_PREFIX.key(), "upsert-test");
+                    });
+            createTableSource(SOURCE_SCHEMA, options);
+        })
+        .isInstanceOf(ValidationException.class)
+        .satisfies(anyCauseMatches(ValidationException.class,
+                "AUTO_GEN_UUID is not allowed for property"));
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Client ID Prefix Alias Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testUpsertTableSourceWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for properties.client.id.prefix
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    // Remove the primary key and use the alias instead
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(groupId).startsWith("upsert-alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = groupId.substring("upsert-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated group ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the upsert table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify that the actual source's properties have the correct alias prefix and valid UUID
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        String actualGroupId = pscSource.properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(actualGroupId).isNotNull();
+        assertThat(actualGroupId).startsWith("upsert-alias-prefix-");
+        assertThat(actualGroupId).isNotEqualTo("AUTO_GEN_UUID");
+
+        // Verify the UUID part is valid in the actual source properties
+        String actualUuidPart = actualGroupId.substring("upsert-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(actualUuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Actual source's group ID UUID should be valid: " + actualUuidPart);
+        }
+    }
+
+    @Test
+    public void testUpsertTableSourceWithClientIdPrefixPrimaryKeyTakesPrecedence() {
+        // Test that properties.client.id.prefix takes precedence over the alias when both are provided
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    // Provide both primary key and alias - primary should win
+                    opts.put("properties.client.id.prefix", "upsert-primary-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing - should use primary prefix
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify the primary key prefix was used, not the alias
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("upsert-primary-prefix-");
+        assertThat(groupId).doesNotContain("upsert-alias-prefix");
+
+        // Verify that the upsert table source can be created successfully
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify that the actual source's properties use the primary prefix, not the alias
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        String actualGroupId = pscSource.properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(actualGroupId).isNotNull();
+        assertThat(actualGroupId).startsWith("upsert-primary-prefix-");
+        assertThat(actualGroupId).doesNotContain("upsert-alias-prefix");
+        assertThat(actualGroupId).isNotEqualTo("AUTO_GEN_UUID");
+    }
+
+    @Test
+    public void testUpsertTableSinkWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for upsert sink options too
+        final Map<String, String> options = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    // Remove the primary key and use the alias instead
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-sink-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(producerId).startsWith("upsert-sink-alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = producerId.substring("upsert-sink-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated producer ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the upsert table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, options);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify that the actual sink's properties have the correct alias prefix and valid UUID
+        final PscDynamicSink pscSink = (PscDynamicSink) actualSink;
+        String actualProducerId = pscSink.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        assertThat(actualProducerId).isNotNull();
+        assertThat(actualProducerId).startsWith("upsert-sink-alias-prefix-");
+        assertThat(actualProducerId).isNotEqualTo("AUTO_GEN_UUID");
+
+        // Verify the UUID part is valid in the actual sink properties
+        String actualUuidPart = actualProducerId.substring("upsert-sink-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(actualUuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Actual sink's producer ID UUID should be valid: " + actualUuidPart);
+        }
+    }
+
+    @Test
+    public void testUpsertTableSourceWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias when neither is provided
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.remove("properties.client.id.prefix"); // Remove primary key
+                    // Don't provide alias either
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        assertThatThrownBy(() -> createTableSource(SOURCE_SCHEMA, options))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(anyCauseMatches(ValidationException.class,
+                        "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be provided as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertTableSinkWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias for upsert sink options too
+        final Map<String, String> options = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    opts.remove("properties.client.id.prefix"); // Remove primary key
+                    // Don't provide alias either
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        assertThatThrownBy(() -> createTableSink(SINK_SCHEMA, options))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(anyCauseMatches(ValidationException.class,
+                        "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be provided as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertKeyValueTableWithClientIdPrefixAlias() {
+        // Test that alias works with key-value upsert table sources and sinks
+        final Map<String, String> sourceOptions = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    // Replace primary key with alias for source
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-kv-alias-prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias in upsert key-value context
+        Properties sourceProcessedProperties = PscConnectorOptionsUtil.getPscProperties(sourceOptions);
+        String groupId = sourceProcessedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("upsert-kv-alias-prefix-");
+
+        // Verify that the upsert key-value table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SOURCE_SCHEMA, sourceOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify that the actual source's properties have the correct alias prefix and valid UUID
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        String actualSourceGroupId = pscSource.properties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        assertThat(actualSourceGroupId).isNotNull();
+        assertThat(actualSourceGroupId).startsWith("upsert-kv-alias-prefix-");
+        assertThat(actualSourceGroupId).isNotEqualTo("AUTO_GEN_UUID");
+
+        // Test sink options with alias too
+        final Map<String, String> sinkOptions = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    // Replace primary key with alias for sink
+                    opts.remove("properties.client.id.prefix");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-kv-sink-alias");
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        // Test the AUTO_GEN_UUID processing with alias for producer ID
+        Properties sinkProcessedProperties = PscConnectorOptionsUtil.getPscProperties(sinkOptions);
+        String producerId = sinkProcessedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).startsWith("upsert-kv-sink-alias-");
+
+        // Verify that the upsert key-value table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SINK_SCHEMA, sinkOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify that the actual sink's properties have the correct alias prefix and valid UUID
+        final PscDynamicSink pscSink = (PscDynamicSink) actualSink;
+        String actualSinkProducerId = pscSink.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        assertThat(actualSinkProducerId).isNotNull();
+        assertThat(actualSinkProducerId).startsWith("upsert-kv-sink-alias-");
+        assertThat(actualSinkProducerId).isNotEqualTo("AUTO_GEN_UUID");
+    }
+
+    @Test
+    public void testUpsertTableAliasEmptyValidationError() {
+        // Test that validation error occurs when alias is provided but empty
+        final Map<String, String> options = getModifiedOptions(
+                getFullSourceOptions(),
+                opts -> {
+                    opts.remove("properties.client.id.prefix"); // Remove primary key
+                    // Provide empty alias
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "   ");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                });
+
+        assertThatThrownBy(() -> createTableSource(SOURCE_SCHEMA, options))
+                .isInstanceOf(ValidationException.class)
+                .satisfies(anyCauseMatches(ValidationException.class,
+                        "properties.client.id.prefix (or alias properties.psc.consumer.client.id) must be non-empty (after trimming whitespace) as it is mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testUpsertTableAliasPrecedenceWithUniqueIds() {
+        // Test that when both primary and alias are provided, primary takes precedence
+        // and generates unique IDs correctly
+        final Map<String, String> options = getModifiedOptions(
+                getUpsertKeyValueSinkOptions(),
+                opts -> {
+                    // Provide both primary key and alias - primary should win
+                    opts.put("properties.client.id.prefix", "upsert-primary");
+                    opts.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "upsert-alias");
+                    opts.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                });
+
+        // Generate multiple producer IDs using the same options
+        Properties properties1 = PscConnectorOptionsUtil.getPscProperties(options);
+        Properties properties2 = PscConnectorOptionsUtil.getPscProperties(options);
+
+        String producerId1 = properties1.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String producerId2 = properties2.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify all producer IDs are different and use primary prefix
+        assertThat(producerId1).isNotEqualTo(producerId2);
+        assertThat(producerId1).startsWith("upsert-primary-");
+        assertThat(producerId2).startsWith("upsert-primary-");
+        assertThat(producerId1).doesNotContain("upsert-alias");
+        assertThat(producerId2).doesNotContain("upsert-alias");
+
+        // Verify that upsert table sinks can be created successfully
+        final DynamicTableSink tableSink1 = createTableSink(SINK_SCHEMA, options);
+        final DynamicTableSink tableSink2 = createTableSink(SINK_SCHEMA, options);
+
+        assertThat(tableSink1).isInstanceOf(PscDynamicSink.class);
+        assertThat(tableSink2).isInstanceOf(PscDynamicSink.class);
+
+        // Verify that the actual sink properties use the primary prefix, not the alias
+        final PscDynamicSink pscSink1 = (PscDynamicSink) tableSink1;
+        final PscDynamicSink pscSink2 = (PscDynamicSink) tableSink2;
+
+        String actualProducerId1 = pscSink1.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String actualProducerId2 = pscSink2.properties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify actual producer IDs are different and use primary prefix, not alias
+        assertThat(actualProducerId1).isNotNull();
+        assertThat(actualProducerId2).isNotNull();
+        assertThat(actualProducerId1).isNotEqualTo(actualProducerId2); // UUIDs should be different
+        assertThat(actualProducerId1).startsWith("upsert-primary-");
+        assertThat(actualProducerId2).startsWith("upsert-primary-");
+        assertThat(actualProducerId1).doesNotContain("upsert-alias");
+        assertThat(actualProducerId2).doesNotContain("upsert-alias");
+        assertThat(actualProducerId1).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(actualProducerId2).isNotEqualTo("AUTO_GEN_UUID");
     }
 }

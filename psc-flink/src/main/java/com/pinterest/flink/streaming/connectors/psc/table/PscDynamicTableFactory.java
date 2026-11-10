@@ -70,10 +70,14 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SOURCE_UID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_STARTUP_TIMESTAMP_MILLIS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_TOPIC_PARTITION_DISCOVERY;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_RATE_LIMIT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARTITIONER;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
@@ -81,6 +85,7 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TRANSACTIONAL_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FIELDS_INCLUDE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.METADATA_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.PROPERTIES_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.autoCompleteSchemaRegistrySubject;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createKeyFormatProjection;
@@ -91,8 +96,10 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUriPattern;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUris;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getStartupOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateDeliveryGuarantee;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSinkOptions;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateTableSourceOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.getEffectiveSourceParallelism;
 
 /**
  * Factory for creating configured instances of {@link PscDynamicSource} and {@link
@@ -147,6 +154,10 @@ public class PscDynamicTableFactory
         options.add(SCAN_BOUNDED_MODE);
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(SCAN_ENABLE_RESCALE);
+        options.add(SCAN_RATE_LIMIT);
+        options.add(SCAN_PARALLELISM);
+        options.add(SOURCE_UID_PREFIX);
         return options;
     }
 
@@ -176,7 +187,7 @@ public class PscDynamicTableFactory
         final DecodingFormat<DeserializationSchema<RowData>> valueDecodingFormat =
                 getValueDecodingFormat(helper);
 
-        helper.validateExcept(PROPERTIES_PREFIX);
+        helper.validateExcept(PROPERTIES_PREFIX, METADATA_PREFIX);
 
         final ReadableConfig tableOptions = helper.getOptions();
 
@@ -209,6 +220,34 @@ public class PscDynamicTableFactory
 
         final String keyPrefix = tableOptions.getOptional(KEY_FIELDS_PREFIX).orElse(null);
 
+        final boolean shouldRescale =tableOptions.get(SCAN_ENABLE_RESCALE);
+        // Read scan.parallelism configuration
+        final Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
+
+        final Integer effectiveParallelism = shouldRescale ?
+            getEffectiveSourceParallelism(
+                context.getConfiguration(),
+                getSourceTopicUris(tableOptions),
+                properties,
+                scanParallelism)
+            : -1;
+
+
+        // Log scan parallelism configuration if set
+        if (shouldRescale && effectiveParallelism > 0 ) {
+            LOG.info("Psc will use parallelism={} for source operator",
+                effectiveParallelism);
+        }
+
+        // Get rate limit configuration
+        final Double rateLimitRecordsPerSecond = tableOptions.getOptional(SCAN_RATE_LIMIT).orElse(null);
+
+        // Log configurations
+        if (PscDynamicSource.isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
+            LOG.info("Rate limiting enabled: {} records/second (total across all subtasks)", 
+                     rateLimitRecordsPerSecond);
+        }
+
         return createPscTableSource(
                 physicalDataType,
                 keyDecodingFormat.orElse(null),
@@ -225,7 +264,11 @@ public class PscDynamicTableFactory
                 boundedOptions.boundedMode,
                 boundedOptions.specificOffsets,
                 boundedOptions.boundedTimestampMillis,
-                context.getObjectIdentifier().asSummaryString());
+                context.getObjectIdentifier().asSummaryString(),
+                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
+                shouldRescale,
+                rateLimitRecordsPerSecond,
+                effectiveParallelism);
     }
 
     @Override
@@ -240,14 +283,15 @@ public class PscDynamicTableFactory
         final EncodingFormat<SerializationSchema<RowData>> valueEncodingFormat =
                 getValueEncodingFormat(helper);
 
-        helper.validateExcept(PROPERTIES_PREFIX);
+        helper.validateExcept(PROPERTIES_PREFIX, METADATA_PREFIX);
 
         final ReadableConfig tableOptions = helper.getOptions();
 
         final DeliveryGuarantee deliveryGuarantee = validateDeprecatedSemantic(tableOptions);
+        
         validateTableSinkOptions(tableOptions);
 
-        PscConnectorOptionsUtil.validateDeliveryGuarantee(tableOptions);
+        validateDeliveryGuarantee(tableOptions);
 
         validatePKConstraints(
                 context.getObjectIdentifier(),
@@ -389,7 +433,11 @@ public class PscDynamicTableFactory
             BoundedMode boundedMode,
             Map<PscTopicUriPartition, Long> specificEndOffsets,
             long endTimestampMillis,
-            String tableIdentifier) {
+            String tableIdentifier,
+            @Nullable String sourceUidPrefix,
+            boolean enableRescale,
+            @Nullable Double rateLimitRecordsPerSecond,
+            @Nullable Integer scanParallelism) {
         return new PscDynamicSource(
                 physicalDataType,
                 keyDecodingFormat,
@@ -407,7 +455,11 @@ public class PscDynamicTableFactory
                 specificEndOffsets,
                 endTimestampMillis,
                 false,
-                tableIdentifier);
+                tableIdentifier,
+                sourceUidPrefix,
+                enableRescale,
+                rateLimitRecordsPerSecond,
+                scanParallelism);
     }
 
     protected PscDynamicSink creatPscTableSink(

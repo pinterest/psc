@@ -113,11 +113,21 @@ public class PscTopicUriPartitionSplitReader
             // This happens if all assigned partitions are invalid or empty (starting offset >=
             // stopping offset). We just mark empty partitions as finished and return an empty
             // record container, and this consumer will be closed by SplitFetcherManager.
-            PscPartitionSplitRecords recordsBySplits =
-                    new PscPartitionSplitRecords(
-                            PscConsumerMessagesIterable.emptyIterable(), pscSourceReaderMetrics);
-            markEmptySplitsAsFinished(recordsBySplits);
-            return recordsBySplits;
+            if (e.getCause() != null &&
+                    (e.getCause().getClass().equals(IllegalStateException.class) || e.getCause().getClass().equals(WakeupException.class))) {
+                LOG.warn("Caught IllegalStateException or WakeupException in poll(), marking partitions as finished", e);
+                PscPartitionSplitRecords recordsBySplits =
+                        new PscPartitionSplitRecords(
+                                PscConsumerMessagesIterable.emptyIterable(), pscSourceReaderMetrics);
+                markEmptySplitsAsFinished(recordsBySplits);
+                return recordsBySplits;
+            } else {
+                LOG.error("Unrecoverable ConsumerException caught in poll()", e);
+                throw new RuntimeException(e);
+            }
+        } catch (Exception e) {
+            LOG.error("Unrecoverable Exception caught in poll()", e);
+            throw new RuntimeException(e);
         }
         PscPartitionSplitRecords recordsBySplits =
                 new PscPartitionSplitRecords(consumerMessagesIterable, pscSourceReaderMetrics);
@@ -557,6 +567,7 @@ public class PscTopicUriPartitionSplitReader
         private Iterator<PscConsumerMessage<byte[], byte[]>> recordIterator;
         private TopicUriPartition currentTopicPartition;
         private Long currentSplitStoppingOffset;
+        private PscSourceReaderMetrics.Offset currentOffsetTracker;
 
         private PscPartitionSplitRecords(
                 PscConsumerMessagesIterable<byte[], byte[]> consumerMessagesIterable, PscSourceReaderMetrics metrics) {
@@ -582,11 +593,13 @@ public class PscTopicUriPartitionSplitReader
                 recordIterator = consumerMessagesIterable.getMessagesForTopicUriPartition(currentTopicPartition).iterator();
                 currentSplitStoppingOffset =
                         stoppingOffsets.getOrDefault(currentTopicPartition, Long.MAX_VALUE);
+                currentOffsetTracker = metrics.getOffsetTracker(currentTopicPartition);
                 return currentTopicPartition.toString();
             } else {
                 currentTopicPartition = null;
                 recordIterator = null;
                 currentSplitStoppingOffset = null;
+                currentOffsetTracker = null;
                 return null;
             }
         }
@@ -602,7 +615,7 @@ public class PscTopicUriPartitionSplitReader
                 final PscConsumerMessage<byte[], byte[]> message = recordIterator.next();
                 // Only emit records before stopping offset
                 if (message.getMessageId().getOffset() < currentSplitStoppingOffset) {
-                    metrics.recordCurrentOffset(currentTopicPartition, message.getMessageId().getOffset());
+                    currentOffsetTracker.currentOffset = message.getMessageId().getOffset();
                     return message;
                 }
             }

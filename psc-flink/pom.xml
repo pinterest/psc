@@ -5,9 +5,10 @@
     <parent>
         <groupId>com.pinterest.psc</groupId>
         <artifactId>psc-java-oss</artifactId>
-        <version>4.1.2</version>
+        <version>4.2.2</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
+    <name>psc-flink</name>
     <artifactId>psc-flink</artifactId>
     <properties>
         <flink.version>1.18.1</flink.version>
@@ -23,18 +24,19 @@
         <snakeyaml.version>2.2</snakeyaml.version>
     </properties>
 
-<!--    this is needed due to io.confluent:kafka-schema-registry-client not found in mvn central-->
-    <repositories>
-        <repository>
-            <id>io-confluent</id>
-            <name>io-confluent</name>
-            <url>https://packages.confluent.io/maven</url>
-            <releases>
-                <enabled>true</enabled>
-                <updatePolicy>interval:60</updatePolicy>
-            </releases>
-        </repository>
-    </repositories>
+<!--io-confluent repository commented out in favor of maven central mirrors-->
+
+<!--    <repositories>-->
+<!--        <repository>-->
+<!--            <id>io-confluent</id>-->
+<!--            <name>io-confluent</name>-->
+<!--            <url>https://packages.confluent.io/maven</url>-->
+<!--            <releases>-->
+<!--                <enabled>true</enabled>-->
+<!--                <updatePolicy>interval:60</updatePolicy>-->
+<!--            </releases>-->
+<!--        </repository>-->
+<!--    </repositories>-->
 
     <dependencies>
         <dependency>

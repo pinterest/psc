@@ -9,7 +9,7 @@ public class MemqTopicUri extends BaseTopicUri {
     public static final String PLAINTEXT_PROTOCOL = "plaintext";
     public static final String SECURE_PROTOCOL = "secure";
 
-    MemqTopicUri(TopicUri topicUri) {
+    public MemqTopicUri(TopicUri topicUri) {
         super(topicUri);
     }
 

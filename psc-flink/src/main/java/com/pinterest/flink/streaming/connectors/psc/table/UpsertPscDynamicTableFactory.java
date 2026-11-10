@@ -25,7 +25,6 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ReadableConfig;
-import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.table.api.ValidationException;
 import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
@@ -43,6 +42,8 @@ import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.factories.SerializationFormatFactory;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.types.RowKind;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Collections;
@@ -61,13 +62,18 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_MODE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_SPECIFIC_OFFSETS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_BOUNDED_TIMESTAMP_MILLIS;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_ENABLE_RESCALE;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SCAN_RATE_LIMIT;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_INTERVAL;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_BUFFER_FLUSH_MAX_ROWS;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SINK_PARALLELISM;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.SOURCE_UID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TOPIC_URI;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.TRANSACTIONAL_ID_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FIELDS_INCLUDE;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptions.VALUE_FORMAT;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.METADATA_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.PROPERTIES_PREFIX;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.autoCompleteSchemaRegistrySubject;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.createKeyFormatProjection;
@@ -77,10 +83,15 @@ import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOpt
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUriPattern;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.getSourceTopicUris;
 import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateScanBoundedMode;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateConsumerClientOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscConnectorOptionsUtil.validateProducerClientOptions;
+import static com.pinterest.flink.streaming.connectors.psc.table.PscTableCommonUtils.getEffectiveSourceParallelism;
 
 /** Upsert-Psc factory. */
 public class UpsertPscDynamicTableFactory
         implements DynamicTableSourceFactory, DynamicTableSinkFactory {
+
+    private static final Logger LOG = LoggerFactory.getLogger(UpsertPscDynamicTableFactory.class);
 
     public static final String IDENTIFIER = "upsert-psc";
 
@@ -109,8 +120,12 @@ public class UpsertPscDynamicTableFactory
         options.add(SCAN_BOUNDED_MODE);
         options.add(SCAN_BOUNDED_SPECIFIC_OFFSETS);
         options.add(SCAN_BOUNDED_TIMESTAMP_MILLIS);
+        options.add(SCAN_ENABLE_RESCALE);
+        options.add(SCAN_RATE_LIMIT);
+        options.add(SCAN_PARALLELISM);
         options.add(DELIVERY_GUARANTEE);
         options.add(TRANSACTIONAL_ID_PREFIX);
+        options.add(SOURCE_UID_PREFIX);
         return options;
     }
 
@@ -130,7 +145,7 @@ public class UpsertPscDynamicTableFactory
                 helper.discoverDecodingFormat(DeserializationFormatFactory.class, VALUE_FORMAT);
 
         // Validate the option data type.
-        helper.validateExcept(PROPERTIES_PREFIX);
+        helper.validateExcept(PROPERTIES_PREFIX, METADATA_PREFIX);
         validateSource(
                 tableOptions,
                 keyDecodingFormat,
@@ -145,6 +160,34 @@ public class UpsertPscDynamicTableFactory
         StartupMode earliest = StartupMode.EARLIEST;
 
         final PscConnectorOptionsUtil.BoundedOptions boundedOptions = getBoundedOptions(tableOptions);
+
+        final boolean shouldRescale =tableOptions.get(SCAN_ENABLE_RESCALE);
+        // Read scan.parallelism configuration
+        final Integer scanParallelism = tableOptions.getOptional(SCAN_PARALLELISM).orElse(null);
+
+        final Integer effectiveParallelism = shouldRescale ?
+            getEffectiveSourceParallelism(
+                context.getConfiguration(),
+                getSourceTopicUris(tableOptions),
+                properties,
+                scanParallelism)
+            : -1;
+
+
+        // Log scan parallelism configuration if set
+        if (shouldRescale && effectiveParallelism > 0 ) {
+          LOG.info("Psc will use parallelism={} for source operator",
+              effectiveParallelism);
+        }
+
+        // Get rate limit configuration
+        final Double rateLimitRecordsPerSecond = tableOptions.getOptional(SCAN_RATE_LIMIT).orElse(null);
+
+        // Log configurations
+        if (PscDynamicSource.isRateLimitingEnabled(rateLimitRecordsPerSecond)) {
+            LOG.info("Rate limiting enabled: {} records/second (total across all subtasks)", 
+                     rateLimitRecordsPerSecond);
+        }
 
         return new PscDynamicSource(
                 context.getPhysicalRowDataType(),
@@ -163,7 +206,11 @@ public class UpsertPscDynamicTableFactory
                 boundedOptions.specificOffsets,
                 boundedOptions.boundedTimestampMillis,
                 true,
-                context.getObjectIdentifier().asSummaryString());
+                context.getObjectIdentifier().asSummaryString(),
+                tableOptions.getOptional(SOURCE_UID_PREFIX).orElse(null),
+                shouldRescale,
+                rateLimitRecordsPerSecond,
+                effectiveParallelism);
     }
 
     @Override
@@ -180,7 +227,7 @@ public class UpsertPscDynamicTableFactory
                 helper.discoverEncodingFormat(SerializationFormatFactory.class, VALUE_FORMAT);
 
         // Validate the option data type.
-        helper.validateExcept(PROPERTIES_PREFIX);
+        helper.validateExcept(PROPERTIES_PREFIX, METADATA_PREFIX);
         validateSink(
                 tableOptions,
                 keyEncodingFormat,
@@ -246,6 +293,7 @@ public class UpsertPscDynamicTableFactory
             int[] primaryKeyIndexes) {
         validateTopic(tableOptions);
         validateScanBoundedMode(tableOptions);
+        validateConsumerClientOptions(tableOptions);
         validateFormat(keyFormat, valueFormat, tableOptions);
         validatePKConstraints(primaryKeyIndexes);
     }
@@ -257,6 +305,7 @@ public class UpsertPscDynamicTableFactory
             int[] primaryKeyIndexes) {
         validateTopic(tableOptions);
         validateFormat(keyFormat, valueFormat, tableOptions);
+        validateProducerClientOptions(tableOptions);
         validatePKConstraints(primaryKeyIndexes);
         validateSinkBufferFlush(tableOptions);
     }
@@ -421,4 +470,5 @@ public class UpsertPscDynamicTableFactory
             return Objects.hash(innerEncodingFormat);
         }
     }
+
 }

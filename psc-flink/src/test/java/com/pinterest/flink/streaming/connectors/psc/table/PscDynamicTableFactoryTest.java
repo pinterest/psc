@@ -40,7 +40,7 @@ import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.connector.sink2.Sink;
 import org.apache.flink.api.connector.source.Boundedness;
 import org.apache.flink.api.dag.Transformation;
-import org.apache.flink.configuration.ConfigOptions;
+
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.connector.base.DeliveryGuarantee;
 import org.apache.flink.formats.avro.AvroRowDataSerializationSchema;
@@ -49,10 +49,15 @@ import org.apache.flink.formats.avro.registry.confluent.ConfluentRegistryAvroSer
 import org.apache.flink.formats.avro.registry.confluent.debezium.DebeziumAvroSerializationSchema;
 import org.apache.flink.formats.avro.typeutils.AvroSchemaConverter;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.SourceTransformation;
 import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.Schema;
 import org.apache.flink.table.api.ValidationException;
+import org.apache.flink.table.api.config.ExecutionConfigOptions;
+import org.apache.flink.table.catalog.CatalogTable;
 import org.apache.flink.table.catalog.Column;
+import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.catalog.ResolvedSchema;
 import org.apache.flink.table.catalog.UniqueConstraint;
 import org.apache.flink.table.catalog.WatermarkSpec;
@@ -76,6 +81,7 @@ import org.apache.flink.table.runtime.connector.source.ScanRuntimeProviderContex
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.util.TestLoggerExtension;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -105,6 +111,7 @@ import static org.apache.flink.table.factories.utils.FactoryMocks.createTableSou
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 /** Tests for {@link PscDynamicTableFactory}. */
 @ExtendWith(TestLoggerExtension.class)
@@ -137,20 +144,23 @@ public class PscDynamicTableFactoryTest {
     private static final String DISCOVERY_INTERVAL = "1000 ms";
 
     private static final Properties PSC_SOURCE_PROPERTIES = new Properties();
-    private static final Properties PSC_FINAL_SOURCE_PROPERTIES = new Properties();
+    private static final Properties PSC_KV_SOURCE_PROPERTIES = new Properties();
     private static final Properties PSC_SINK_PROPERTIES = new Properties();
-    private static final Properties PSC_FINAL_SINK_PROPERTIES = new Properties();
+    private static final Properties PSC_KV_SINK_PROPERTIES = new Properties();
 
     static {
         PSC_SOURCE_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
         PSC_SOURCE_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
-        PSC_SOURCE_PROPERTIES.setProperty("partition.discovery.interval.ms", "1000");
+        PSC_SOURCE_PROPERTIES.setProperty("client.id.prefix", "test");
+        PSC_SOURCE_PROPERTIES.setProperty(PscSourceOptions.PARTITION_DISCOVERY_INTERVAL_MS.key(), "1000");
 
-        PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
         PSC_SINK_PROPERTIES.setProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        PSC_SINK_PROPERTIES.setProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
 
-        PSC_FINAL_SINK_PROPERTIES.putAll(PSC_SINK_PROPERTIES);
-        PSC_FINAL_SOURCE_PROPERTIES.putAll(PSC_SOURCE_PROPERTIES);
+        PSC_KV_SINK_PROPERTIES.putAll(PSC_SINK_PROPERTIES);
+        PSC_KV_SOURCE_PROPERTIES.putAll(PSC_SOURCE_PROPERTIES);
+        // Add client.id.prefix to key-value sink properties for key-value sink tests
+        PSC_KV_SINK_PROPERTIES.setProperty("client.id.prefix", "test");
     }
 
     private static final String PROPS_SCAN_OFFSETS =
@@ -187,6 +197,15 @@ public class PscDynamicTableFactoryTest {
                     null);
 
     private static final DataType SCHEMA_DATA_TYPE = SCHEMA.toPhysicalRowDataType();
+
+    /**
+     * Reset partition count provider after each test to prevent test pollution.
+     * This ensures tests that mock partition counts don't affect other tests.
+     */
+    @AfterEach
+    public void tearDown() {
+        PscTableCommonUtils.resetProvider();
+    }
 
     @Test
     public void testTableSource() {
@@ -268,7 +287,7 @@ public class PscDynamicTableFactoryTest {
 
     @Test
     public void testTableSourceWithKeyValue() {
-        final DynamicTableSource actualSource = createTableSource(SCHEMA, getKeyValueOptions());
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, getKeyValueSourceOptions());
         final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
         // initialize stateful testing formats
         actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
@@ -294,7 +313,7 @@ public class PscDynamicTableFactoryTest {
                         null,
                         Collections.singletonList(TOPIC_URI),
                         null,
-                        PSC_FINAL_SOURCE_PROPERTIES,
+                        PSC_KV_SOURCE_PROPERTIES,
                         StartupMode.GROUP_OFFSETS,
                         Collections.emptyMap(),
                         0);
@@ -304,7 +323,7 @@ public class PscDynamicTableFactoryTest {
 
     @Test
     public void testTableSourceWithKeyValueAndMetadata() {
-        final Map<String, String> options = getKeyValueOptions();
+        final Map<String, String> options = getKeyValueSourceOptions();
         options.put("value.test-format.readable-metadata", "metadata_1:INT, metadata_2:STRING");
 
         final DynamicTableSource actualSource = createTableSource(SCHEMA_WITH_METADATA, options);
@@ -345,7 +364,7 @@ public class PscDynamicTableFactoryTest {
                         null,
                         Collections.singletonList(TOPIC_URI),
                         null,
-                        PSC_FINAL_SOURCE_PROPERTIES,
+                        PSC_KV_SOURCE_PROPERTIES,
                         StartupMode.GROUP_OFFSETS,
                         Collections.emptyMap(),
                         0);
@@ -356,29 +375,543 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
-    public void testTableSourceCommitOnCheckpointDisabled() {
+    public void testTableSourceWithAutoGenUuidGroupId() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
-                        getBasicSourceOptions(), options -> options.remove("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID));
-        final DynamicTableSource tableSource = createTableSource(SCHEMA, modifiedOptions);
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
 
-        assertThat(tableSource).isInstanceOf(PscDynamicSource.class);
-        ScanTableSource.ScanRuntimeProvider providerWithoutGroupId =
-                ((PscDynamicSource) tableSource)
-                        .getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
-        assertThat(providerWithoutGroupId).isInstanceOf(DataStreamScanProvider.class);
-        final PscSource<?> pscSource = assertPscSource(providerWithoutGroupId);
-        final Configuration configuration =
-                PscSourceTestUtils.getPscSourceConfiguration(pscSource);
+        // Test the AUTO_GEN_UUID processing directly using the utility method
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
 
-        // Test offset commit on checkpoint should be disabled when do not set consumer group.
-        assertThat(configuration.get(PscSourceOptions.COMMIT_OFFSETS_ON_CHECKPOINT)).isFalse();
-        assertThat(
-                        configuration.get(
-                                ConfigOptions.key(PscConfiguration.PSC_CONSUMER_COMMIT_AUTO_ENABLED)
-                                        .booleanType()
-                                        .noDefaultValue()))
-                .isFalse();
+        // Verify AUTO_GEN_UUID was processed correctly
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(groupId).startsWith("test-"); // Should start with client.id.prefix from getBasicSourceOptions()
+
+        // Verify the suffix after prefix is a valid UUID
+        String uuidPart = groupId.substring("test-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+            // If no exception is thrown, the UUID is valid
+        } catch (IllegalArgumentException e) {
+            fail("Generated group ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify other properties remain unchanged
+        assertThat(processedProperties.getProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG))
+                .isEqualTo(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        assertThat(processedProperties.getProperty("client.id.prefix")).isEqualTo("test");
+
+        // Verify that the table source can be created successfully with AUTO_GEN_UUID
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify the scan runtime provider works correctly
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        ScanTableSource.ScanRuntimeProvider provider =
+                actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertPscSource(provider);
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGeneratesDifferentGroupIds() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Generate multiple group IDs using the same options
+        Properties properties1 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties2 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties3 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+
+        String groupId1 = properties1.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String groupId2 = properties2.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String groupId3 = properties3.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify all group IDs are different
+        assertThat(groupId1).isNotEqualTo(groupId2);
+        assertThat(groupId1).isNotEqualTo(groupId3);
+        assertThat(groupId2).isNotEqualTo(groupId3);
+
+        // Verify all group IDs have correct format (prefix + UUID)
+        assertThat(groupId1).startsWith("test-");
+        assertThat(groupId2).startsWith("test-");
+        assertThat(groupId3).startsWith("test-");
+
+        // Verify all UUIDs are valid
+        String uuid1 = groupId1.substring("test-".length());
+        String uuid2 = groupId2.substring("test-".length());
+        String uuid3 = groupId3.substring("test-".length());
+
+        try {
+            java.util.UUID.fromString(uuid1);
+            java.util.UUID.fromString(uuid2);
+            java.util.UUID.fromString(uuid3);
+            // If no exception is thrown, all UUIDs are valid
+        } catch (IllegalArgumentException e) {
+            fail("All generated UUIDs should be valid: " + e.getMessage());
+        }
+
+        // Also verify that table sources can be created successfully with these different group IDs
+        final DynamicTableSource tableSource1 = createTableSource(SCHEMA, modifiedOptions);
+        final DynamicTableSource tableSource2 = createTableSource(SCHEMA, modifiedOptions);
+
+        assertThat(tableSource1).isInstanceOf(PscDynamicSource.class);
+        assertThat(tableSource2).isInstanceOf(PscDynamicSource.class);
+
+        // The table sources should be functionally equivalent but have different internal group IDs
+        // (we can't directly access the properties, but the creation should succeed)
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGroupIdFailsWithMissingClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                            options.remove("properties.client.id.prefix"); // Remove client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix")
+                        .contains("must be provided")
+                        .contains("mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGroupIdFailsWithEmptyClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", ""); // Empty client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSourceWithAutoGenUuidGroupIdFailsWithBlankClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", "   "); // Blank spaces client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerId() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties.client.id.prefix", "test");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing directly using the utility method
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(producerId).startsWith("test-"); // Should start with client.id.prefix from getBasicSinkOptions()
+
+        // Verify the suffix after prefix is a valid UUID
+        String uuidPart = producerId.substring("test-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+            // If no exception is thrown, the UUID is valid
+        } catch (IllegalArgumentException e) {
+            fail("Generated producer ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify other properties remain unchanged
+        assertThat(processedProperties.getProperty(PscFlinkConfiguration.CLUSTER_URI_CONFIG))
+                .isEqualTo(PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        assertThat(processedProperties.getProperty("client.id.prefix")).isEqualTo("test");
+
+        // Verify that the table sink can be created successfully with AUTO_GEN_UUID
+        final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify the sink runtime provider works correctly
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
+        DynamicTableSink.SinkRuntimeProvider provider =
+                actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+        assertThat(provider).isInstanceOf(SinkV2Provider.class);
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidGeneratesDifferentProducerIds() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties.client.id.prefix", "test");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Generate multiple producer IDs using the same options
+        Properties properties1 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties2 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        Properties properties3 = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+
+        String producerId1 = properties1.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String producerId2 = properties2.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+        String producerId3 = properties3.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify all producer IDs are different
+        assertThat(producerId1).isNotEqualTo(producerId2);
+        assertThat(producerId1).isNotEqualTo(producerId3);
+        assertThat(producerId2).isNotEqualTo(producerId3);
+
+        // Verify all producer IDs have correct format (prefix + UUID)
+        assertThat(producerId1).startsWith("test-");
+        assertThat(producerId2).startsWith("test-");
+        assertThat(producerId3).startsWith("test-");
+
+        // Verify all UUIDs are valid
+        String uuid1 = producerId1.substring("test-".length());
+        String uuid2 = producerId2.substring("test-".length());
+        String uuid3 = producerId3.substring("test-".length());
+
+        try {
+            java.util.UUID.fromString(uuid1);
+            java.util.UUID.fromString(uuid2);
+            java.util.UUID.fromString(uuid3);
+            // If no exception is thrown, all UUIDs are valid
+        } catch (IllegalArgumentException e) {
+            fail("All generated UUIDs should be valid: " + e.getMessage());
+        }
+
+        // Also verify that table sinks can be created successfully with these different producer IDs
+        final DynamicTableSink tableSink1 = createTableSink(SCHEMA, modifiedOptions);
+        final DynamicTableSink tableSink2 = createTableSink(SCHEMA, modifiedOptions);
+
+        assertThat(tableSink1).isInstanceOf(PscDynamicSink.class);
+        assertThat(tableSink2).isInstanceOf(PscDynamicSink.class);
+
+        // The table sinks should be functionally equivalent but have different internal producer IDs
+        // (we can't directly access the properties, but the creation should succeed)
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerIdFailsWithMissingClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties.client.id.prefix", "test"); // Add first, then remove
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                            options.remove("properties.client.id.prefix"); // Remove client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix")
+                        .contains("must be provided")
+                        .contains("mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerIdFailsWithEmptyClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", ""); // Empty client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
+    }
+
+    @Test
+    public void testTableSinkWithAutoGenUuidProducerIdFailsWithBlankClientIdPrefix() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                            options.put("properties.client.id.prefix", "   "); // Blank spaces client.id.prefix
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception ->
+                    assertThat(exception.getCause().getMessage())
+                        .contains("properties.client.id.prefix")
+                        .contains("must be non-empty")
+                        .contains("mandatory for PSC table sources"));
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Client ID Prefix Alias Tests
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testTableSourceWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for properties.client.id.prefix
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            // Remove the primary key and use the alias instead
+                            options.remove("properties.client.id.prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(groupId).startsWith("alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = groupId.substring("alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated group ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify the scan runtime provider works correctly
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        ScanTableSource.ScanRuntimeProvider provider =
+                actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertPscSource(provider);
+    }
+
+    @Test
+    public void testTableSourceWithClientIdPrefixPrimaryKeyTakesPrecedence() {
+        // Test that properties.client.id.prefix takes precedence over the alias when both are provided
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            // Provide both primary key and alias - primary should win
+                            options.put("properties.client.id.prefix", "primary-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing - should use primary prefix
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify the primary key prefix was used, not the alias
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("primary-prefix-");
+        assertThat(groupId).doesNotContain("alias-prefix");
+
+        // Verify that the table source can be created successfully
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+    }
+
+    @Test
+    public void testTableSinkWithClientIdPrefixAlias() {
+        // Test that properties.psc.consumer.client.id works as an alias for sink options too
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            // Remove the primary key and use the alias instead
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "sink-alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).isNotEqualTo("AUTO_GEN_UUID");
+        assertThat(producerId).startsWith("sink-alias-prefix-");
+
+        // Verify the UUID part is valid
+        String uuidPart = producerId.substring("sink-alias-prefix-".length());
+        try {
+            java.util.UUID.fromString(uuidPart);
+        } catch (IllegalArgumentException e) {
+            fail("Generated producer ID suffix should be a valid UUID: " + uuidPart);
+        }
+
+        // Verify that the table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Verify the sink runtime provider works correctly
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
+        DynamicTableSink.SinkRuntimeProvider provider =
+                actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+        assertThat(provider).isInstanceOf(SinkV2Provider.class);
+    }
+
+    @Test
+    public void testTableSourceWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias when neither is provided
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.remove("properties.client.id.prefix"); // Remove primary key
+                            // Don't provide alias either
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        assertThatThrownBy(() -> createTableSource(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception -> {
+                    String message = exception.getCause().getMessage();
+                    assertThat(message).contains("properties.client.id.prefix");
+                    assertThat(message).contains("properties.psc.consumer.client.id");
+                    assertThat(message).contains("must be provided");
+                    assertThat(message).contains("mandatory for PSC table sources");
+                });
+    }
+
+    @Test
+    public void testTableSinkWithClientIdPrefixAliasValidationError() {
+        // Test that validation error mentions both primary key and alias for sink options too
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            // Don't provide either primary key or alias
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        assertThatThrownBy(() -> createTableSink(SCHEMA, modifiedOptions))
+                .isInstanceOf(ValidationException.class)
+                .hasCauseInstanceOf(ValidationException.class)
+                .satisfies(exception -> {
+                    String message = exception.getCause().getMessage();
+                    assertThat(message).contains("properties.client.id.prefix");
+                    assertThat(message).contains("properties.psc.consumer.client.id");
+                    assertThat(message).contains("must be provided");
+                    assertThat(message).contains("mandatory for PSC table sources");
+                });
+    }
+
+    @Test
+    public void testTableSourceWithKeyValueAndClientIdPrefixAlias() {
+        // Test that alias works with key-value table sources
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getKeyValueSourceOptions(),
+                        options -> {
+                            // Replace primary key with alias
+                            options.remove("properties.client.id.prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "kv-alias-prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias in key-value context
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String groupId = processedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(groupId).isNotNull();
+        assertThat(groupId).startsWith("kv-alias-prefix-");
+
+        // Verify that the key-value table source can be created successfully with alias
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Initialize stateful testing formats
+        final PscDynamicSource actualPscSource = (PscDynamicSource) actualSource;
+        actualPscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+
+        // Verify it works like a normal key-value source
+        assertThat(actualSource).isNotNull();
+    }
+
+    @Test
+    public void testTableSinkWithKeyValueAndClientIdPrefixAlias() {
+        // Test that alias works with key-value table sinks
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getKeyValueSinkOptions(),
+                        options -> {
+                            // Replace primary key with alias
+                            options.remove("properties.client.id.prefix");
+                            options.put("properties." + PscConfiguration.PSC_CONSUMER_CLIENT_ID, "kv-sink-alias");
+                            options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
+                        });
+
+        // Test the AUTO_GEN_UUID processing with alias in key-value sink context
+        Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        String producerId = processedProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        // Verify AUTO_GEN_UUID was processed correctly using the alias prefix
+        assertThat(producerId).isNotNull();
+        assertThat(producerId).startsWith("kv-sink-alias-");
+
+        // Verify that the key-value table sink can be created successfully with alias
+        final DynamicTableSink actualSink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(actualSink).isInstanceOf(PscDynamicSink.class);
+
+        // Initialize stateful testing formats
+        final PscDynamicSink actualPscSink = (PscDynamicSink) actualSink;
+        actualPscSink.getSinkRuntimeProvider(new SinkRuntimeProviderContext(false));
+
+        // Verify it works like a normal key-value sink
+        assertThat(actualSink).isNotNull();
     }
 
     @ParameterizedTest
@@ -652,10 +1185,29 @@ public class PscDynamicTableFactoryTest {
     }
 
     @Test
+    public void testTableSinkAllowsMetadataAndCustomPropertiesPrefixes() {
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSinkOptions(),
+                        options -> {
+                            options.put("metadata.custom.tag", "enabled");
+                            options.put("properties.custom.flag", "true");
+                            options.put("sink.delivery-guarantee", "exactly-once");
+                            options.put("sink.transactional-id-prefix", "psc-sink");
+                        });
+
+        final Properties processedProperties = PscConnectorOptionsUtil.getPscProperties(modifiedOptions);
+        assertThat(processedProperties.getProperty("custom.flag")).isEqualTo("true");
+
+        final DynamicTableSink sink = createTableSink(SCHEMA, modifiedOptions);
+        assertThat(sink).isInstanceOf(PscDynamicSink.class);
+    }
+
+    @Test
     public void testTableSinkWithKeyValue() {
         final Map<String, String> modifiedOptions =
                 getModifiedOptions(
-                        getKeyValueOptions(),
+                        getKeyValueSinkOptions(),
                         options -> {
                             options.put("sink.delivery-guarantee", "exactly-once");
                             options.put("sink.transactional-id-prefix", "psc-sink");
@@ -685,7 +1237,7 @@ public class PscDynamicTableFactoryTest {
                         new int[] {1, 2},
                         null,
                         TOPIC_URI,
-                        PSC_FINAL_SINK_PROPERTIES,
+                        PSC_KV_SINK_PROPERTIES,
                         new FlinkFixedPartitioner<>(),
                         DeliveryGuarantee.EXACTLY_ONCE,
                         null,
@@ -726,6 +1278,866 @@ public class PscDynamicTableFactoryTest {
         final SinkV2Provider sinkProvider = (SinkV2Provider) provider;
         assertThat(sinkProvider.getParallelism().isPresent()).isTrue();
         assertThat((long) sinkProvider.getParallelism().get()).isEqualTo(100);
+    }
+
+    @Test
+    public void testTableSourceWithRescaleDisabled() {
+        // When scan.enable-rescale is false (default), rescale should not be applied
+        final Map<String, String> modifiedOptions = getBasicSourceOptions();
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isFalse();
+    }
+
+    @Test
+    public void testTableSourceWithRescaleEnabled() {
+        // Verifies that rescale is applied when scan.parallelism > partition count
+        // Uses setProviderForTest() to simulate partition count without real metadata query
+        
+        try {
+            // Mock partition count = 10
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
+            
+            // Create source with scan.parallelism = 50 (> 10), rescale enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 50);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration is correctly parsed
+            assertThat(pscSource.enableRescale).isTrue();
+            assertThat(pscSource.scanParallelism).isEqualTo(50);
+            
+            // Verify rescale is applied by checking transformation type
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // With scan.parallelism (50) > partition count (10), rescale should be applied
+            // The transformation should be a PartitionTransformation (rescale operator)
+            assertThat(transformation).isNotNull();
+            assertThat(transformation).isInstanceOf(PartitionTransformation.class);
+            
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitDisabled() {
+        // Verify default behavior - no rate limiting
+        final Map<String, String> modifiedOptions = getBasicSourceOptions();
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitEnabled() {
+        // When rate limit is configured, it should be set on the source
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.put("scan.rate-limit.records-per-second", "1000.0"));
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+    }
+
+    @Test
+    public void testTableSourceWithRateLimitAndRescale() {
+        // Verify both features can be enabled together
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            options.put("scan.enable-rescale", "true");
+                            options.put("scan.rate-limit.records-per-second", "5000.0");
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+        // Note: enableRescale depends on runtime conditions (partition count vs parallelism)
+    }
+
+    @Test
+    public void testTableSourceWithFractionalRateLimit() {
+        // Test that fractional rate limits are supported
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> options.put("scan.rate-limit.records-per-second", "123.45"));
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(123.45);
+    }
+
+    /**
+     * Helper method to create a transformation from a PscDynamicSource.
+     * Reduces repetitive code in operator chaining tests.
+     * 
+     * @param pscSource the PSC dynamic source
+     * @param globalParallelism global parallelism for the execution environment
+     * @return the final transformation in the operator chain
+     */
+    private Transformation<RowData> produceTransformationFromSource(
+            PscDynamicSource pscSource,
+            int globalParallelism) {
+        final ScanTableSource.ScanRuntimeProvider runtimeProvider = 
+                pscSource.getScanRuntimeProvider(ScanRuntimeProviderContext.INSTANCE);
+        assertThat(runtimeProvider).isInstanceOf(DataStreamScanProvider.class);
+        
+        final DataStreamScanProvider dataStreamProvider = (DataStreamScanProvider) runtimeProvider;
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        env.setParallelism(globalParallelism);
+        
+        return dataStreamProvider.produceDataStream(n -> Optional.empty(), env).getTransformation();
+    }
+    
+    /**
+     * Helper method to add rescale configuration to options map.
+     * Uses ConfigOption.key() to avoid hard-coded strings.
+     */
+    private void addRescaleConfig(Map<String, String> options, boolean enableRescale) {
+        options.put(PscConnectorOptions.SCAN_ENABLE_RESCALE.key(), String.valueOf(enableRescale));
+    }
+    
+    /**
+     * Helper method to add rate limit configuration to options map.
+     * Uses ConfigOption.key() to avoid hard-coded strings.
+     */
+    private void addRateLimitConfig(Map<String, String> options, double rateLimit) {
+        options.put(PscConnectorOptions.SCAN_RATE_LIMIT.key(), String.valueOf(rateLimit));
+    }
+    
+    /**
+     * Helper method to add scan parallelism configuration to options map.
+     * Uses ConfigOption.key() to avoid hard-coded strings.
+     */
+    private void addScanParallelismConfig(Map<String, String> options, int parallelism) {
+        options.put(PscConnectorOptions.SCAN_PARALLELISM.key(), String.valueOf(parallelism));
+    }
+
+    /**
+     * Builds a PSC dynamic table source using {@link FactoryUtil#createDynamicTableSource} with
+     * a caller-supplied global {@link Configuration}. {@link FactoryMocks#createTableSource}
+     * hard-codes {@code new Configuration()}, so this overload is needed when a test must
+     * exercise factory behavior that reads from the global config (e.g. when the factory calls
+     * {@link PscTableCommonUtils#getEffectiveSourceParallelism} and we need to set
+     * {@code table.exec.resource.default-parallelism}).
+     */
+    private DynamicTableSource createTableSourceWithGlobalConfig(
+            ResolvedSchema schema,
+            Map<String, String> tableOptions,
+            Configuration globalConfig) {
+        return FactoryUtil.createDynamicTableSource(
+                null,
+                FactoryMocks.IDENTIFIER,
+                new ResolvedCatalogTable(
+                        CatalogTable.of(
+                                Schema.newBuilder().fromResolvedSchema(schema).build(),
+                                "mock source",
+                                Collections.emptyList(),
+                                tableOptions),
+                        schema),
+                Collections.emptyMap(),
+                globalConfig,
+                Thread.currentThread().getContextClassLoader(),
+                false);
+    }
+
+    @Test
+    public void testOperatorChainingWithRateLimitOnly() {
+        // When only rate limiting is enabled (rescale disabled), verify rate limiter is applied
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, false);
+                            addRateLimitConfig(options, 1000.0);
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNotNull();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+        
+        // Get transformation using helper method (reuses same source)
+        final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+        
+        // The transformation should be a OneInputTransformation (the rate limiter map)
+        // Since rescale is disabled, there should be no intermediate rescale transformation
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).contains("PscRateLimit");
+    }
+
+    @Test
+    public void testOperatorChainingWithRescaleAndRateLimit() {
+        // Verifies the new operator chain when both rescale and rate limiting are enabled:
+        //   Source -> PscRateLimit -> rescale (terminal PartitionTransformation)
+        // scan.parallelism (tier 1) determines the source/rate-limit parallelism, capped
+        // by the env parallelism in produceTransformationFromSource.
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addRateLimitConfig(options, 5000.0);
+                            addScanParallelismConfig(options, 100);
+                        });
+
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isTrue();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+        assertThat(pscSource.scanParallelism).isEqualTo(100);
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // Terminal is the rescale PartitionTransformation.
+        assertThat(terminal).isNotNull();
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+
+        // Terminal's input is the rate-limit operator.
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+
+        // The rate-limit operator wraps the Kafka source.
+        assertThat(rateLimitOp.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Source and rate-limit are both pinned to min(scanParallelism, env).
+        final int expectedSourceParallelism =
+                Math.min(pscSource.scanParallelism, envParallelism);
+        assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+    }
+
+    @Test
+    public void testOperatorChainingWithRescaleWithoutRateLimit() {
+        // When rescale is enabled but rate limiting is disabled
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addScanParallelismConfig(options, 50);
+                        });
+        
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+        
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        
+        // Verify configuration
+        assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+        assertThat(pscSource.scanParallelism).isEqualTo(50);
+        
+        // Get transformation using helper method (reuses same source)
+        final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+        
+        // Verify that rate limiter is not applied
+        assertThat(transformation).isNotNull();
+        assertThat(transformation.getName()).doesNotContain("PscRateLimit");
+        
+        // Note: See testRescaleCreatesPartitionTransformation() for PartitionTransformation verification
+        // with mocked partition counts.
+    }
+
+    @Test
+    public void testRateLimiterParallelismConfiguration() {
+        // Verifies that scan.parallelism and rate-limit options are wired into the
+        // PscDynamicSource and that the rate-limit operator is inserted between the
+        // source and the rescale, with its parallelism matching the (capped) source
+        // parallelism.
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addScanParallelismConfig(options, 200);
+                            addRateLimitConfig(options, 10000.0);
+                        });
+
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+
+        assertThat(pscSource.scanParallelism).isEqualTo(200);
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(10000.0);
+        assertThat(pscSource.enableRescale).isTrue();
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // Terminal is the rescale PartitionTransformation; its input is the rate-limit map.
+        assertThat(terminal).isNotNull();
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getInputs()).isNotEmpty();
+
+        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+
+        // Rate-limit parallelism follows the upstream source parallelism, which is
+        // capped at min(scanParallelism, env).
+        final int expectedSourceParallelism =
+                Math.min(pscSource.scanParallelism, envParallelism);
+        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+    }
+
+    @Test
+    public void testRescaleCreatesPartitionTransformation() {
+        // Verifies PartitionTransformation is created when scan.parallelism > partition count
+        
+        try {
+            // Mock partition count = 10
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 10);
+            
+            // Create source with scan.parallelism = 50 (> 10), rescale enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 50);
+                            });
+            
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+            
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            
+            // Verify configuration
+            assertThat(pscSource.scanParallelism).isEqualTo(50);
+            assertThat(pscSource.rateLimitRecordsPerSecond).isNull();
+            
+            // Get transformation - should apply rescale since 50 > 10
+            final Transformation<RowData> transformation = produceTransformationFromSource(pscSource, 10);
+            
+            // With scan.parallelism (50) > partition count (10), rescale is applied
+            // The transformation should be a PartitionTransformation
+            assertThat(transformation).isNotNull();
+            assertThat(transformation).isInstanceOf(PartitionTransformation.class);
+            assertThat(transformation.getName()).doesNotContain("PscRateLimit");
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testRescaleAndRateLimitChain() {
+        // Verifies the operator chain: Source -> RateLimit -> Rescale.
+        // Rescale is now applied AFTER the rate limiter, so the terminal transformation
+        // is a PartitionTransformation (the rescale), whose input is the rate-limit
+        // OneInputTransformation, whose input is the SourceTransformation.
+        // Also verifies that source/rate-limit parallelism is capped at env parallelism:
+        //   sourceParallelism = min(scanParallelism, env.getParallelism()) = min(100, 10) = 10
+        //   rateLimiterParallelism = sourceStream.getParallelism() = 10
+
+        try {
+            // Mock partition count = 20 (irrelevant to the gate now; rescale is gated only
+            // by scan.enable-rescale, but kept here so the resolver in PscTableCommonUtils
+            // is deterministic if it ever falls through to tier 3).
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 20);
+
+            // Create source with scan.parallelism = 100, rescale and rate limiting enabled
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 100);
+                                addRateLimitConfig(options, 5000.0);
+                            });
+
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+
+            // Verify configuration carried into the source.
+            // (PscDynamicSource.scanParallelism now holds the effective parallelism
+            // resolved by the factory; with scan.parallelism set, tier 1 returns 100.)
+            assertThat(pscSource.scanParallelism).isEqualTo(100);
+            assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(5000.0);
+            assertThat(pscSource.enableRescale).isTrue();
+
+            // Build the transformation with env parallelism = 10.
+            final int envParallelism = 10;
+            final Transformation<RowData> terminal =
+                    produceTransformationFromSource(pscSource, envParallelism);
+
+            // 1) Terminal is the rescale operator (PartitionTransformation).
+            assertThat(terminal).isNotNull();
+            assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+
+            // 2) Terminal's input is the rate-limit map.
+            assertThat(terminal.getInputs()).isNotEmpty();
+            final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+            assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+
+            // Rate-limit parallelism should match the (capped) source parallelism:
+            // min(scanParallelism=100, env=10) = 10.
+            final int expectedSourceParallelism =
+                    Math.min(pscSource.scanParallelism, envParallelism);
+            assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+
+            // 3) The rate-limit map's input is the Kafka source.
+            assertThat(rateLimitOp.getInputs()).isNotEmpty();
+            final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+            // Source operator parallelism should be capped at env parallelism.
+            assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testRescaleAlwaysAppliedWhenEnabled() {
+        // Verifies that rescale is applied whenever scan.enable-rescale=true, regardless
+        // of how scan.parallelism compares to partition count. The factory now passes
+        // shouldRescale through directly and computes the source parallelism via
+        // PscTableCommonUtils.getEffectiveSourceParallelism(), and PscDynamicSource
+        // unconditionally wraps the stream in rescale() when enableRescale is true.
+
+        try {
+            // Mock partition count = 50. In the OLD logic this would have caused
+            // shouldApplyRescale() to return false (since scan.parallelism 20 <= 50);
+            // in the NEW logic it must NOT prevent rescale from being applied.
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 50);
+
+            // scan.parallelism = 20, rescale enabled, no rate limiting.
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 20);
+                            });
+
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            assertThat(pscSource.enableRescale).isTrue();
+            assertThat(pscSource.scanParallelism).isEqualTo(20);
+
+            // Build the transformation with env parallelism = 10 (smaller than scan.parallelism).
+            final int envParallelism = 10;
+            final Transformation<RowData> terminal =
+                    produceTransformationFromSource(pscSource, envParallelism);
+
+            // 1) Terminal is the rescale operator (PartitionTransformation), NOT the bare source.
+            assertThat(terminal).isNotNull();
+            assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+
+            // 2) The rescale's input is the Kafka SourceTransformation (no rate limiter in this scenario).
+            assertThat(terminal.getInputs()).isNotEmpty();
+            final Transformation<?> sourceOp = terminal.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+            // 3) Source operator parallelism is capped at min(scanParallelism, env).
+            final int expectedSourceParallelism =
+                    Math.min(pscSource.scanParallelism, envParallelism);
+            assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testRescaleAndRateLimitWithDifferentParallelism() {
+        // Verifies that when scan.parallelism is larger than env parallelism, both the
+        // source and the rate-limit operator are capped at env parallelism. The chain is:
+        //   Source(parallelism=min(scanParallelism, env))
+        //     -> PscRateLimit(parallelism=sourceStream.getParallelism())
+        //         -> rescale (terminal PartitionTransformation)
+
+        try {
+            // Mock partition count = 15. In the new logic this is not consulted because
+            // scan.parallelism (tier 1) wins in getEffectiveSourceParallelism.
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> 15);
+
+            // scan.parallelism = 80 (> env parallelism = 10), rescale + rate limit enabled.
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> {
+                                addRescaleConfig(options, true);
+                                addScanParallelismConfig(options, 80);
+                                addRateLimitConfig(options, 10000.0);
+                            });
+
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            assertThat(pscSource.scanParallelism).isEqualTo(80);
+            assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(10000.0);
+            assertThat(pscSource.enableRescale).isTrue();
+
+            // Build the transformation with env parallelism = 10 (smaller than scan.parallelism).
+            final int envParallelism = 10;
+            final Transformation<RowData> terminal =
+                    produceTransformationFromSource(pscSource, envParallelism);
+
+            // 1) Terminal is the rescale PartitionTransformation.
+            assertThat(terminal).isNotNull();
+            assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+
+            // 2) Terminal's input is the rate-limit map.
+            assertThat(terminal.getInputs()).isNotEmpty();
+            final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+            assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+
+            // Rate-limit and source are both capped at env parallelism (NOT 80).
+            final int expectedSourceParallelism =
+                    Math.min(pscSource.scanParallelism, envParallelism);
+            assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+
+            // 3) The rate-limit map's input is the Kafka source, also at the capped parallelism.
+            assertThat(rateLimitOp.getInputs()).isNotEmpty();
+            final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+            assertThat(sourceOp.getParallelism()).isEqualTo(expectedSourceParallelism);
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testSourceParallelismCappedByEnvParallelism() {
+        // When scan.parallelism > env parallelism, PscDynamicSource.produceDataStream() caps
+        // the source operator at env.getParallelism() so we never exceed the available slots.
+        // Chain (no rate limiter): Source(parallelism=env) -> rescale (PartitionTransformation).
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addScanParallelismConfig(options, 80);
+                        });
+
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        // scan.parallelism (tier 1) wins in getEffectiveSourceParallelism and is stored on the source.
+        assertThat(pscSource.scanParallelism).isEqualTo(80);
+        assertThat(pscSource.enableRescale).isTrue();
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // Terminal is the rescale PartitionTransformation; its input is the Kafka source.
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Cap kicks in: source parallelism = env (10), NOT scan.parallelism (80).
+        assertThat(sourceOp.getParallelism()).isEqualTo(envParallelism);
+        assertThat(sourceOp.getParallelism()).isLessThan(pscSource.scanParallelism);
+    }
+
+    @Test
+    public void testSourceParallelismUsesScanWhenSmallerThanEnv() {
+        // When scan.parallelism < env parallelism, the cap does NOT change the value:
+        // source parallelism = scan.parallelism. This is the symmetric counterpart to
+        // testSourceParallelismCappedByEnvParallelism.
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addScanParallelismConfig(options, 4);
+                        });
+
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.scanParallelism).isEqualTo(4);
+        assertThat(pscSource.enableRescale).isTrue();
+
+        final int envParallelism = 10;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        // Terminal is the rescale PartitionTransformation; its input is the Kafka source.
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = terminal.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Source parallelism = scan.parallelism (4), since it is already <= env (10).
+        assertThat(sourceOp.getParallelism()).isEqualTo(pscSource.scanParallelism);
+        assertThat(sourceOp.getParallelism()).isLessThan(envParallelism);
+    }
+
+    @Test
+    public void testEffectiveParallelismFallsBackToPartitionCount() {
+        // With neither scan.parallelism nor table.exec.resource.default-parallelism set,
+        // PscTableCommonUtils.getEffectiveSourceParallelism() must fall through to the
+        // Kafka partition count (tier 3). The factory stores that resolved value on
+        // PscDynamicSource.scanParallelism, so we can assert it directly.
+        try {
+            final int partitionCount = 7;
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> partitionCount);
+
+            // Only rescale enabled - no scan.parallelism, no rate limit.
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> addRescaleConfig(options, true));
+
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            assertThat(pscSource.enableRescale).isTrue();
+            // tier 1 (scan.parallelism) and tier 2 (table.exec.resource.default-parallelism)
+            // are unset, so the partition-count fallback wins.
+            assertThat(pscSource.scanParallelism).isEqualTo(partitionCount);
+
+            // Verify the resolved value is applied to the source operator at stream-build time.
+            final int envParallelism = 20;
+            final Transformation<RowData> terminal =
+                    produceTransformationFromSource(pscSource, envParallelism);
+            assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+            assertThat(terminal.getInputs()).isNotEmpty();
+            final Transformation<?> sourceOp = terminal.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+            assertThat(sourceOp.getParallelism())
+                    .isEqualTo(Math.min(partitionCount, envParallelism));
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testEffectiveParallelismFallsBackToTableExec() {
+        // Tier 2 of getEffectiveSourceParallelism(): when scan.parallelism is not set but
+        // table.exec.resource.default-parallelism is, the factory must resolve the source
+        // parallelism to that value AND must NOT fall through to the partition-count
+        // provider (tier 3). We inject a non-default value via a custom global Configuration
+        // and install a partition-count mock with a distinguishable value to assert
+        // tier 3 is never consulted.
+        try {
+            final int sentinelPartitionCount = 999; // distinct from the tier-2 value
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> sentinelPartitionCount);
+
+            final int tableExecParallelism = 12;
+            final Configuration globalConfig = new Configuration();
+            globalConfig.set(
+                    ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM,
+                    tableExecParallelism);
+
+            // Only rescale enabled. No scan.parallelism, no rate limit.
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> addRescaleConfig(options, true));
+
+            final DynamicTableSource actualSource =
+                    createTableSourceWithGlobalConfig(SCHEMA, modifiedOptions, globalConfig);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            assertThat(pscSource.enableRescale).isTrue();
+            // tier 2 wins: resolved effective parallelism equals table.exec.resource.default-parallelism,
+            // NOT the partition-count sentinel.
+            assertThat(pscSource.scanParallelism).isEqualTo(tableExecParallelism);
+            assertThat(pscSource.scanParallelism).isNotEqualTo(sentinelPartitionCount);
+
+            // The resolved value flows through to the source operator at stream-build time,
+            // capped by env parallelism.
+            final int envParallelism = 20;
+            final Transformation<RowData> terminal =
+                    produceTransformationFromSource(pscSource, envParallelism);
+            assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+            assertThat(terminal.getInputs()).isNotEmpty();
+            final Transformation<?> sourceOp = terminal.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+            assertThat(sourceOp.getParallelism())
+                    .isEqualTo(Math.min(tableExecParallelism, envParallelism));
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testRescaleWithUnknownEffectiveParallelism() {
+        // When all three tiers of getEffectiveSourceParallelism() fail to produce a positive
+        // value, the factory stores -1 on PscDynamicSource.scanParallelism. PscDynamicSource
+        // must still honor scan.enable-rescale=true (i.e. apply rescale()), but it must NOT
+        // call setParallelism() on the source operator -- the source inherits env parallelism
+        // unchanged.
+        try {
+            // Tier 3 failure: partition-count provider returns -1 (signals "could not determine").
+            PscTableCommonUtils.setProviderForTest((topicUris, props) -> -1);
+
+            // No scan.parallelism (tier 1 unset). FactoryMocks.createTableSource passes an empty
+            // Configuration, so table.exec.resource.default-parallelism defaults to -1 (tier 2
+            // unset). Combined with the tier-3 failure above, getEffectiveSourceParallelism()
+            // must return -1.
+            final Map<String, String> modifiedOptions =
+                    getModifiedOptions(
+                            getBasicSourceOptions(),
+                            options -> addRescaleConfig(options, true));
+
+            final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+            assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+            final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+            assertThat(pscSource.enableRescale).isTrue();
+            // All three tiers failed -> -1 ("unknown") is propagated to the source.
+            assertThat(pscSource.scanParallelism).isEqualTo(-1);
+
+            // Build the transformation with env parallelism = 5.
+            final int envParallelism = 5;
+            final Transformation<RowData> terminal =
+                    produceTransformationFromSource(pscSource, envParallelism);
+
+            // 1) Rescale is STILL applied (terminal is PartitionTransformation) because
+            //    scan.enable-rescale=true is treated as authoritative -- the unknown
+            //    effective parallelism only suppresses the explicit setParallelism call.
+            assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+
+            // 2) The rescale's input is the bare SourceTransformation (no rate limiter).
+            assertThat(terminal.getInputs()).isNotEmpty();
+            final Transformation<?> sourceOp = terminal.getInputs().get(0);
+            assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+            // 3) Source operator inherits env parallelism (no setParallelism call was made
+            //    because scanParallelism <= 0). This is the key behavioral assertion for
+            //    the unknown case: we do NOT pin the source to -1, we leave it as-is.
+            assertThat(sourceOp.getParallelism()).isEqualTo(envParallelism);
+        } finally {
+            PscTableCommonUtils.resetProvider();
+        }
+    }
+
+    @Test
+    public void testRescaleAfterRateLimitOrder() {
+        // Pins the operator ordering established in PscDynamicSource.produceDataStream():
+        //   Source  ->  PscRateLimit (rate limiter)  ->  rescale (terminal)
+        // i.e. rescale is the OUTERMOST operator, applied AFTER the rate limiter,
+        // not before it. This guards against accidental reordering.
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addRateLimitConfig(options, 1000.0);
+                            addScanParallelismConfig(options, 20);
+                        });
+
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.enableRescale).isTrue();
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(1000.0);
+        assertThat(pscSource.scanParallelism).isEqualTo(20);
+
+        final Transformation<RowData> terminal = produceTransformationFromSource(pscSource, 10);
+
+        // 1) Outermost / terminal op is the rescale.
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getName()).doesNotContain("PscRateLimit");
+
+        // 2) Immediately below rescale is the rate limiter (NOT the bare source).
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+        assertThat(rateLimitOp).isNotInstanceOf(PartitionTransformation.class);
+        assertThat(rateLimitOp).isNotInstanceOf(SourceTransformation.class);
+
+        // 3) Below the rate limiter is the Kafka source. This rules out the swapped
+        //    ordering (Source -> rescale -> rate limiter), in which case the rate
+        //    limiter's input would be a PartitionTransformation.
+        assertThat(rateLimitOp.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+    }
+
+    @Test
+    public void testRateLimiterParallelismMatchesSourceParallelism() {
+        // The rate limiter is chained via DataStream.map(...) on the source stream, so its
+        // parallelism must equal the source stream's parallelism (the capped value),
+        // never scan.parallelism directly when scan.parallelism > env parallelism.
+        final Map<String, String> modifiedOptions =
+                getModifiedOptions(
+                        getBasicSourceOptions(),
+                        options -> {
+                            addRescaleConfig(options, true);
+                            addRateLimitConfig(options, 2000.0);
+                            addScanParallelismConfig(options, 50);
+                        });
+
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, modifiedOptions);
+        final PscDynamicSource pscSource = (PscDynamicSource) actualSource;
+        assertThat(pscSource.scanParallelism).isEqualTo(50);
+        assertThat(pscSource.rateLimitRecordsPerSecond).isEqualTo(2000.0);
+
+        final int envParallelism = 8;
+        final Transformation<RowData> terminal =
+                produceTransformationFromSource(pscSource, envParallelism);
+
+        assertThat(terminal).isInstanceOf(PartitionTransformation.class);
+        assertThat(terminal.getInputs()).isNotEmpty();
+        final Transformation<?> rateLimitOp = terminal.getInputs().get(0);
+        assertThat(rateLimitOp.getName()).contains("PscRateLimit");
+
+        assertThat(rateLimitOp.getInputs()).isNotEmpty();
+        final Transformation<?> sourceOp = rateLimitOp.getInputs().get(0);
+        assertThat(sourceOp).isInstanceOf(SourceTransformation.class);
+
+        // Both must equal min(scanParallelism, env). The rate limiter parallelism is
+        // explicitly read from sourceStream.getParallelism() in PscDynamicSource, so it
+        // is locked to the source operator's parallelism.
+        final int expectedParallelism = Math.min(pscSource.scanParallelism, envParallelism);
+        assertThat(sourceOp.getParallelism()).isEqualTo(expectedParallelism);
+        assertThat(rateLimitOp.getParallelism()).isEqualTo(expectedParallelism);
+        assertThat(rateLimitOp.getParallelism()).isEqualTo(sourceOp.getParallelism());
     }
 
     @Test
@@ -817,6 +2229,8 @@ public class PscDynamicTableFactoryTest {
         options.put("topic-uri", TOPIC_URI);
         options.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
         options.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        options.put("properties.client.id.prefix", "test");
+        options.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "AUTO_GEN_UUID");
         optionModifier.accept(options);
 
         final RowType rowType = (RowType) SCHEMA_DATA_TYPE.getLogicalType();
@@ -963,7 +2377,7 @@ public class PscDynamicTableFactoryTest {
                         () -> {
                             final Map<String, String> modifiedOptions =
                                     getModifiedOptions(
-                                            getKeyValueOptions(),
+                                            getKeyValueSinkOptions(),
                                             options ->
                                                     options.put("sink.partitioner", "round-robin"));
 
@@ -983,7 +2397,7 @@ public class PscDynamicTableFactoryTest {
                         () -> {
                             final Map<String, String> modifiedOptions =
                                     getModifiedOptions(
-                                            getKeyValueOptions(),
+                                            getKeyValueSinkOptions(),
                                             options -> {
                                                 options.remove(
                                                         PscConnectorOptions
@@ -1070,7 +2484,7 @@ public class PscDynamicTableFactoryTest {
                                 + " guarantee the semantic of primary key.");
 
         assertThatExceptionOfType(ValidationException.class)
-                .isThrownBy(() -> createTableSink(pkSchema, getKeyValueOptions()))
+                .isThrownBy(() -> createTableSink(pkSchema, getKeyValueSinkOptions()))
                 .havingRootCause()
                 .withMessage(
                         "The PSC table 'default.default.t1' with 'test-format' format"
@@ -1209,7 +2623,15 @@ public class PscDynamicTableFactoryTest {
                 Collections.emptyMap(),
                 0,
                 false,
-                FactoryMocks.IDENTIFIER.asSummaryString());
+                FactoryMocks.IDENTIFIER.asSummaryString(),
+                null,
+                false,
+                null,  // rateLimitRecordsPerSecond
+                -1);   // scanParallelism: PscDynamicTableFactory passes
+                       // `shouldRescale ? getEffectiveSourceParallelism(...) : -1`, so when
+                       // rescale is disabled (the default for these expected-source builders)
+                       // the actual source carries Integer(-1), not null. We mirror that here
+                       // so PscDynamicSource.equals()'s scanParallelism check passes.
     }
 
     private static PscDynamicSink createExpectedSink(
@@ -1261,6 +2683,7 @@ public class PscDynamicTableFactoryTest {
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties.psc.consumer.group.id", "dummy");
         tableOptions.put("properties.psc.cluster.uri", PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        tableOptions.put("properties.client.id.prefix", "test");
         tableOptions.put("scan.startup.mode", "specific-offsets");
         tableOptions.put("scan.startup.specific-offsets", PROPS_SCAN_OFFSETS);
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
@@ -1283,8 +2706,8 @@ public class PscDynamicTableFactoryTest {
         // PSC specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
-        tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
         tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
         tableOptions.put(
                 "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);
         tableOptions.put("sink.delivery-guarantee", DeliveryGuarantee.EXACTLY_ONCE.toString());
@@ -1298,14 +2721,43 @@ public class PscDynamicTableFactoryTest {
         return tableOptions;
     }
 
-    private static Map<String, String> getKeyValueOptions() {
+    private static Map<String, String> getKeyValueSourceOptions() {
         Map<String, String> tableOptions = new HashMap<>();
         // PSC specific options.
         tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
         tableOptions.put("topic-uri", TOPIC_URI);
         tableOptions.put("properties." + PscConfiguration.PSC_CONSUMER_GROUP_ID, "dummy");
         tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        tableOptions.put("properties.client.id.prefix", "test");
         tableOptions.put("scan.topic-partition-discovery.interval", DISCOVERY_INTERVAL);
+        // Format options.
+        tableOptions.put("key.format", TestFormatFactory.IDENTIFIER);
+        tableOptions.put(
+                String.format(
+                        "key.%s.%s",
+                        TestFormatFactory.IDENTIFIER, TestFormatFactory.DELIMITER.key()),
+                "#");
+        tableOptions.put("key.fields", NAME);
+        tableOptions.put("value.format", TestFormatFactory.IDENTIFIER);
+        tableOptions.put(
+                String.format(
+                        "value.%s.%s",
+                        TestFormatFactory.IDENTIFIER, TestFormatFactory.DELIMITER.key()),
+                "|");
+        tableOptions.put(
+                "value.fields-include",
+                PscConnectorOptions.ValueFieldsStrategy.EXCEPT_KEY.toString());
+        return tableOptions;
+    }
+
+    private static Map<String, String> getKeyValueSinkOptions() {
+        Map<String, String> tableOptions = new HashMap<>();
+        // PSC specific options.
+        tableOptions.put("connector", PscDynamicTableFactory.IDENTIFIER);
+        tableOptions.put("topic-uri", TOPIC_URI);
+        tableOptions.put("properties." + PscFlinkConfiguration.CLUSTER_URI_CONFIG, PscTestEnvironmentWithKafkaAsPubSub.PSC_TEST_CLUSTER0_URI_PREFIX);
+        tableOptions.put("properties.client.id.prefix", "test");
+        tableOptions.put("properties." + PscConfiguration.PSC_PRODUCER_CLIENT_ID, "test-producer");
         tableOptions.put(
                 "sink.partitioner", PscConnectorOptionsUtil.SINK_PARTITIONER_VALUE_FIXED);
         tableOptions.put("sink.delivery-guarantee", DeliveryGuarantee.EXACTLY_ONCE.toString());
@@ -1340,11 +2792,215 @@ public class PscDynamicTableFactoryTest {
                                 StreamExecutionEnvironment.createLocalEnvironment())
                         .getTransformation();
         assertThat(transformation).isInstanceOf(SourceTransformation.class);
+        @SuppressWarnings("unchecked")
         SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>
                 sourceTransformation =
                         (SourceTransformation<RowData, PscTopicUriPartitionSplit, PscSourceEnumState>)
                                 transformation;
         assertThat(sourceTransformation.getSource()).isInstanceOf(PscSource.class);
         return (PscSource<?>) sourceTransformation.getSource();
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // CREATE TABLE ... LIKE Tests for AUTO_GEN_UUID Support
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testCreateTableLikeWithAutoGenUuidInBaseAndAutoGenUuidInDerived() {
+        // Test scenario: Both base and derived tables use AUTO_GEN_UUID, each should get unique UUIDs
+        Map<String, String> baseTableOptions = getModifiedOptions(
+                getBasicSourceOptions(),
+                options -> {
+                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    options.put("properties.client.id.prefix", "base-table");
+                });
+
+        Map<String, String> derivedTableOptions = getModifiedOptions(
+                getBasicSourceOptions(),
+                options -> {
+                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    options.put("properties.client.id.prefix", "derived-table");
+                });
+
+        // Both should generate different UUIDs with their respective prefixes
+        Properties baseProperties =
+                PscConnectorOptionsUtil.getPscProperties(baseTableOptions);
+        Properties derivedProperties =
+                PscConnectorOptionsUtil.getPscProperties(derivedTableOptions);
+
+        String baseGroupId = baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String derivedGroupId = derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        assertThat(baseGroupId)
+                .isNotEqualTo(derivedGroupId)
+                .startsWith("base-table-");
+        assertThat(derivedGroupId).startsWith("derived-table-");
+
+        // PSC consumer client IDs should be null as they're handled elsewhere and not set via AUTO_GEN_UUID
+        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID)).isNull();
+        assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID)).isNull();
+    }
+
+    @Test
+    public void testCreateTableLikeWithoutAutoGenUuidInBaseAndOverrideInDerived() {
+        // Test scenario: Base table has custom values, derived table overrides with AUTO_GEN_UUID
+        Map<String, String> baseTableOptions = getModifiedOptions(
+                getBasicSourceOptions(),
+                options -> {
+                    options.put("properties.psc.consumer.group.id", "base-group");
+                    options.put("properties.psc.consumer.client.id", "base-client");
+                });
+
+        Map<String, String> derivedTableOptions = getModifiedOptions(
+                getBasicSourceOptions(),
+                options -> {
+                    options.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    options.put("properties.psc.consumer.client.id", "base-client"); // Keep same client ID
+                    options.put("properties.client.id.prefix", "derived-prefix");
+                });
+
+        Properties baseProperties =
+                PscConnectorOptionsUtil.getPscProperties(baseTableOptions);
+        Properties derivedProperties =
+                PscConnectorOptionsUtil.getPscProperties(derivedTableOptions);
+
+        // Base should have original values
+        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
+                .isEqualTo("base-group");
+        assertThat(baseProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
+                .isEqualTo("base-client");
+
+        // Derived should have AUTO_GEN_UUID replaced for group_id but keep custom client_id
+        assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID))
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("derived-prefix-")
+                .matches("^derived-prefix-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+        assertThat(derivedProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID))
+                .isEqualTo("base-client");
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Validation Tests for AUTO_GEN_UUID and client.id.prefix
+    // --------------------------------------------------------------------------------------------
+
+    @Test
+    public void testAutoGenUuidRequiresClientIdPrefix() {
+        // Test that AUTO_GEN_UUID requires client.id.prefix
+        assertThatThrownBy(() -> {
+            Map<String, String> options = getModifiedOptions(
+                    getBasicSourceOptions(),
+                    opts -> {
+                        opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                        opts.remove("properties.client.id.prefix"); // Remove client.id.prefix
+                    });
+            createTableSource(SCHEMA, options);
+        }).isInstanceOf(ValidationException.class)
+          .satisfies(anyCauseMatches(ValidationException.class,
+                  "properties.client.id.prefix"));
+    }
+
+    @Test
+    public void testAutoGenUuidWithEmptyClientIdPrefix() {
+        // Test that AUTO_GEN_UUID requires non-empty client.id.prefix
+        assertThatThrownBy(() -> {
+            Map<String, String> options = getModifiedOptions(
+                    getBasicSourceOptions(),
+                    opts -> {
+                        opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                        opts.put("properties.client.id.prefix", "");
+                    });
+            createTableSource(SCHEMA, options);
+        }).isInstanceOf(ValidationException.class)
+          .satisfies(anyCauseMatches(ValidationException.class,
+                  "must be non-empty"));
+    }
+
+    @Test
+    public void testAutoGenUuidWithWhitespaceOnlyClientIdPrefix() {
+        // Test that AUTO_GEN_UUID requires non-empty client.id.prefix after trimming
+        assertThatThrownBy(() -> {
+            Map<String, String> options = getModifiedOptions(
+                    getBasicSourceOptions(),
+                    opts -> {
+                        opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                        opts.put("properties.client.id.prefix", "   ");
+                    });
+            createTableSource(SCHEMA, options);
+        }).isInstanceOf(ValidationException.class)
+          .satisfies(anyCauseMatches(ValidationException.class,
+                  "must be non-empty"));
+    }
+
+    @Test
+    public void testAutoGenUuidWithValidClientIdPrefix() {
+        // Test that AUTO_GEN_UUID works correctly with valid client.id.prefix
+        Map<String, String> options = getModifiedOptions(
+                getBasicSourceOptions(),
+                opts -> {
+                    opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    opts.put("properties.psc.producer.client.id", "AUTO_GEN_UUID");
+                    opts.put("properties.client.id.prefix", "factory-test");
+                });
+
+        // Should create source successfully
+        final DynamicTableSource actualSource = createTableSource(SCHEMA, options);
+        assertThat(actualSource).isInstanceOf(PscDynamicSource.class);
+
+        // Verify the generated properties have correct prefixes
+        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
+
+        String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+        String producerClientId = pscProperties.getProperty(PscConfiguration.PSC_PRODUCER_CLIENT_ID);
+
+        assertThat(groupId)
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("factory-test-")
+                .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+        assertThat(producerClientId)
+                .isNotEqualTo("AUTO_GEN_UUID")
+                .startsWith("factory-test-")
+                .matches("^factory-test-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+        // Generated IDs should be different
+        assertThat(groupId).isNotEqualTo(producerClientId);
+
+        // PSC consumer client ID should be null as it's handled elsewhere
+        assertThat(pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_CLIENT_ID)).isNull();
+    }
+
+    @Test
+    public void testAutoGenUuidTrimsWhitespaceFromPrefix() {
+        // Test that client.id.prefix is properly trimmed
+        Map<String, String> options = getModifiedOptions(
+                getBasicSourceOptions(),
+                opts -> {
+                    opts.put("properties.psc.consumer.group.id", "AUTO_GEN_UUID");
+                    opts.put("properties.client.id.prefix", "  trimmed-prefix  ");
+                });
+
+        Properties pscProperties = PscConnectorOptionsUtil.getPscProperties(options);
+        String groupId = pscProperties.getProperty(PscConfiguration.PSC_CONSUMER_GROUP_ID);
+
+        assertThat(groupId)
+                .startsWith("trimmed-prefix-")
+                .doesNotStartWith(" ")
+                .doesNotContain("  -");
+    }
+
+    @Test
+    public void testAutoGenUuidOnNonAllowedKeyThrowsValidationException() {
+        // Test that AUTO_GEN_UUID on non-allowed keys throws ValidationException
+        assertThatThrownBy(() -> {
+            Map<String, String> options = getModifiedOptions(
+                    getBasicSourceOptions(),
+                    opts -> {
+                        opts.put("properties.bootstrap.servers", "AUTO_GEN_UUID");
+                        opts.put("properties.client.id.prefix", "test");
+                    });
+            createTableSource(SCHEMA, options);
+        }).isInstanceOf(ValidationException.class)
+          .satisfies(anyCauseMatches(ValidationException.class,
+                  "AUTO_GEN_UUID is not allowed for property"));
     }
 }

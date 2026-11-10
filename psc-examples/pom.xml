@@ -5,17 +5,17 @@
     <parent>
         <artifactId>psc-java-oss</artifactId>
         <groupId>com.pinterest.psc</groupId>
-        <version>4.1.2</version>
+        <version>4.2.2</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>psc-examples</artifactId>
-    <version>4.1.2</version>
+    <version>4.2.2</version>
     <name>psc-examples</name>
 
     <properties>
-        <memq.version>0.2.21</memq.version>
+        <memq.version>1.0.2</memq.version>
     </properties>
 
     <dependencies>
