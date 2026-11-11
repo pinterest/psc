@@ -1,9 +1,12 @@
 package com.pinterest.psc.producer;
 
 import com.google.common.collect.ImmutableMap;
+import com.pinterest.psc.common.BaseTopicUri;
+import com.pinterest.psc.common.PscUtils;
 import com.pinterest.psc.common.TestTopicUri;
 import com.pinterest.psc.common.TestUtils;
 import com.pinterest.psc.common.TopicUri;
+import com.pinterest.psc.common.TopicUriPartition;
 import com.pinterest.psc.common.kafka.KafkaTopicUri;
 import com.pinterest.psc.config.PscConfiguration;
 import com.pinterest.psc.exception.ExceptionMessage;
@@ -21,9 +24,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -209,5 +215,66 @@ public class TestPscProducer extends TestPscProducerBase {
 
         assertNull(pscProducer.getPartitions(nonExistingTopicUriString));
         pscProducer.close();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void sendAttachesValidatedTopicUriAndKeepsTheCallerString() throws Exception {
+        String rawTopicUri = TopicUri.STANDARD + ":test:env:cloud_region::cluster:topic1";
+        String canonicalTopicUri = "secure:" + TopicUri.SEPARATOR + TopicUri.STANDARD + ":test:env:cloud_region::cluster:topic2";
+        TopicUri parsedRaw = TopicUri.validate(rawTopicUri);
+        TopicUri parsedCanonical = TopicUri.validate(canonicalTopicUri);
+        TopicUri rawBackend = TestTopicUri.validate(parsedRaw);
+        TopicUri canonicalBackend = TestTopicUri.validate(parsedCanonical);
+        when(creator.validateBackendTopicUri(parsedRaw)).thenReturn(rawBackend);
+        when(creator.validateBackendTopicUri(parsedCanonical)).thenReturn(canonicalBackend);
+
+        PscKafkaProducer<String, String> backendProducer = mock(PscKafkaProducer.class);
+        when(creator.getProducer(any(), any(), any(), any())).thenReturn(backendProducer);
+
+        PscProducerMessage<String, String> rawMessage = getTestMessage("k", "v", rawTopicUri, 3);
+        PscProducerMessage<String, String> rawMessageAgain = getTestMessage("k2", "v2", rawTopicUri, PscUtils.NO_PARTITION);
+        PscProducerMessage<String, String> canonicalMessage = getTestMessage("k3", "v3", canonicalTopicUri, 0);
+
+        pscProducer.send(rawMessage);
+        pscProducer.send(rawMessageAgain);
+        pscProducer.send(canonicalMessage);
+
+        assertPartitionMatchesLegacy(rawMessage.getTopicUriPartition(), rawTopicUri, 3, rawBackend);
+        assertPartitionMatchesLegacy(rawMessageAgain.getTopicUriPartition(), rawTopicUri, PscUtils.NO_PARTITION, rawBackend);
+        assertPartitionMatchesLegacy(canonicalMessage.getTopicUriPartition(), canonicalTopicUri, 0, canonicalBackend);
+        assertSame(rawBackend, rawMessage.getTopicUriPartition().getTopicUri());
+        assertSame(rawMessage.getTopicUriPartition().getTopicUri(), rawMessageAgain.getTopicUriPartition().getTopicUri());
+        assertSame(canonicalBackend, canonicalMessage.getTopicUriPartition().getTopicUri());
+        assertEquals(rawTopicUri, rawMessage.getTopicUriAsString());
+        assertEquals(canonicalTopicUri, canonicalMessage.getTopicUriAsString());
+
+        Map<TopicUriPartition, String> byPartition = new HashMap<>();
+        byPartition.put(legacyPartition(rawTopicUri, 3, rawBackend), "raw");
+        byPartition.put(legacyPartition(canonicalTopicUri, 0, canonicalBackend), "canonical");
+        assertEquals("raw", byPartition.get(rawMessage.getTopicUriPartition()));
+        assertEquals("canonical", byPartition.get(canonicalMessage.getTopicUriPartition()));
+
+        pscProducer.close();
+    }
+
+    private static void assertPartitionMatchesLegacy(
+            TopicUriPartition actual, String topicUriString, int partition, TopicUri backendTopicUri
+    ) {
+        TopicUriPartition legacy = legacyPartition(topicUriString, partition, backendTopicUri);
+        assertEquals(legacy, actual);
+        assertEquals(legacy.hashCode(), actual.hashCode());
+        assertEquals(0, actual.compareTo(legacy));
+        assertEquals(0, legacy.compareTo(actual));
+        assertEquals(topicUriString, actual.getTopicUriAsString());
+        assertEquals(partition, actual.getPartition());
+        assertSame(backendTopicUri, actual.getTopicUri());
+        assertEquals(legacy.toString(), actual.toString());
+    }
+
+    private static TopicUriPartition legacyPartition(String topicUriString, int partition, TopicUri backendTopicUri) {
+        TopicUriPartition legacy = new TopicUriPartition(topicUriString, partition);
+        BaseTopicUri.finalizeTopicUriPartition(legacy, backendTopicUri);
+        return legacy;
     }
 }
